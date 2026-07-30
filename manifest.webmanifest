@@ -1,0 +1,24 @@
+{
+  "name": "Trainingslog – Workouts & Fortschritt",
+  "short_name": "Trainingslog",
+  "description": "Sportroutinen erstellen, Workouts durchführen und den Fortschritt über die Zeit festhalten.",
+  "lang": "de",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#11151c",
+  "theme_color": "#11151c",
+  "categories": ["health", "fitness", "lifestyle"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Statistik", "url": "./index.html#/stats" },
+    { "name": "Routinen", "url": "./index.html#/routines" },
+    { "name": "Körperdaten", "url": "./index.html#/body" }
+  ]
+}
