@@ -553,7 +553,29 @@ const DEFAULT_SETTINGS = {
   birthDate: '',      // YYYY-MM-DD
   sex: '',            // 'male' | 'female' | ''
   dailyActivity: 'sedentary', // Alltagsaktivitaet OHNE Training
+  // Training – Feinsteuerung
+  trackRpe: false,    // RPE/RIR je Satz erfassen
+  barWeight: 20,      // Langhantel-Gewicht fuer den Plattenrechner
+  plateInventory: [25, 20, 15, 10, 5, 2.5, 1.25], // verfuegbare Scheiben je Seite
+  progressionStep: 2.5, // Standard-Steigerung
 };
+
+/* RPE-Skala (Rate of Perceived Exertion) mit Wiederholungen in Reserve (RIR). */
+export const RPE_SCALE = [
+  { value: 6, label: '6', rir: '4+ in Reserve' },
+  { value: 7, label: '7', rir: '3 in Reserve' },
+  { value: 8, label: '8', rir: '2 in Reserve' },
+  { value: 9, label: '9', rir: '1 in Reserve' },
+  { value: 10, label: '10', rir: 'Muskelversagen' },
+];
+
+/* Erholungszustand nach einer Einheit – Grundlage fuer reaktives Deloaden. */
+export const RECOVERY_LEVELS = [
+  { key: 'fresh', label: 'Frisch', hint: 'Leistung stieg, kaum Ermüdung', score: 0 },
+  { key: 'normal', label: 'Normal', hint: 'Fordernd, aber gut machbar', score: 1 },
+  { key: 'fatigued', label: 'Ermüdet', hint: 'Schwerer als sonst, Leistung stagniert', score: 2 },
+  { key: 'overreached', label: 'Überlastet', hint: 'Leistungsabfall, anhaltender Muskelkater', score: 3 },
+];
 
 /** Alltagsaktivitaet (ohne Training – das kommt separat aus dem Wochenplan dazu). */
 export const DAILY_ACTIVITY_LEVELS = [
@@ -849,4 +871,30 @@ export function allSetsForExercise(exerciseId) {
     }
   }
   return out.sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
+/**
+ * Abgeschlossene Einheiten, in denen eine bestimmte Uebung vorkam – neueste zuerst.
+ * Basis fuer Progressions- und Deload-Analyse.
+ * @returns {{date:string, sets:object[], mode:string, comment:string, recovery:object|null}[]}
+ */
+export function exerciseHistory(exerciseId, limit = 8) {
+  const out = [];
+  for (const session of getSessions()) { // bereits absteigend sortiert
+    if (!session.endedAt) continue;
+    const ex = session.exercises.find((e) => e.exerciseId === exerciseId);
+    if (!ex) continue;
+    const working = ex.sets.filter((s) => s.done && !s.isWarmup);
+    if (!working.length) continue;
+    out.push({
+      date: session.endedAt,
+      sessionId: session.id,
+      mode: ex.mode || 'reps',
+      sets: working,
+      comment: ex.comment || '',
+      recovery: session.recovery || null,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
 }

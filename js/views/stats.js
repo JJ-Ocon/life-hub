@@ -1,5 +1,6 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import { getSessions, getExercises, sessionVolume, allSetsForExercise, getSettings } from '../db.js';
+import { exercisesNeedingAttention } from '../coach.js';
 import { formatNum, estimate1RM, isoWeekKey, startOfWeek, addDays } from '../utils.js';
 import { barChart, lineChart } from '../charts.js';
 import { openModal } from '../ui.js';
@@ -61,6 +62,8 @@ export function render() {
 
     <button class="btn btn-ghost" id="show-history">Gesamten Trainingsverlauf ansehen</button>
 
+    ${attentionSectionHtml(exercisesWithData.map((x) => x.ex.id))}
+
     <div class="section-title">Persönliche Rekorde</div>
     ${exercisesWithData.length === 0 ? `<p class="faint" style="padding:0 2px">Noch keine abgeschlossenen Sätze mit Gewicht.</p>` : `
       <div class="stack" id="pr-list">
@@ -81,6 +84,44 @@ export function render() {
     card.addEventListener('click', () => openExerciseProgress(card.dataset.exid, exercisesWithData, settings));
   });
   document.getElementById('show-history').addEventListener('click', () => { location.hash = '#/history'; });
+}
+
+/**
+ * Zeigt nur die Uebungen, bei denen Leistung/Erholung tatsaechlich fuer eine
+ * Entlastung sprechen – bewusst kein pauschaler Deload nach Kalender.
+ */
+function attentionSectionHtml(exerciseIds) {
+  const flagged = exercisesNeedingAttention(exerciseIds);
+  if (!flagged.length) {
+    return `
+      <div class="section-title">Erholung</div>
+      <div class="card">
+        <p class="muted">Keine Übung zeigt aktuell Ermüdungszeichen. Weiter wie geplant.</p>
+        <p class="faint" style="margin-top:8px">
+          Die App prüft Leistungsentwicklung, Anstrengung (RPE) und deine Einschätzung nach
+          jeder Einheit – und schlägt eine Entlastung nur dort vor, wo sie nötig ist.
+        </p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="section-title">Erholung & Deload</div>
+    <div class="stack">
+      ${flagged.map(({ name, analysis }) => `
+        <div class="card advice advice--${analysis.suggestion?.type || 'hold'}" style="margin-bottom:0">
+          <div class="row row--between">
+            <span class="advice__title">${analysis.status === 'deload' ? '🔄' : '⏸️'} ${escapeHtml(name)}</span>
+            <span class="badge ${analysis.status === 'deload' ? 'badge--pr' : ''}">${analysis.status === 'deload' ? 'Deload' : 'Beobachten'}</span>
+          </div>
+          ${analysis.suggestion ? `<p class="advice__text">${escapeHtml(analysis.suggestion.text)}</p>` : ''}
+          ${analysis.reasons.length ? `
+            <ul class="advice__list">${analysis.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>
+          ` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 function openExerciseProgress(exerciseId, exercisesWithData, settings) {

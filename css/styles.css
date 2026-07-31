@@ -365,6 +365,36 @@ textarea.input { resize: vertical; min-height: 60px; }
 .chart-bar { fill: var(--accent); }
 .chart-bar.today { fill: var(--accent-strong); }
 
+/* ---------- Empfehlungen (Progression / Deload) ---------- */
+.advice {
+  border-radius: var(--radius-s); padding: 10px 12px; margin: 10px 0 4px;
+  background: var(--bg-input); border-left: 3px solid var(--text-faint);
+}
+.advice--increase { border-left-color: var(--accent); }
+.advice--deload { border-left-color: var(--warn); }
+.advice--hold { border-left-color: var(--text-dim); }
+.advice__title { font-size: .88rem; font-weight: 700; }
+.advice__text { font-size: .82rem; color: var(--text-dim); margin-top: 4px; }
+.advice__list { margin: 8px 0 0; padding-left: 18px; font-size: .8rem; color: var(--text-dim); }
+.advice__list li { margin-bottom: 4px; }
+
+/* ---------- RPE ---------- */
+.rpe-btn {
+  min-width: 34px; height: 32px; border-radius: var(--radius-s);
+  border: 1px solid var(--border); background: var(--bg-input);
+  color: var(--text-faint); font-weight: 700; font-size: .82rem;
+}
+.rpe-btn.set { color: var(--accent); border-color: var(--accent); }
+.recovery-btn { text-align: left; justify-content: flex-start; }
+
+/* ---------- Plattenrechner ---------- */
+.plate-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.plate {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 42px; padding: 8px 10px; border-radius: var(--radius-s);
+  background: var(--accent); color: var(--accent-text); font-weight: 800; font-size: .82rem;
+}
+
 /* ---------- Metrik-Karten (Koerperdaten) ---------- */
 .metric-card__head { cursor: pointer; }
 .metric-card__head:active { opacity: .7; }

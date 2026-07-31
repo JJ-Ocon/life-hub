@@ -76,9 +76,36 @@ export function render() {
           <button class="chip ${settings.units === 'lb' ? 'active' : ''}" data-unit="lb">lb</button>
         </div>
       </div>
-      <div class="field" style="margin-bottom:0">
+      <div class="field">
         <label>Standard-Pausenzeit (Sekunden)</label>
         <input class="input" type="number" id="default-rest" value="${settings.defaultRest}" min="0" step="5">
+      </div>
+      <div class="field">
+        <label>Standard-Steigerung (${settings.units})</label>
+        <input class="input" type="number" id="progression-step" value="${settings.progressionStep}" min="0.5" step="0.5">
+      </div>
+      <div class="switch-row" style="padding-bottom:0">
+        <div class="col grow">
+          <p>RPE je Satz erfassen</p>
+          <p class="faint">Anstrengung pro Satz – verbessert die Deload-Erkennung</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="track-rpe" ${settings.trackRpe ? 'checked' : ''}>
+          <span class="switch__track"></span><span class="switch__thumb"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="section-title">Hantel & Scheiben</div>
+    <div class="card">
+      <p class="faint" style="margin-bottom:12px">Basis für Plattenrechner und Aufwärmsätze.</p>
+      <div class="field">
+        <label>Stangengewicht (${settings.units})</label>
+        <input class="input" type="number" id="bar-weight" value="${settings.barWeight}" min="0" step="0.5">
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Verfügbare Scheiben je Seite (kommagetrennt)</label>
+        <input class="input" id="plate-inventory" value="${settings.plateInventory.join(', ')}" placeholder="25, 20, 15, 10, 5, 2.5, 1.25">
       </div>
     </div>
 
@@ -136,6 +163,29 @@ export function render() {
   document.getElementById('default-rest').addEventListener('change', (e) => {
     saveSettings({ defaultRest: Number(e.target.value) || 0 });
     toast('Gespeichert');
+  });
+  document.getElementById('progression-step').addEventListener('change', (e) => {
+    saveSettings({ progressionStep: Number(e.target.value) || 2.5 });
+    toast('Gespeichert');
+  });
+  document.getElementById('track-rpe').addEventListener('change', (e) => {
+    saveSettings({ trackRpe: e.target.checked });
+    toast(e.target.checked ? 'RPE-Erfassung aktiv' : 'RPE-Erfassung aus');
+  });
+  document.getElementById('bar-weight').addEventListener('change', (e) => {
+    saveSettings({ barWeight: Number(e.target.value) || 20 });
+    toast('Gespeichert');
+  });
+  document.getElementById('plate-inventory').addEventListener('change', (e) => {
+    const plates = e.target.value
+      .split(',')
+      .map((v) => Number(v.trim().replace(',', '.')))
+      .filter((v) => v > 0)
+      .sort((a, b) => b - a);
+    if (!plates.length) { toast('Mindestens eine Scheibe angeben'); render(); return; }
+    saveSettings({ plateInventory: plates });
+    toast('Gespeichert');
+    render();
   });
 
   document.getElementById('export-json').addEventListener('click', async () => {

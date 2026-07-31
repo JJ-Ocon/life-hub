@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack } from '../router.js';
-import { getSessions, getSessionById, deleteSession, saveFinishedSession, sessionVolume, getSettings } from '../db.js';
+import { getSessions, getSessionById, deleteSession, saveFinishedSession, sessionVolume, getSettings, RECOVERY_LEVELS } from '../db.js';
 import { formatDate, formatDuration, formatNum, escapeHtml } from '../utils.js';
 import { confirmDialog, openModal, promptDialog, toast } from '../ui.js';
 
@@ -57,6 +57,15 @@ export function renderDetail({ id }) {
         <div class="stat-tile"><div class="stat-tile__value">${session.exercises.reduce((n, e) => n + e.sets.filter((s) => s.done).length, 0)}</div><div class="stat-tile__label">Sätze</div></div>
       </div>
 
+      ${session.recovery ? `
+        <div class="card row row--between">
+          <div class="col grow">
+            <h3>Erholung</h3>
+            <p class="faint">${recoveryLabel(session.recovery.level)}</p>
+          </div>
+        </div>
+      ` : ''}
+
       <div class="card" id="session-comment-card">
         <div class="row row--between">
           <h3>Notiz zum Workout</h3>
@@ -76,13 +85,20 @@ export function renderDetail({ id }) {
             </div>
             ${ex.note ? `<p class="exercise-note" style="margin-bottom:8px">${escapeHtml(ex.note)}</p>` : ''}
             <table class="set-table">
-              <thead><tr><th>Satz</th><th>${ex.mode === 'time' ? 'Zeit' : 'Wdh.'}</th><th>${settings.units}</th><th>✓</th></tr></thead>
+              <thead><tr>
+                <th>Satz</th>
+                <th>${ex.mode === 'time' ? 'Zeit' : 'Wdh.'}</th>
+                <th>${settings.units}</th>
+                ${hasRpe(ex) ? '<th>RPE</th>' : ''}
+                <th>✓</th>
+              </tr></thead>
               <tbody>
                 ${ex.sets.map((s, si) => `
                   <tr class="set-row ${s.done ? 'done' : ''}">
                     <td class="set-num">${si + 1}${s.isWarmup ? ' <span class="faint">W</span>' : ''}</td>
                     <td>${ex.mode === 'time' ? formatDuration(s.seconds || 0) : s.reps}</td>
                     <td>${formatNum(s.weight)}</td>
+                    ${hasRpe(ex) ? `<td>${s.rpe || '–'}</td>` : ''}
                     <td>${s.done ? '✓' : '–'}</td>
                   </tr>
                 `).join('')}
@@ -135,6 +151,15 @@ export function renderDetail({ id }) {
   });
 
   draw();
+}
+
+function hasRpe(ex) {
+  return ex.mode !== 'time' && ex.sets.some((s) => s.rpe);
+}
+
+function recoveryLabel(level) {
+  const entry = RECOVERY_LEVELS.find((l) => l.key === level);
+  return entry ? `${entry.label} – ${entry.hint}` : level;
 }
 
 function openCommentEditor(title, value, onSave) {
