@@ -14,6 +14,7 @@ const KEYS = {
   calendarEntries: 'tl_calendar_entries_v1',
   userRoutinesSeeded: 'tl_user_routines_seeded_v2',
   weeklyPlan: 'tl_weekly_plan_v1',
+  migrations: 'tl_migrations_v1',
 };
 
 function read(key, fallback) {
@@ -170,6 +171,7 @@ export function duplicateRoutine(routine) {
         groupId,
         restSeconds: re.restSeconds,
         mode: re.mode || 'reps',
+        cardioFields: re.cardioFields ? [...re.cardioFields] : undefined,
         note: re.note || '',
         sets: re.sets.map((s) => ({ ...s })),
       };
@@ -277,21 +279,25 @@ function guessGroupForTemplateItem(name) {
    zusaetzlich als abgeschlossene, protokollierte Sessions gespeichert.
    ========================================================= */
 
-// Baut eine Routinen-Uebung. mode 'reps' -> value ist Ziel-Wdh., mode 'time' ->
-// value ist die Dauer in Sekunden. note transportiert alles, was sich nicht in
-// Zahlen fassen laesst (Seitenangabe, Zielbereiche, Alternativ-Uebungen, bpm/Watt).
-function rEx(name, group, sets, value, weight, note, groupId, mode = 'reps') {
+// Baut eine Routinen-Uebung. mode 'reps' -> value ist Ziel-Wdh., 'time'/'cardio'
+// -> value ist die Dauer in Sekunden. note transportiert alles, was sich nicht in
+// Zahlen fassen laesst (Seitenangabe, Zielbereiche, Alternativ-Uebungen, bpm).
+function rEx(name, group, sets, value, weight, note, groupId, mode = 'reps', extra = {}) {
   const ex = findOrCreateExercise(name, group);
+  const makeSet = () => {
+    if (mode === 'cardio') return { seconds: value, ...extra.setDefaults };
+    if (mode === 'time') return { seconds: value, weight };
+    return { reps: value, weight };
+  };
   return {
     id: uid(),
     exerciseId: ex.id,
     groupId: groupId || null,
     restSeconds: 90,
     mode,
+    cardioFields: mode === 'cardio' ? (extra.cardioFields || ['duration']) : undefined,
     note: note || '',
-    sets: Array.from({ length: sets }, () => (
-      mode === 'time' ? { seconds: value, weight } : { reps: value, weight }
-    )),
+    sets: Array.from({ length: sets }, makeSet),
   };
 }
 
@@ -315,7 +321,8 @@ function buildRoutineA() {
       rEx('Face pulls', 'Schultern', 3, 15, 13.25, '', g5),
       rEx('Bicep cable curls', 'Bizeps', 3, 11, 18.75, '10–12 Wdh.', g5),
       rEx('Farmers carry', 'Ganzkörper', 3, 50, 30, '50 Schritte statt Wiederholungen', null),
-      rEx('Cardio – Recliner Bike', 'Cardio', 1, 3600, 0, 'ca. 140 bpm', null, 'time'),
+      rEx('Cardio – Recliner Bike', 'Cardio', 1, 3600, 0, 'ca. 140 bpm · Stufe 22', null, 'cardio',
+        { cardioFields: ['duration', 'distance', 'watt', 'rpm'] }),
     ],
   };
 }
@@ -339,7 +346,8 @@ function buildRoutineB() {
       rEx('Dumbbell 45° Incline Benchpress', 'Brust', 4, 5, 22, '22 Kg pro Seite', g5),
       rEx('Face pulls', 'Schultern', 3, 15, 13.25, '', g6),
       rEx('Triceps overhead push', 'Trizeps', 3, 15, 18, '', g6),
-      rEx('Cardio – Recliner Bike', 'Cardio', 1, 3600, 0, 'ca. 140 bpm; motivierende Sportvideos', null, 'time'),
+      rEx('Cardio – Recliner Bike', 'Cardio', 1, 3600, 0, 'ca. 140 bpm · Stufe 22; motivierende Sportvideos', null, 'cardio',
+        { cardioFields: ['duration', 'distance', 'watt', 'rpm'] }),
     ],
   };
 }
@@ -359,8 +367,10 @@ function buildRoutineC() {
       rEx('Hip abduction', 'Gesäß', 3, 15, 75, 'Gewicht steigend (up)', g2),
       rEx('Hip adduction', 'Gesäß', 3, 15, 81, '', g2),
       rEx('Leg curls', 'Beine', 3, 10, 70, '', g2),
-      rEx('Airbike', 'Cardio', 1, 300, 0, 'ca. 250 Watt', null, 'time'),
-      rEx('Running', 'Cardio', 1, 600, 0, '160–180 bpm', null, 'time'),
+      rEx('Airbike', 'Cardio', 1, 300, 0, '', null, 'cardio',
+        { cardioFields: ['duration', 'watt', 'rpm'], setDefaults: { watt: 250 } }),
+      rEx('Running', 'Cardio', 1, 600, 0, '160–180 bpm', null, 'cardio',
+        { cardioFields: ['duration', 'distance', 'speed'] }),
     ],
   };
 }
@@ -384,15 +394,74 @@ function logFinishedSessionForRoutine(routine, dateKey, startTime, durationMin, 
       groupId: re.groupId || null,
       restSeconds: re.restSeconds ?? 90,
       mode: re.mode || 'reps',
+      cardioFields: re.cardioFields ? [...re.cardioFields] : undefined,
       note: re.note || '',
       comment: '',
-      sets: re.sets.map((s) => (re.mode === 'time'
-        ? { seconds: s.seconds, weight: s.weight, done: true, isWarmup: false }
-        : { reps: s.reps, weight: s.weight, done: true, isWarmup: false })),
+      sets: re.sets.map((s) => ({ ...s, done: true, isWarmup: false })),
     })),
   };
   saveFinishedSession(session);
   return session;
+}
+
+/* =========================================================
+   Migrationen – laufen einmalig und passen bestehende Daten an,
+   damit ein Update keine Routinen doppelt anlegt.
+   ========================================================= */
+
+function appliedMigrations() {
+  return read(KEYS.migrations, []);
+}
+
+function runMigration(name, fn) {
+  const applied = appliedMigrations();
+  if (applied.includes(name)) return;
+  try {
+    fn();
+  } catch {
+    return; // fehlgeschlagene Migration nicht als erledigt markieren
+  }
+  write(KEYS.migrations, [...applied, name]);
+}
+
+// Uebungen, die vor der Modus-Umstellung als Wiederholungen gespeichert waren,
+// obwohl sie eigentlich Zeit bzw. Cardio sind. Alte Werte standen fuer Minuten.
+const HOLD_PATTERN = /dead\s?hang|plank|hold|halten/i;
+const CARDIO_FIELD_PRESETS = [
+  [/airbike|air\s?bike|assault/i, ['duration', 'watt', 'rpm']],
+  [/lauf|running|\brun\b|treadmill|laufband/i, ['duration', 'distance', 'speed']],
+  [/bike|rad|ergometer|recliner|spinning|cycl/i, ['duration', 'distance', 'watt', 'rpm']],
+  [/ruder|row/i, ['duration', 'distance', 'watt']],
+];
+
+function migrateExerciseModes() {
+  const exercises = new Map(getExercises().map((e) => [e.id, e]));
+  const routines = getRoutines();
+  let changed = false;
+
+  for (const routine of routines) {
+    for (const re of routine.exercises || []) {
+      if (re.mode) continue; // bereits auf einen Modus festgelegt
+      const ex = exercises.get(re.exerciseId);
+      const name = ex?.name || '';
+      const isCardio = ex?.muscleGroup === 'Cardio';
+      const isHold = HOLD_PATTERN.test(name);
+      if (!isCardio && !isHold) { re.mode = 'reps'; changed = true; continue; }
+
+      // Bisher steckte die Minutenzahl im Wiederholungsfeld
+      re.sets = (re.sets || []).map((s) => ({
+        seconds: Math.round((Number(s.reps) || 0) * 60),
+        ...(isCardio ? {} : { weight: s.weight || 0 }),
+      }));
+      re.mode = isCardio ? 'cardio' : 'time';
+      if (isCardio) {
+        const preset = CARDIO_FIELD_PRESETS.find(([pattern]) => pattern.test(name));
+        re.cardioFields = preset ? preset[1] : ['duration'];
+      }
+      changed = true;
+    }
+  }
+  if (changed) write(KEYS.routines, routines);
 }
 
 function seedUserRoutinesIfNeeded() {
@@ -407,6 +476,7 @@ function seedUserRoutinesIfNeeded() {
   write(KEYS.userRoutinesSeeded, true);
 }
 seedUserRoutinesIfNeeded();
+runMigration('exercise-modes', migrateExerciseModes);
 
 /* =========================================================
    Trainingseinheiten (Sessions) – geplant/laufend/abgeschlossen
@@ -459,11 +529,10 @@ export function startSessionFromRoutine(routine) {
       groupId: re.groupId || null,
       restSeconds: re.restSeconds ?? 90,
       mode: re.mode || 'reps',
+      cardioFields: re.cardioFields ? [...re.cardioFields] : undefined,
       note: re.note || '',
       comment: '',
-      sets: re.sets.map((s) => (re.mode === 'time'
-        ? { seconds: s.seconds, weight: s.weight, done: false, isWarmup: false }
-        : { reps: s.reps, weight: s.weight, done: false, isWarmup: false })),
+      sets: re.sets.map((s) => ({ ...s, done: false, isWarmup: false })),
     })),
   };
   setActiveSession(session);
@@ -558,7 +627,26 @@ const DEFAULT_SETTINGS = {
   barWeight: 20,      // Langhantel-Gewicht fuer den Plattenrechner
   plateInventory: [25, 20, 15, 10, 5, 2.5, 1.25], // verfuegbare Scheiben je Seite
   progressionStep: 2.5, // Standard-Steigerung
+  lastBackupAt: '',     // fuer die Backup-Erinnerung
 };
+
+/* =========================================================
+   Cardio-Kennzahlen
+   Je Uebung waehlbar, damit die Eingabemaske nur zeigt, was das
+   jeweilige Geraet ueberhaupt anzeigt (Rad: Watt/RPM, Laufband: km/h ...).
+   'higherIsBetter' steuert die Rekord-Erkennung.
+   ========================================================= */
+export const CARDIO_FIELDS = [
+  { key: 'duration', label: 'Dauer', short: 'Zeit', unit: 'min', prLabel: 'längste Dauer', higherIsBetter: true, always: true },
+  { key: 'distance', label: 'Distanz', short: 'Dist.', unit: 'km', prLabel: 'weiteste Distanz', higherIsBetter: true, decimals: 2 },
+  { key: 'watt', label: 'Leistung', short: 'Watt', unit: 'W', prLabel: 'höchste Leistung', higherIsBetter: true, decimals: 0 },
+  { key: 'speed', label: 'Geschwindigkeit', short: 'km/h', unit: 'km/h', prLabel: 'höchstes Tempo', higherIsBetter: true, decimals: 1 },
+  { key: 'rpm', label: 'Trittfrequenz', short: 'RPM', unit: 'rpm', prLabel: 'höchste Trittfrequenz', higherIsBetter: true, decimals: 0 },
+];
+
+export function cardioFieldDef(key) {
+  return CARDIO_FIELDS.find((f) => f.key === key);
+}
 
 /* RPE-Skala (Rate of Perceived Exertion) mit Wiederholungen in Reserve (RIR). */
 export const RPE_SCALE = [
@@ -850,7 +938,8 @@ export function plannedForDate(dateKey, plan = getWeeklyPlan()) {
 export function sessionVolume(session) {
   let vol = 0;
   for (const ex of session.exercises) {
-    if (ex.mode === 'time') continue; // Zeit-basierte Uebungen zaehlen nicht in kg-Volumen
+    // Zeit-/Cardio-Uebungen haben kein kg-Volumen
+    if (ex.mode === 'time' || ex.mode === 'cardio') continue;
     for (const s of ex.sets) {
       if (s.done && !s.isWarmup) vol += (Number(s.weight) || 0) * (Number(s.reps) || 0);
     }
@@ -858,19 +947,135 @@ export function sessionVolume(session) {
   return vol;
 }
 
-/** Nur Gewicht/Wdh.-Saetze (fuer 1RM-Schaetzung & PR-Liste) – Zeit-Uebungen ausgeschlossen. */
+/** Nur Gewicht/Wdh.-Saetze (fuer 1RM-Schaetzung & PR-Liste). */
 export function allSetsForExercise(exerciseId) {
   const out = [];
   for (const session of getSessions()) {
     if (!session.endedAt) continue;
     for (const ex of session.exercises) {
-      if (ex.exerciseId !== exerciseId || ex.mode === 'time') continue;
+      if (ex.exerciseId !== exerciseId || ex.mode === 'time' || ex.mode === 'cardio') continue;
       for (const s of ex.sets) {
         if (s.done && !s.isWarmup) out.push({ date: session.endedAt, reps: s.reps, weight: s.weight });
       }
     }
   }
   return out.sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
+/**
+ * Bestwerte einer Cardio-Uebung je erfasster Kennzahl.
+ * Die Dauer wird in Sekunden, alles andere in seiner Einheit gefuehrt.
+ * @returns {Object<string, {value:number, date:string}>}
+ */
+export function cardioRecords(exerciseId) {
+  const best = {};
+  for (const session of getSessions()) {
+    if (!session.endedAt) continue;
+    for (const ex of session.exercises) {
+      if (ex.exerciseId !== exerciseId || ex.mode !== 'cardio') continue;
+      for (const s of ex.sets) {
+        if (!s.done) continue;
+        for (const field of CARDIO_FIELDS) {
+          const raw = field.key === 'duration' ? s.seconds : s[field.key];
+          const value = Number(raw) || 0;
+          if (value <= 0) continue;
+          if (!best[field.key] || value > best[field.key].value) {
+            best[field.key] = { value, date: session.endedAt };
+          }
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Alle Uebungen, die als Cardio protokolliert wurden. */
+export function cardioExerciseIds() {
+  const ids = new Set();
+  for (const session of getSessions()) {
+    if (!session.endedAt) continue;
+    for (const ex of session.exercises) {
+      if (ex.mode === 'cardio' && ex.sets.some((s) => s.done)) ids.add(ex.exerciseId);
+    }
+  }
+  return [...ids];
+}
+
+/**
+ * Vergleicht geplante mit tatsaechlich absolvierten Einheiten.
+ * Zaehlt nur Tage in der Vergangenheit (heute noch nicht bewertet).
+ * @returns {{planned:number, completed:number, missed:{date:string,routineName:string}[], rate:number}}
+ */
+export function planAdherence(daysBack = 28) {
+  const today = todayDateKey();
+  const from = addDaysToDateKey(today, -daysBack);
+  const planned = getCalendarEntries().filter(
+    (e) => e.type === 'workout' && e.date >= from && e.date < today,
+  );
+
+  const sessionsByDate = new Map();
+  for (const s of getSessions()) {
+    if (!s.endedAt) continue;
+    const key = s.startedAt.slice(0, 10);
+    if (!sessionsByDate.has(key)) sessionsByDate.set(key, []);
+    sessionsByDate.get(key).push(s);
+  }
+
+  const missed = [];
+  let completed = 0;
+  for (const p of planned) {
+    const done = (sessionsByDate.get(p.date) || []).some(
+      (s) => !p.routineId || s.routineId === p.routineId,
+    );
+    if (done) completed++;
+    else missed.push({ date: p.date, routineName: p.routineName || 'Workout' });
+  }
+
+  return {
+    planned: planned.length,
+    completed,
+    missed: missed.sort((a, b) => b.date.localeCompare(a.date)),
+    rate: planned.length ? completed / planned.length : null,
+  };
+}
+
+/** Volumen und Satzzahl je Muskelgruppe im gewaehlten Zeitraum. */
+export function volumeByMuscleGroup(daysBack = 28) {
+  const from = addDaysToDateKey(todayDateKey(), -daysBack);
+  const byGroup = new Map();
+  const exercises = new Map(getExercises().map((e) => [e.id, e]));
+
+  for (const session of getSessions()) {
+    if (!session.endedAt || session.startedAt.slice(0, 10) < from) continue;
+    for (const ex of session.exercises) {
+      const group = exercises.get(ex.exerciseId)?.muscleGroup || 'Sonstige';
+      if (!byGroup.has(group)) byGroup.set(group, { group, sets: 0, volume: 0 });
+      const entry = byGroup.get(group);
+      for (const s of ex.sets) {
+        if (!s.done || s.isWarmup) continue;
+        entry.sets++;
+        if (ex.mode !== 'time') entry.volume += (Number(s.weight) || 0) * (Number(s.reps) || 0);
+      }
+    }
+  }
+  return [...byGroup.values()].sort((a, b) => b.sets - a.sets);
+}
+
+/** Trainingsintensitaet je Tag (fuer die Heatmap): Volumen, sonst Satzzahl. */
+export function dailyTrainingLoad() {
+  const map = new Map();
+  for (const session of getSessions()) {
+    if (!session.endedAt) continue;
+    const key = session.startedAt.slice(0, 10);
+    const vol = sessionVolume(session);
+    const setsDone = session.exercises.reduce(
+      (n, ex) => n + ex.sets.filter((s) => s.done && !s.isWarmup).length, 0,
+    );
+    // Reine Cardio-/Zeit-Einheiten haetten sonst den Wert 0 und blieben unsichtbar
+    const value = vol > 0 ? vol : setsDone * 100;
+    map.set(key, (map.get(key) || 0) + value);
+  }
+  return map;
 }
 
 /**

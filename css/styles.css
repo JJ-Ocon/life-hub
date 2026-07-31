@@ -259,6 +259,7 @@ textarea.input { resize: vertical; min-height: 60px; }
   border-radius: 999px; padding: 7px 14px; font-size: .82rem; font-weight: 600;
 }
 .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.chip--locked { opacity: .6; }
 
 .switch-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 2px; }
 .switch { position: relative; width: 46px; height: 27px; flex-shrink: 0; }
@@ -364,6 +365,23 @@ textarea.input { resize: vertical; min-height: 60px; }
 .chart-dot { fill: var(--accent); }
 .chart-bar { fill: var(--accent); }
 .chart-bar.today { fill: var(--accent-strong); }
+
+/* ---------- Heatmap (Trainings-Uebersicht) ---------- */
+.heatmap-wrap { overflow-x: auto; }
+.heatmap-svg .hm-label { font-size: 8px; fill: var(--text-faint); }
+.hm-cell { fill: var(--bg-input); }
+.hm-cell--0 { fill: var(--bg-input); }
+.hm-cell--1 { fill: color-mix(in srgb, var(--accent) 25%, var(--bg-input)); }
+.hm-cell--2 { fill: color-mix(in srgb, var(--accent) 50%, var(--bg-input)); }
+.hm-cell--3 { fill: color-mix(in srgb, var(--accent) 75%, var(--bg-input)); }
+.hm-cell--4 { fill: var(--accent); }
+.hm-cell--today { stroke: var(--text); stroke-width: 1; }
+
+/* ---------- Waagerechte Balken (Muskelgruppen-Balance) ---------- */
+.hbar-list { display: flex; flex-direction: column; gap: 12px; }
+.hbar__head { margin-bottom: 5px; }
+.hbar__label { font-size: .85rem; font-weight: 600; }
+.hbar__value { font-size: .8rem; color: var(--text-dim); }
 
 /* ---------- Empfehlungen (Progression / Deload) ---------- */
 .advice {

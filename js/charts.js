@@ -1,5 +1,5 @@
 // Minimalistische SVG-Diagramme ohne externe Bibliotheken.
-import { formatDateShort, formatAxisLabel, formatNum } from './utils.js';
+import { formatDateShort, formatAxisLabel, formatNum, addDaysToDateKey } from './utils.js';
 
 /**
  * Liniendiagramm mit Flaechenfuellung und Punkten.
@@ -9,7 +9,7 @@ import { formatDateShort, formatAxisLabel, formatNum } from './utils.js';
  */
 export function lineChart(points, opts = {}) {
   const {
-    unit = '', granularity = 'day', decimals = 1,
+    unit = '', granularity = null, decimals = 1,
     large = false, showValues = false,
   } = opts;
   if (!points.length) return `<div class="empty"><p>Noch keine Daten</p></div>`;
@@ -91,6 +91,88 @@ export function lineChart(points, opts = {}) {
         ${unitLabel}
       </svg>
     </div>`;
+}
+
+/**
+ * Trainings-Heatmap ueber die letzten 12 Monate (eine Spalte je Woche).
+ * @param {Map<string, number>} valueByDate  Datum (YYYY-MM-DD) -> Intensitaetswert
+ * @param {{weeks?:number, todayKey?:string, startKey?:string}} opts
+ */
+export function heatmap(valueByDate, opts = {}) {
+  const weeks = opts.weeks || 53;
+  const cell = 11;
+  const gap = 3;
+  const padL = 26;
+  const padT = 16;
+  const width = padL + weeks * (cell + gap);
+  const height = padT + 7 * (cell + gap) + 14;
+
+  const max = Math.max(...valueByDate.values(), 1);
+  const startKey = opts.startKey;
+  const today = opts.todayKey;
+
+  let cells = '';
+  let monthLabels = '';
+  let lastMonth = '';
+
+  for (let w = 0; w < weeks; w++) {
+    for (let d = 0; d < 7; d++) {
+      const dateKey = addDaysToDateKey(startKey, w * 7 + d);
+      if (today && dateKey > today) continue;
+      const value = valueByDate.get(dateKey) || 0;
+      const level = value === 0 ? 0 : Math.min(4, Math.ceil((value / max) * 4));
+      const x = padL + w * (cell + gap);
+      const y = padT + d * (cell + gap);
+      cells += `<rect class="hm-cell hm-cell--${level}${dateKey === today ? ' hm-cell--today' : ''}" x="${x}" y="${y}" width="${cell}" height="${cell}" rx="2"><title>${dateKey}${value ? ` · ${Math.round(value)}` : ''}</title></rect>`;
+
+      // Monatsbeschriftung in der obersten Zeile, wenn ein neuer Monat beginnt
+      if (d === 0) {
+        const month = dateKey.slice(5, 7);
+        if (month !== lastMonth) {
+          lastMonth = month;
+          monthLabels += `<text class="hm-label" x="${x}" y="${padT - 5}">${MONTHS_SHORT[Number(month) - 1]}</text>`;
+        }
+      }
+    }
+  }
+
+  const dayLabels = ['Mo', '', 'Mi', '', 'Fr', '', 'So']
+    .map((label, i) => label
+      ? `<text class="hm-label" x="0" y="${padT + i * (cell + gap) + cell - 1}">${label}</text>`
+      : '')
+    .join('');
+
+  return `
+    <div class="chart-wrap heatmap-wrap">
+      <svg class="chart-svg heatmap-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+        ${monthLabels}${dayLabels}${cells}
+      </svg>
+    </div>
+  `;
+}
+
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+
+/**
+ * Waagerechtes Balkendiagramm mit Beschriftung – z.B. Volumen je Muskelgruppe.
+ * @param {{label:string, value:number, sub?:string}[]} rows
+ */
+export function hBarChart(rows, { unit = '', decimals = 0 } = {}) {
+  if (!rows.length) return `<div class="empty"><p>Noch keine Daten</p></div>`;
+  const max = Math.max(...rows.map((r) => r.value), 1);
+  return `
+    <div class="hbar-list">
+      ${rows.map((r) => `
+        <div class="hbar">
+          <div class="row row--between hbar__head">
+            <span class="hbar__label">${r.label}</span>
+            <span class="hbar__value">${formatNum(r.value, decimals)}${unit ? ' ' + unit : ''}${r.sub ? ` <span class="faint">${r.sub}</span>` : ''}</span>
+          </div>
+          <div class="pbar"><div class="pbar__fill" style="width:${(r.value / max) * 100}%"></div></div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 /**

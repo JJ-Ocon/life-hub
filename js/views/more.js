@@ -110,6 +110,7 @@ export function render() {
     </div>
 
     <div class="section-title">Daten</div>
+    ${backupReminderHtml(settings.lastBackupAt)}
     <div class="card stack">
       <button class="btn btn-ghost" id="export-json">Backup exportieren (JSON)</button>
       <label class="btn btn-ghost" for="import-json">Backup importieren (JSON)</label>
@@ -191,7 +192,9 @@ export function render() {
   document.getElementById('export-json').addEventListener('click', async () => {
     const data = await exportAllData();
     download(`trainingslog-backup-${todayKey()}.json`, JSON.stringify(data, null, 2));
+    saveSettings({ lastBackupAt: todayKey() });
     toast('Backup exportiert');
+    render();
   });
 
   document.getElementById('import-json').addEventListener('change', async (e) => {
@@ -212,17 +215,23 @@ export function render() {
 
   document.getElementById('export-csv').addEventListener('click', () => {
     const sessions = getSessions().filter((s) => s.endedAt);
-    const rows = [['Datum', 'Routine', 'Übung', 'Satz', 'Modus', 'Wiederholungen', 'Dauer (Sek.)', 'Gewicht', 'Aufwärmsatz', 'Erledigt']];
+    const rows = [['Datum', 'Routine', 'Übung', 'Satz', 'Modus', 'Wiederholungen', 'Dauer (Sek.)', 'Gewicht', 'Distanz (km)', 'Watt', 'km/h', 'RPM', 'Aufwärmsatz', 'Erledigt']];
     for (const s of sessions) {
       for (const ex of s.exercises) {
         const isTime = ex.mode === 'time';
+        const isCardio = ex.mode === 'cardio';
         ex.sets.forEach((set, i) => {
           rows.push([
             s.startedAt.slice(0, 10), s.routineName, ex.exerciseName, i + 1,
-            isTime ? 'Zeit' : 'Wiederholungen',
-            isTime ? '' : set.reps,
-            isTime ? set.seconds : '',
-            set.weight, set.isWarmup ? 'ja' : 'nein', set.done ? 'ja' : 'nein',
+            isCardio ? 'Cardio' : isTime ? 'Zeit' : 'Wiederholungen',
+            isCardio || isTime ? '' : set.reps,
+            isCardio || isTime ? set.seconds : '',
+            isCardio ? '' : set.weight,
+            isCardio ? (set.distance ?? '') : '',
+            isCardio ? (set.watt ?? '') : '',
+            isCardio ? (set.speed ?? '') : '',
+            isCardio ? (set.rpm ?? '') : '',
+            set.isWarmup ? 'ja' : 'nein', set.done ? 'ja' : 'nein',
           ]);
         });
       }
@@ -242,6 +251,30 @@ export function render() {
     location.hash = '#/';
     setTimeout(() => location.reload(), 400);
   });
+}
+
+/** Dezenter Hinweis, wenn das letzte Backup lange her ist (oder nie gemacht wurde). */
+function backupReminderHtml(lastBackupAt) {
+  const days = lastBackupAt ? daysSince(lastBackupAt) : null;
+  if (days !== null && days < 30) return '';
+  return `
+    <div class="card" style="border-color:var(--warn); margin-bottom:12px">
+      <p class="faint">
+        ${lastBackupAt
+          ? `Letztes Backup vor ${days} Tagen.`
+          : 'Noch kein Backup erstellt.'}
+        Da alle Daten nur lokal gespeichert sind, gehen sie bei Geräteverlust/-reset sonst verloren.
+      </p>
+    </div>
+  `;
+}
+
+function daysSince(dateKey) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const then = new Date(Date.UTC(y, m - 1, d));
+  const now = new Date();
+  const nowUtc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  return Math.round((nowUtc - then) / 86400000);
 }
 
 function csvEscape(v) {

@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack } from '../router.js';
-import { getSessions, getSessionById, deleteSession, saveFinishedSession, sessionVolume, getSettings, RECOVERY_LEVELS } from '../db.js';
+import { getSessions, getSessionById, deleteSession, saveFinishedSession, sessionVolume, getSettings, RECOVERY_LEVELS, cardioFieldDef } from '../db.js';
 import { formatDate, formatDuration, formatNum, escapeHtml } from '../utils.js';
 import { confirmDialog, openModal, promptDialog, toast } from '../ui.js';
 
@@ -87,8 +87,9 @@ export function renderDetail({ id }) {
             <table class="set-table">
               <thead><tr>
                 <th>Satz</th>
-                <th>${ex.mode === 'time' ? 'Zeit' : 'Wdh.'}</th>
-                <th>${settings.units}</th>
+                ${ex.mode === 'cardio'
+                  ? (ex.cardioFields || ['duration']).map((k) => `<th>${cardioFieldDef(k).short}</th>`).join('')
+                  : `<th>${ex.mode === 'time' ? 'Zeit' : 'Wdh.'}</th><th>${settings.units}</th>`}
                 ${hasRpe(ex) ? '<th>RPE</th>' : ''}
                 <th>✓</th>
               </tr></thead>
@@ -96,8 +97,9 @@ export function renderDetail({ id }) {
                 ${ex.sets.map((s, si) => `
                   <tr class="set-row ${s.done ? 'done' : ''}">
                     <td class="set-num">${si + 1}${s.isWarmup ? ' <span class="faint">W</span>' : ''}</td>
-                    <td>${ex.mode === 'time' ? formatDuration(s.seconds || 0) : s.reps}</td>
-                    <td>${formatNum(s.weight)}</td>
+                    ${ex.mode === 'cardio'
+                      ? (ex.cardioFields || ['duration']).map((k) => `<td>${k === 'duration' ? formatDuration(s.seconds || 0) : formatNum(s[k] ?? 0, cardioFieldDef(k).decimals ?? 1)}</td>`).join('')
+                      : `<td>${ex.mode === 'time' ? formatDuration(s.seconds || 0) : s.reps}</td><td>${formatNum(s.weight)}</td>`}
                     ${hasRpe(ex) ? `<td>${s.rpe || '–'}</td>` : ''}
                     <td>${s.done ? '✓' : '–'}</td>
                   </tr>
@@ -154,7 +156,7 @@ export function renderDetail({ id }) {
 }
 
 function hasRpe(ex) {
-  return ex.mode !== 'time' && ex.sets.some((s) => s.rpe);
+  return ex.mode === 'reps' && ex.sets.some((s) => s.rpe);
 }
 
 function recoveryLabel(level) {

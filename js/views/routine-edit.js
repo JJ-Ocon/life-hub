@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack } from '../router.js';
-import { getRoutineById, saveRoutine, deleteRoutine, getExerciseById, getSettings } from '../db.js';
+import { getRoutineById, saveRoutine, deleteRoutine, getExerciseById, getSettings, CARDIO_FIELDS, cardioFieldDef } from '../db.js';
 import { openExercisePicker } from './exercise-picker.js';
 import { openModal, toast, confirmDialog, promptDialog } from '../ui.js';
 import { uid, escapeHtml } from '../utils.js';
@@ -43,7 +43,7 @@ export function render({ id }) {
         <div class="row row--between">
           <div class="col grow">
             <h3 class="truncate">${escapeHtml(ex?.name || 'Unbekannte Übung')}</h3>
-            <p class="faint">${re.sets.length} Sätze · Pause ${re.restSeconds}s ${re.mode === 'time' ? '· ⏱ Zeit' : ''}</p>
+            <p class="faint">${re.sets.length} Sätze · Pause ${re.restSeconds}s${modeBadge(re)}</p>
             ${re.note ? `<p class="exercise-note">${escapeHtml(re.note)}</p>` : ''}
           </div>
         </div>
@@ -56,6 +56,16 @@ export function render({ id }) {
         </div>
       </div>
     `;
+  }
+
+  function modeBadge(re) {
+    if (re.mode === 'time') return ' · ⏱ Zeit';
+    if (re.mode !== 'cardio') return '';
+    const fields = (re.cardioFields || ['duration'])
+      .map((k) => cardioFieldDef(k)?.short)
+      .filter(Boolean)
+      .join('/');
+    return ` · 🚴 Cardio (${fields})`;
   }
 
   function wire() {
@@ -120,16 +130,21 @@ export function render({ id }) {
       <div class="field">
         <label>Art der Erfassung</label>
         <div class="chip-row" id="cfg-mode-row">
-          <button class="chip ${re.mode === 'reps' ? 'active' : ''}" data-mode="reps">Gewicht × Wiederholungen</button>
-          <button class="chip ${re.mode === 'time' ? 'active' : ''}" data-mode="time">Zeit (Dauer)</button>
+          <button class="chip ${re.mode === 'reps' ? 'active' : ''}" data-mode="reps">Gewicht × Wdh.</button>
+          <button class="chip ${re.mode === 'time' ? 'active' : ''}" data-mode="time">Zeit</button>
+          <button class="chip ${re.mode === 'cardio' ? 'active' : ''}" data-mode="cardio">Cardio</button>
         </div>
+      </div>
+      <div class="field" id="cfg-cardio-fields" style="${re.mode === 'cardio' ? '' : 'display:none'}">
+        <label>Welche Werte willst du erfassen?</label>
+        <div class="chip-row" id="cfg-cardio-row"></div>
       </div>
       <div class="field">
         <label>Pause zwischen Sätzen (Sekunden)</label>
         <input class="input" type="number" inputmode="numeric" id="cfg-rest" value="${re.restSeconds}" min="0" step="5">
       </div>
       <div class="field">
-        <label>Hinweis (optional, z.B. "pro Seite", Zielbereich, bpm/Watt)</label>
+        <label>Hinweis (optional, z.B. "pro Seite", Zielbereich, bpm)</label>
         <textarea class="input" id="cfg-note" placeholder="z.B. ca. 140 bpm">${escapeHtml(re.note || '')}</textarea>
       </div>
       <label id="cfg-sets-label" style="font-size:.8rem;font-weight:600;color:var(--text-dim)"></label>
@@ -138,34 +153,74 @@ export function render({ id }) {
       <button class="btn btn-primary" id="cfg-save" style="margin-top:16px">Fertig</button>
     `, {});
 
+    function activeCardioFields() {
+      return (re.cardioFields || ['duration']);
+    }
+
     function setsLabel() {
+      if (re.mode === 'cardio') {
+        return `Zielwerte je Satz (${activeCardioFields().map((k) => cardioFieldDef(k).label).join(', ')})`;
+      }
       return re.mode === 'time'
         ? `Sätze (Dauer in Minuten × Gewicht in ${settings.units}, optional)`
         : `Sätze (Ziel-Wdh. × Gewicht in ${settings.units})`;
     }
 
+    /** Ein Eingabefeld je aktivierter Cardio-Kennzahl. */
+    function cardioInputsHtml(s, si) {
+      return activeCardioFields().map((key) => {
+        const def = cardioFieldDef(key);
+        const value = key === 'duration' ? (s.seconds || 0) / 60 : (s[key] ?? '');
+        return `<input class="input input-num" type="number" inputmode="decimal"
+                  step="${key === 'duration' ? '0.5' : def.decimals === 0 ? '1' : '0.1'}" min="0"
+                  value="${value}" data-field="${key === 'duration' ? 'minutes' : key}"
+                  data-set="${si}" placeholder="${def.short}" title="${def.label} (${def.unit})">`;
+      }).join('');
+    }
+
     function drawSets() {
       handle.sheet.querySelector('#cfg-sets-label').textContent = setsLabel();
       const wrap = handle.sheet.querySelector('#cfg-sets');
-      wrap.innerHTML = re.sets.map((s, si) => re.mode === 'time' ? `
-        <div class="row" style="gap:8px" data-set="${si}">
-          <span class="faint" style="width:44px">Satz ${si + 1}</span>
-          <input class="input input-num" type="number" inputmode="decimal" step="0.5" min="0" value="${(s.seconds || 0) / 60}" data-field="minutes" data-set="${si}" placeholder="Min.">
-          <input class="input input-num" type="number" inputmode="decimal" value="${s.weight || 0}" data-field="weight" data-set="${si}" placeholder="${settings.units}">
-          <button class="icon-btn" data-remove-set="${si}" aria-label="Satz entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
-        </div>
-      ` : `
-        <div class="row" style="gap:8px" data-set="${si}">
-          <span class="faint" style="width:44px">Satz ${si + 1}</span>
-          <input class="input input-num" type="number" inputmode="numeric" value="${s.reps}" data-field="reps" data-set="${si}" placeholder="Wdh.">
-          <input class="input input-num" type="number" inputmode="decimal" value="${s.weight}" data-field="weight" data-set="${si}" placeholder="${settings.units}">
-          <button class="icon-btn" data-remove-set="${si}" aria-label="Satz entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
-        </div>
-      `).join('');
+      const removeBtn = (si) => `<button class="icon-btn" data-remove-set="${si}" aria-label="Satz entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>`;
+
+      wrap.innerHTML = re.sets.map((s, si) => {
+        if (re.mode === 'cardio') {
+          return `
+            <div class="col" style="gap:6px" data-set="${si}">
+              <span class="faint">Satz ${si + 1}</span>
+              <div class="row" style="gap:8px; flex-wrap:wrap">
+                ${cardioInputsHtml(s, si)}
+                ${removeBtn(si)}
+              </div>
+            </div>
+          `;
+        }
+        if (re.mode === 'time') {
+          return `
+            <div class="row" style="gap:8px" data-set="${si}">
+              <span class="faint" style="width:44px">Satz ${si + 1}</span>
+              <input class="input input-num" type="number" inputmode="decimal" step="0.5" min="0" value="${(s.seconds || 0) / 60}" data-field="minutes" data-set="${si}" placeholder="Min.">
+              <input class="input input-num" type="number" inputmode="decimal" value="${s.weight || 0}" data-field="weight" data-set="${si}" placeholder="${settings.units}">
+              ${removeBtn(si)}
+            </div>
+          `;
+        }
+        return `
+          <div class="row" style="gap:8px" data-set="${si}">
+            <span class="faint" style="width:44px">Satz ${si + 1}</span>
+            <input class="input input-num" type="number" inputmode="numeric" value="${s.reps}" data-field="reps" data-set="${si}" placeholder="Wdh.">
+            <input class="input input-num" type="number" inputmode="decimal" value="${s.weight}" data-field="weight" data-set="${si}" placeholder="${settings.units}">
+            ${removeBtn(si)}
+          </div>
+        `;
+      }).join('');
+
       wrap.querySelectorAll('input').forEach((inp) => inp.addEventListener('input', () => {
         const si = +inp.dataset.set;
         if (inp.dataset.field === 'minutes') {
           re.sets[si].seconds = Math.round((Number(inp.value) || 0) * 60);
+        } else if (inp.value === '') {
+          delete re.sets[si][inp.dataset.field];
         } else {
           re.sets[si][inp.dataset.field] = Number(inp.value) || 0;
         }
@@ -176,23 +231,51 @@ export function render({ id }) {
         drawSets();
       }));
     }
+
+    function drawCardioFieldPicker() {
+      const row = handle.sheet.querySelector('#cfg-cardio-row');
+      const active = activeCardioFields();
+      row.innerHTML = CARDIO_FIELDS.map((f) => `
+        <button class="chip ${active.includes(f.key) ? 'active' : ''} ${f.always ? 'chip--locked' : ''}"
+                data-cardio-field="${f.key}" ${f.always ? 'disabled' : ''}>${f.label}</button>
+      `).join('');
+      row.querySelectorAll('[data-cardio-field]').forEach((b) => b.addEventListener('click', () => {
+        const key = b.dataset.cardioField;
+        const list = activeCardioFields();
+        re.cardioFields = list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
+        // Reihenfolge stabil halten, damit die Spalten nicht springen
+        re.cardioFields = CARDIO_FIELDS.filter((f) => re.cardioFields.includes(f.key)).map((f) => f.key);
+        drawCardioFieldPicker();
+        drawSets();
+      }));
+    }
+
+    drawCardioFieldPicker();
     drawSets();
 
     handle.sheet.querySelectorAll('[data-mode]').forEach((btn) => btn.addEventListener('click', () => {
       if (re.mode === btn.dataset.mode) return;
       re.mode = btn.dataset.mode;
-      re.sets = re.sets.map((s) => (re.mode === 'time'
-        ? { seconds: s.seconds ?? 60, weight: s.weight ?? 0 }
-        : { reps: s.reps ?? 10, weight: s.weight ?? 0 }));
+      if (re.mode === 'cardio') {
+        re.cardioFields = re.cardioFields || ['duration'];
+        re.sets = re.sets.map((s) => ({ seconds: s.seconds ?? 600 }));
+      } else if (re.mode === 'time') {
+        re.sets = re.sets.map((s) => ({ seconds: s.seconds ?? 60, weight: s.weight ?? 0 }));
+      } else {
+        re.sets = re.sets.map((s) => ({ reps: s.reps ?? 10, weight: s.weight ?? 0 }));
+      }
       handle.sheet.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === re.mode));
+      handle.sheet.querySelector('#cfg-cardio-fields').style.display = re.mode === 'cardio' ? '' : 'none';
+      drawCardioFieldPicker();
       drawSets();
     }));
 
     handle.sheet.querySelector('#cfg-add-set').addEventListener('click', () => {
       const last = re.sets[re.sets.length - 1];
-      const fresh = re.mode === 'time'
-        ? { seconds: last?.seconds ?? 60, weight: last?.weight ?? 0 }
-        : { reps: last?.reps ?? 10, weight: last?.weight ?? 0 };
+      let fresh;
+      if (re.mode === 'cardio') fresh = { ...(last || { seconds: 600 }) };
+      else if (re.mode === 'time') fresh = { seconds: last?.seconds ?? 60, weight: last?.weight ?? 0 };
+      else fresh = { reps: last?.reps ?? 10, weight: last?.weight ?? 0 };
       re.sets.push(fresh);
       drawSets();
     });

@@ -1,8 +1,13 @@
 import { setTitle, setActions, setBack } from '../router.js';
-import { getSessions, getExercises, sessionVolume, allSetsForExercise, getSettings } from '../db.js';
+import {
+  getSessions, getExercises, sessionVolume, allSetsForExercise, getSettings,
+  cardioExerciseIds, cardioRecords, cardioFieldDef, getExerciseById,
+  dailyTrainingLoad, volumeByMuscleGroup, planAdherence,
+} from '../db.js';
 import { exercisesNeedingAttention } from '../coach.js';
-import { formatNum, estimate1RM, isoWeekKey, startOfWeek, addDays } from '../utils.js';
-import { barChart, lineChart } from '../charts.js';
+import { unlockedAchievements, nextAchievements } from '../achievements.js';
+import { formatNum, formatDuration, estimate1RM, isoWeekKey, startOfWeek, addDays, todayKey, addDaysToDateKey } from '../utils.js';
+import { barChart, lineChart, heatmap, hBarChart } from '../charts.js';
 import { openModal } from '../ui.js';
 import { escapeHtml } from '../utils.js';
 
@@ -50,6 +55,19 @@ export function render() {
     })
     .sort((a, b) => b.sets.length - a.sets.length);
 
+  // Cardio-Rekorde: pro Uebung die beste Kennzahl je erfasstem Feld
+  const cardioPrRows = cardioExerciseIds().map((id) => ({ ex: getExerciseById(id), records: cardioRecords(id) })).filter((c) => c.ex);
+
+  // Heatmap: letzte 53 Wochen bis heute
+  const today = todayKey();
+  const heatmapStart = addDaysToDateKey(today, -52 * 7);
+  const loadByDate = dailyTrainingLoad();
+
+  const muscleRows = volumeByMuscleGroup(28);
+  const adherence = planAdherence(28);
+  const unlocked = unlockedAchievements();
+  const upcoming = nextAchievements(3);
+
   document.getElementById('view').innerHTML = `
     <div class="grid-3">
       <div class="stat-tile"><div class="stat-tile__value">${totalWorkouts}</div><div class="stat-tile__label">Workouts gesamt</div></div>
@@ -57,12 +75,24 @@ export function render() {
       <div class="stat-tile"><div class="stat-tile__value">${streak}</div><div class="stat-tile__label">Wochen-Streak</div></div>
     </div>
 
+    <div class="section-title">Trainings-Übersicht</div>
+    <div class="card">${heatmap(loadByDate, { weeks: 53, todayKey: today, startKey: heatmapStart })}</div>
+
     <div class="section-title">Trainingsvolumen (8 Wochen)</div>
     <div class="card">${barChart(weekBars, { unit: '' })}</div>
 
     <button class="btn btn-ghost" id="show-history">Gesamten Trainingsverlauf ansehen</button>
 
+    ${adherenceSectionHtml(adherence)}
+
+    ${muscleRows.length ? `
+      <div class="section-title">Muskelgruppen-Balance (4 Wochen)</div>
+      <div class="card">${hBarChart(muscleRows.map((r) => ({ label: r.group, value: r.sets, sub: `${Math.round(r.volume)} kg` })), { unit: 'Sätze' })}</div>
+    ` : ''}
+
     ${attentionSectionHtml(exercisesWithData.map((x) => x.ex.id))}
+
+    ${achievementsSectionHtml(unlocked, upcoming)}
 
     <div class="section-title">Persönliche Rekorde</div>
     ${exercisesWithData.length === 0 ? `<p class="faint" style="padding:0 2px">Noch keine abgeschlossenen Sätze mit Gewicht.</p>` : `
@@ -78,12 +108,77 @@ export function render() {
         `).join('')}
       </div>
     `}
+
+    ${cardioPrRows.length ? `
+      <div class="section-title">Cardio-Rekorde</div>
+      <div class="stack">
+        ${cardioPrRows.map(({ ex, records }) => `
+          <div class="card">
+            <h3 class="truncate" style="margin-bottom:8px">${escapeHtml(ex.name)}</h3>
+            <div class="stack">
+              ${Object.entries(records).map(([key, r]) => {
+                const def = cardioFieldDef(key);
+                const value = key === 'duration' ? formatDuration(r.value) : `${formatNum(r.value, def.decimals ?? 1)} ${def.unit}`;
+                return `<div class="row row--between"><span class="muted">${def.prLabel}</span><span class="badge badge--pr">🏆 ${value}</span></div>`;
+              }).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
   `;
 
   document.querySelectorAll('[data-exid]').forEach((card) => {
     card.addEventListener('click', () => openExerciseProgress(card.dataset.exid, exercisesWithData, settings));
   });
   document.getElementById('show-history').addEventListener('click', () => { location.hash = '#/history'; });
+}
+
+/** Geplant vs. tatsaechlich absolviert – nur sichtbar, wenn ein Wochenplan existiert. */
+function adherenceSectionHtml(a) {
+  if (a.planned === 0) return '';
+  const percent = Math.round((a.rate ?? 0) * 100);
+  return `
+    <div class="section-title">Plan-Treue (4 Wochen)</div>
+    <div class="card">
+      <div class="row row--between">
+        <div class="col grow">
+          <p>${a.completed} von ${a.planned} geplanten Workouts</p>
+          <p class="faint">${a.missed.length ? `Verpasst: ${a.missed.slice(0, 3).map((m) => m.routineName).join(', ')}${a.missed.length > 3 ? '…' : ''}` : 'Alles absolviert 🎉'}</p>
+        </div>
+        <div class="kcal-value ${percent < 60 ? 'kcal-value--warn' : ''}">${percent}%</div>
+      </div>
+      <div class="pbar" style="margin-top:10px"><div class="pbar__fill" style="width:${percent}%"></div></div>
+    </div>
+  `;
+}
+
+/** Erreichte und naechste Meilensteine – rein lokal, kein Vergleich mit anderen. */
+function achievementsSectionHtml(unlocked, upcoming) {
+  if (!unlocked.length && !upcoming.length) return '';
+  return `
+    <div class="section-title">Meilensteine</div>
+    <div class="card">
+      ${unlocked.length ? `
+        <div class="chip-row" style="margin-bottom:${upcoming.length ? '14px' : '0'}">
+          ${unlocked.map((a) => `<span class="chip active" title="${escapeHtml(a.hint)}">${a.icon} ${escapeHtml(a.label)}</span>`).join('')}
+        </div>
+      ` : `<p class="faint" style="${upcoming.length ? 'margin-bottom:14px' : ''}">Noch keine Meilensteine erreicht – leg los!</p>`}
+      ${upcoming.length ? `
+        <div class="stack">
+          ${upcoming.map((a) => `
+            <div>
+              <div class="row row--between">
+                <span class="faint">${a.icon} ${escapeHtml(a.label)}</span>
+                <span class="faint">${Math.round(a.progress * 100)}%</span>
+              </div>
+              <div class="pbar" style="margin-top:4px"><div class="pbar__fill" style="width:${Math.round(a.progress * 100)}%"></div></div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
 }
 
 /**
@@ -129,6 +224,7 @@ function openExerciseProgress(exerciseId, exercisesWithData, settings) {
   if (!entry) return;
   const points = entry.sets.map((s) => ({ date: s.date, value: estimate1RM(s.weight, s.reps) }));
   const weightPoints = entry.sets.map((s) => ({ date: s.date, value: s.weight }));
+  const prTimeline = buildPrTimeline(entry.sets);
 
   openModal(`
     <h3 class="modal-title">${escapeHtml(entry.ex.name)}</h3>
@@ -136,6 +232,32 @@ function openExerciseProgress(exerciseId, exercisesWithData, settings) {
     <div class="card" style="padding:8px 4px">${lineChart(points, { unit: settings.units })}</div>
     <p class="faint" style="margin:14px 0 6px">Verwendetes Gewicht pro Satz</p>
     <div class="card" style="padding:8px 4px">${lineChart(weightPoints, { unit: settings.units })}</div>
-    <button class="btn btn-primary" data-close-modal style="margin-top:10px">Schließen</button>
+
+    ${prTimeline.length ? `
+      <p class="faint" style="margin:14px 0 6px">Rekord-Verlauf</p>
+      <div class="stack">
+        ${prTimeline.slice().reverse().map((p) => `
+          <div class="row row--between">
+            <span class="muted">${new Date(p.date).toLocaleDateString('de-DE')}</span>
+            <span class="badge badge--pr">🏆 ${formatNum(p.weight)} ${settings.units} × ${p.reps}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+    <button class="btn btn-primary" data-close-modal style="margin-top:16px">Schließen</button>
   `, {});
+}
+
+/** Chronologische Liste aller Momente, in denen ein neues e1RM-Bestwert aufgestellt wurde. */
+function buildPrTimeline(setsAsc) {
+  const timeline = [];
+  let best = 0;
+  for (const s of setsAsc) {
+    const e1rm = estimate1RM(s.weight, s.reps);
+    if (e1rm > best) {
+      best = e1rm;
+      timeline.push({ date: s.date, weight: s.weight, reps: s.reps });
+    }
+  }
+  return timeline;
 }

@@ -2,7 +2,7 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getActiveSession, setActiveSession, clearActiveSession, saveFinishedSession, allSetsForExercise,
   sessionVolume, getSettings, getCalendarEntriesForDate, deleteCalendarEntry,
-  RPE_SCALE, RECOVERY_LEVELS,
+  RPE_SCALE, RECOVERY_LEVELS, cardioFieldDef, cardioRecords,
 } from '../db.js';
 import { analyzeExercise, platesForWeight, warmupSets } from '../coach.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
@@ -93,7 +93,9 @@ export function render() {
     const sameAsPrev = i > 0 && session.exercises[i - 1].groupId === ex.groupId && grouped;
     const noteOpen = openNotes.has(i);
     const advice = adviceByExercise.get(ex.exerciseId);
-    const showRpe = settings.trackRpe && ex.mode !== 'time';
+    const showRpe = settings.trackRpe && ex.mode === 'reps';
+    const isCardio = ex.mode === 'cardio';
+    const cardioFields = isCardio ? (ex.cardioFields || ['duration']) : null;
 
     return `
       <div class="card" style="${sameAsPrev ? 'margin-top:-6px' : ''}">
@@ -101,7 +103,7 @@ export function render() {
         <div class="row row--between">
           <h3 style="margin-bottom:2px">${escapeHtml(ex.exerciseName)}</h3>
           <div class="row" style="gap:0">
-            ${ex.mode !== 'time' ? `<button class="icon-btn" data-tools="${i}" aria-label="Scheiben & Aufwärmen">
+            ${ex.mode === 'reps' ? `<button class="icon-btn" data-tools="${i}" aria-label="Scheiben & Aufwärmen">
               <svg viewBox="0 0 24 24"><path d="M4 9v6"/><path d="M8 6v12"/><path d="M12 8v8"/><path d="M16 6v12"/><path d="M20 9v6"/></svg>
             </button>` : ''}
             <button class="icon-btn" data-toggle-note="${i}" aria-label="Notiz zur Übung" style="${ex.comment ? 'color:var(--accent)' : ''}">
@@ -115,8 +117,9 @@ export function render() {
         <table class="set-table" style="margin-top:8px">
           <thead><tr>
             <th>Satz</th>
-            <th>${ex.mode === 'time' ? 'Min.' : 'Wdh.'}</th>
-            <th>${settings.units}</th>
+            ${isCardio
+              ? cardioFields.map((k) => `<th>${cardioFieldDef(k).short}</th>`).join('')
+              : `<th>${ex.mode === 'time' ? 'Min.' : 'Wdh.'}</th><th>${settings.units}</th>`}
             ${showRpe ? '<th>RPE</th>' : ''}
             <th>✓</th><th></th>
           </tr></thead>
@@ -124,10 +127,14 @@ export function render() {
             ${ex.sets.map((s, si) => `
               <tr class="set-row ${s.done ? 'done' : ''}" data-ex="${i}" data-set="${si}">
                 <td class="set-num">${si + 1}${s.isWarmup ? ' <span class=\"faint\">W</span>' : ''}</td>
-                <td>${ex.mode === 'time'
-                  ? `<input class="mini-input" type="number" inputmode="decimal" step="0.5" min="0" value="${(s.seconds || 0) / 60}" data-field="minutes">`
-                  : `<input class="mini-input" type="number" inputmode="numeric" value="${s.reps}" data-field="reps">`}</td>
-                <td><input class="mini-input" type="number" inputmode="decimal" value="${s.weight}" data-field="weight"></td>
+                ${isCardio
+                  ? cardioFields.map((k) => `<td><input class="mini-input" type="number" inputmode="decimal" step="${k === 'duration' ? '0.5' : '0.1'}" value="${k === 'duration' ? (s.seconds || 0) / 60 : (s[k] ?? '')}" data-field="${k === 'duration' ? 'minutes' : k}"></td>`).join('')
+                  : `
+                    <td>${ex.mode === 'time'
+                      ? `<input class="mini-input" type="number" inputmode="decimal" step="0.5" min="0" value="${(s.seconds || 0) / 60}" data-field="minutes">`
+                      : `<input class="mini-input" type="number" inputmode="numeric" value="${s.reps}" data-field="reps">`}</td>
+                    <td><input class="mini-input" type="number" inputmode="decimal" value="${s.weight}" data-field="weight"></td>
+                  `}
                 ${showRpe ? `<td><button class="rpe-btn ${s.rpe ? 'set' : ''}" data-rpe-pick aria-label="RPE wählen">${s.rpe || '–'}</button></td>` : ''}
                 <td><button class="set-check ${s.done ? 'done' : ''}" data-toggle-done aria-label="Satz erledigt">
                   <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
@@ -141,10 +148,17 @@ export function render() {
         </table>
         <div class="row" style="gap:8px; margin-top:10px">
           <button class="btn btn-ghost btn-sm grow" data-add-set="${i}">+ Satz</button>
-          <button class="btn btn-ghost btn-sm" data-add-warmup="${i}">+ Aufwärmsatz</button>
+          ${ex.mode === 'reps' ? `<button class="btn btn-ghost btn-sm" data-add-warmup="${i}">+ Aufwärmsatz</button>` : ''}
         </div>
       </div>
     `;
+  }
+
+  /** Formatiert einen Cardio-PR-Wert menschenlesbar (Dauer als Zeit, Rest mit Einheit). */
+  function formatCardioValue(p) {
+    if (p.key === 'duration') return formatDuration(p.value);
+    const def = cardioFieldDef(p.key);
+    return `${formatNum(p.value, def?.decimals ?? 1)} ${p.unit}`;
   }
 
   /** Hinweis-Box mit Progressions- bzw. Deload-Empfehlung. */
@@ -178,6 +192,8 @@ export function render() {
         const set = session.exercises[exIdx].sets[setIdx];
         if (inp.dataset.field === 'minutes') {
           set.seconds = Math.round((Number(inp.value) || 0) * 60);
+        } else if (inp.value === '') {
+          delete set[inp.dataset.field];
         } else {
           set[inp.dataset.field] = Number(inp.value) || 0;
         }
@@ -211,9 +227,10 @@ export function render() {
       btn.addEventListener('click', () => {
         const ex = session.exercises[+btn.dataset.addSet];
         const last = ex.sets[ex.sets.length - 1];
-        const fresh = ex.mode === 'time'
-          ? { seconds: last?.seconds ?? 60, weight: last?.weight ?? 0, done: false, isWarmup: false }
-          : { reps: last?.reps ?? 10, weight: last?.weight ?? 0, done: false, isWarmup: false };
+        let fresh;
+        if (ex.mode === 'cardio') fresh = { ...(last || { seconds: 600 }), done: false, isWarmup: false };
+        else if (ex.mode === 'time') fresh = { seconds: last?.seconds ?? 60, weight: last?.weight ?? 0, done: false, isWarmup: false };
+        else fresh = { reps: last?.reps ?? 10, weight: last?.weight ?? 0, done: false, isWarmup: false };
         ex.sets.push(fresh);
         persist(); draw();
       });
@@ -429,8 +446,22 @@ export function render() {
     }
     // PRs ermitteln (bestehende Historie VOR dem Speichern der aktuellen Session)
     const prList = [];
+    const cardioPrList = [];
     for (const ex of session.exercises) {
-      if (ex.mode === 'time') continue; // Zeit-Uebungen haben keine Gewichts-PRs
+      if (ex.mode === 'time') continue; // Zeit-Uebungen (Halten) haben keine Gewichts-PRs
+
+      if (ex.mode === 'cardio') {
+        const before = cardioRecords(ex.exerciseId);
+        for (const key of ex.cardioFields || ['duration']) {
+          const def = cardioFieldDef(key);
+          const bestNow = Math.max(...ex.sets.filter((s) => s.done).map((s) => Number(key === 'duration' ? s.seconds : s[key]) || 0), 0);
+          if (bestNow > 0 && bestNow > (before[key]?.value || 0)) {
+            cardioPrList.push({ name: ex.exerciseName, label: def.prLabel, value: bestNow, unit: def.unit, key });
+          }
+        }
+        continue;
+      }
+
       const doneSets = ex.sets.filter((s) => s.done && !s.isWarmup && s.weight > 0);
       if (!doneSets.length) continue;
       const history = allSetsForExercise(ex.exerciseId);
@@ -461,7 +492,7 @@ export function render() {
     const volume = sessionVolume(session);
     const setsDone = session.exercises.reduce((n, ex) => n + ex.sets.filter((s) => s.done).length, 0);
 
-    showSummary({ durationSec, volume, setsDone, prList, units: settings.units });
+    showSummary({ durationSec, volume, setsDone, prList, cardioPrList, units: settings.units });
   }
 
   /** Fragt nach dem Training kurz die Erholung ab. Ueberspringbar. */
@@ -503,7 +534,8 @@ export function render() {
     });
   }
 
-  function showSummary({ durationSec, volume, setsDone, prList, units }) {
+  function showSummary({ durationSec, volume, setsDone, prList, cardioPrList, units }) {
+    const hasPrs = prList.length || cardioPrList.length;
     const handle = openModal(`
       <h3 class="modal-title">Workout abgeschlossen 💪</h3>
       <div class="grid-3" style="margin-bottom:16px">
@@ -511,10 +543,11 @@ export function render() {
         <div class="stat-tile"><div class="stat-tile__value">${formatNum(volume, 0)}</div><div class="stat-tile__label">Volumen (${units})</div></div>
         <div class="stat-tile"><div class="stat-tile__value">${setsDone}</div><div class="stat-tile__label">Sätze</div></div>
       </div>
-      ${prList.length ? `
+      ${hasPrs ? `
         <div class="section-title" style="margin-top:0">Neue persönliche Rekorde</div>
         <div class="stack">
           ${prList.map((p) => `<div class="row row--between"><span>${escapeHtml(p.name)}</span><span class="badge badge--pr">🏆 ${formatNum(p.weight)} ${units} × ${p.reps}</span></div>`).join('')}
+          ${cardioPrList.map((p) => `<div class="row row--between"><span>${escapeHtml(p.name)} · ${p.label}</span><span class="badge badge--pr">🏆 ${formatCardioValue(p)}</span></div>`).join('')}
         </div>
       ` : ''}
       <button class="btn btn-primary" data-close-modal style="margin-top:20px">Weiter</button>

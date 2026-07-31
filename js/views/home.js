@@ -1,9 +1,9 @@
 import { setTitle, setActions } from '../router.js';
 import {
   getRoutines, getSessions, getActiveSession, startSessionFromRoutine, sessionVolume, getSettings,
-  getCalendarEntriesForDate, plannedForDate,
+  getCalendarEntriesForDate, plannedForDate, planAdherence,
 } from '../db.js';
-import { formatDate, formatDuration, formatNum, isoWeekKey, todayKey, escapeHtml } from '../utils.js';
+import { formatDate, formatDateKey, formatDuration, formatNum, isoWeekKey, todayKey, escapeHtml } from '../utils.js';
 import { toast } from '../ui.js';
 
 export function render() {
@@ -43,7 +43,17 @@ export function render() {
   const doneToday = sessions.some((s) => todayKey(new Date(s.startedAt)) === today);
   const todaysRoutine = planned?.routine || null;
 
+  // Verpasste Workouts der letzten 7 Tage – dezenter Hinweis, kein Ton/Push
+  const recentMissed = planAdherence(7).missed;
+
   const html = `
+    ${recentMissed.length ? `
+      <div class="card" style="border-color:var(--warn)">
+        <p class="faint">Verpasst</p>
+        <p>${recentMissed.map((m) => `${escapeHtml(m.routineName)} (${formatDateKey(m.date)})`).join(', ')}</p>
+      </div>
+    ` : ''}
+
     ${!active && todaysRoutine ? `
       <div class="card today-plan ${doneToday ? 'today-plan--done' : ''}">
         <div class="row row--between">
