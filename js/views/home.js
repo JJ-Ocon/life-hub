@@ -1,6 +1,9 @@
 import { setTitle, setActions } from '../router.js';
-import { getRoutines, getSessions, getActiveSession, startSessionFromRoutine, sessionVolume, getSettings } from '../db.js';
-import { formatDate, formatDuration, formatNum, isoWeekKey, todayKey } from '../utils.js';
+import {
+  getRoutines, getSessions, getActiveSession, startSessionFromRoutine, sessionVolume, getSettings,
+  getCalendarEntriesForDate, plannedForDate,
+} from '../db.js';
+import { formatDate, formatDuration, formatNum, isoWeekKey, todayKey, escapeHtml } from '../utils.js';
 import { toast } from '../ui.js';
 
 export function render() {
@@ -31,7 +34,29 @@ export function render() {
 
   const recent = sessions.slice(0, 4);
 
+  // Heutiger Plan: Kalendereintrag hat Vorrang, sonst der wiederkehrende Wochenplan
+  const today = todayKey();
+  const todaysCalendar = getCalendarEntriesForDate(today).filter((e) => e.type === 'workout');
+  const planned = todaysCalendar.length
+    ? { routine: routines.find((r) => r.id === todaysCalendar[0].routineId), fromCalendar: true }
+    : plannedForDate(today);
+  const doneToday = sessions.some((s) => todayKey(new Date(s.startedAt)) === today);
+  const todaysRoutine = planned?.routine || null;
+
   const html = `
+    ${!active && todaysRoutine ? `
+      <div class="card today-plan ${doneToday ? 'today-plan--done' : ''}">
+        <div class="row row--between">
+          <div class="col grow">
+            <p class="faint">Heute geplant</p>
+            <h3 class="truncate">${escapeHtml(todaysRoutine.name)}</h3>
+            <p class="faint">${todaysRoutine.exercises.length} Übungen${doneToday ? ' · heute schon trainiert ✅' : ''}</p>
+          </div>
+          ${!doneToday ? `<button class="btn btn-primary btn-sm" data-start="${todaysRoutine.id}">Start</button>` : ''}
+        </div>
+      </div>
+    ` : ''}
+
     ${active ? `
       <div class="card" style="border-color:var(--accent)">
         <div class="row row--between">

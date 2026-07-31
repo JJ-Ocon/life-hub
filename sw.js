@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'trainingslog-v3';
+const CACHE_VERSION = 'trainingslog-v4';
 
 const ASSETS = [
   './',
@@ -15,6 +15,7 @@ const ASSETS = [
   './js/utils.js',
   './js/theme.js',
   './js/charts.js',
+  './js/nutrition.js',
   './js/views/home.js',
   './js/views/routines.js',
   './js/views/routine-edit.js',
@@ -24,6 +25,7 @@ const ASSETS = [
   './js/views/stats.js',
   './js/views/body.js',
   './js/views/calendar.js',
+  './js/views/weekplan.js',
   './js/views/more.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

@@ -1,5 +1,9 @@
 import { setTitle, setActions, setBack } from '../router.js';
-import { getSettings, saveSettings, exportAllData, importAllData, resetAllData, getSessions, getSettings as getSet } from '../db.js';
+import {
+  getSettings, saveSettings, exportAllData, importAllData, resetAllData, getSessions,
+  DAILY_ACTIVITY_LEVELS,
+} from '../db.js';
+import { ageFromBirthDate } from '../utils.js';
 import { applyTheme } from '../theme.js';
 import { confirmDialog, toast, promptDialog } from '../ui.js';
 import { download, readFileAsText, formatNum, todayKey } from '../utils.js';
@@ -32,6 +36,34 @@ export function render() {
       <div id="hue-wrap" style="margin-top:16px; ${settings.theme === 'colored' ? '' : 'display:none'}">
         <label class="faint" style="display:block;margin-bottom:8px">Akzentfarbe</label>
         <input type="range" min="0" max="360" class="hue-slider" id="hue-slider" value="${settings.accentHue}">
+      </div>
+    </div>
+
+    <div class="section-title">Profil</div>
+    <div class="card">
+      <p class="faint" style="margin-bottom:14px">Basis für BMI und Kalorienbedarf. Bleibt wie alles andere nur auf diesem Gerät.</p>
+      <div class="field">
+        <label>Körpergröße (cm)</label>
+        <input class="input" type="number" inputmode="numeric" id="p-height" min="100" max="250" value="${settings.heightCm ?? ''}" placeholder="z.B. 180">
+      </div>
+      <div class="field">
+        <label>Geburtsdatum${settings.birthDate ? ` · ${ageFromBirthDate(settings.birthDate)} Jahre` : ''}</label>
+        <input class="input" type="date" id="p-birth" value="${settings.birthDate || ''}">
+      </div>
+      <div class="field">
+        <label>Geschlecht <span class="faint">(für die Grundumsatz-Formel)</span></label>
+        <div class="chip-row">
+          <button class="chip ${settings.sex === 'male' ? 'active' : ''}" data-sex="male">männlich</button>
+          <button class="chip ${settings.sex === 'female' ? 'active' : ''}" data-sex="female">weiblich</button>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Alltagsaktivität <span class="faint">(ohne Training)</span></label>
+        <select class="input" id="p-activity">
+          ${DAILY_ACTIVITY_LEVELS.map((l) => `
+            <option value="${l.key}" ${settings.dailyActivity === l.key ? 'selected' : ''}>${l.label} – ${l.hint}</option>
+          `).join('')}
+        </select>
       </div>
     </div>
 
@@ -78,6 +110,26 @@ export function render() {
     const s = saveSettings({ accentHue: Number(e.target.value) });
     applyTheme(s);
   });
+  document.getElementById('p-height').addEventListener('change', (e) => {
+    const v = Number(e.target.value);
+    saveSettings({ heightCm: v > 0 ? v : null });
+    toast('Gespeichert');
+  });
+  document.getElementById('p-birth').addEventListener('change', (e) => {
+    saveSettings({ birthDate: e.target.value || '' });
+    render();
+  });
+  document.querySelectorAll('[data-sex]').forEach((el) => el.addEventListener('click', () => {
+    const settings = getSettings();
+    // erneutes Tippen auf die aktive Auswahl hebt sie wieder auf
+    saveSettings({ sex: settings.sex === el.dataset.sex ? '' : el.dataset.sex });
+    render();
+  }));
+  document.getElementById('p-activity').addEventListener('change', (e) => {
+    saveSettings({ dailyActivity: e.target.value });
+    toast('Gespeichert');
+  });
+
   document.querySelectorAll('[data-unit]').forEach((el) => {
     el.addEventListener('click', () => { saveSettings({ units: el.dataset.unit }); render(); });
   });

@@ -13,6 +13,7 @@ const KEYS = {
   seeded: 'tl_seeded_v1',
   calendarEntries: 'tl_calendar_entries_v1',
   userRoutinesSeeded: 'tl_user_routines_seeded_v2',
+  weeklyPlan: 'tl_weekly_plan_v1',
 };
 
 function read(key, fallback) {
@@ -470,12 +471,60 @@ export function startSessionFromRoutine(routine) {
 }
 
 /* =========================================================
-   Koerperdaten (Gewicht/Masse)
+   Koerperdaten (Gewicht, Koerperanalyse-Werte, Umfaenge)
    ========================================================= */
-// Entry: { id, date (YYYY-MM-DD), weight, waist, chest, arm, thigh, hips, note }
+// Entry: { id, date (YYYY-MM-DD), weight, bodyFat, water, muscle, bone,
+//          waist, chest, arm, thigh, hips, note }
+// bodyFat/water in %, muscle/bone in kg (typische Ausgabe einer Koerperanalysewaage)
+
+/** Alle auswertbaren Koerpermetriken – Basis fuer Eingabeformular und Diagramme. */
+export const BODY_METRICS = [
+  { key: 'weight', label: 'Gewicht', unit: 'kg', group: 'Körperanalyse', decimals: 1 },
+  { key: 'bodyFat', label: 'Körperfett', unit: '%', group: 'Körperanalyse', decimals: 1 },
+  { key: 'muscle', label: 'Muskelmasse', unit: 'kg', group: 'Körperanalyse', decimals: 1 },
+  { key: 'water', label: 'Wasser', unit: '%', group: 'Körperanalyse', decimals: 1 },
+  { key: 'bone', label: 'Knochenmasse', unit: 'kg', group: 'Körperanalyse', decimals: 1 },
+  { key: 'waist', label: 'Taille', unit: 'cm', group: 'Umfänge', decimals: 1 },
+  { key: 'chest', label: 'Brust', unit: 'cm', group: 'Umfänge', decimals: 1 },
+  { key: 'arm', label: 'Arm', unit: 'cm', group: 'Umfänge', decimals: 1 },
+  { key: 'thigh', label: 'Oberschenkel', unit: 'cm', group: 'Umfänge', decimals: 1 },
+  { key: 'hips', label: 'Hüfte', unit: 'cm', group: 'Umfänge', decimals: 1 },
+];
+
+/** BMI aus Gewicht (kg) und Koerpergroesse (cm). */
+export function calcBmi(weightKg, heightCm) {
+  if (!weightKg || !heightCm) return null;
+  const m = heightCm / 100;
+  return weightKg / (m * m);
+}
+
+/** Gibt fuer eine Metrik die Zeitreihe zurueck ('bmi' wird berechnet). */
+export function bodySeries(metricKey) {
+  const entries = getBodyEntries();
+  const { heightCm } = getSettings();
+  const out = [];
+  for (const e of entries) {
+    let value;
+    if (metricKey === 'bmi') value = calcBmi(e.weight, heightCm);
+    else value = e[metricKey];
+    if (value != null && !Number.isNaN(value)) out.push({ date: e.date, value: Number(value) });
+  }
+  return out;
+}
 
 export function getBodyEntries() {
   return read(KEYS.bodyEntries, []).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function getLatestBodyEntry() {
+  const list = getBodyEntries();
+  return list.length ? list[list.length - 1] : null;
+}
+
+/** Letztes erfasstes Koerpergewicht (fuer Kalorienrechner). */
+export function getLatestWeight() {
+  const withWeight = getBodyEntries().filter((e) => e.weight != null);
+  return withWeight.length ? withWeight[withWeight.length - 1].weight : null;
 }
 
 export function saveBodyEntry(entry) {
@@ -499,7 +548,25 @@ const DEFAULT_SETTINGS = {
   units: 'kg', // 'kg' | 'lb'
   defaultRest: 90,
   userName: '',
+  // Profil – Basis fuer BMI und Kalorienbedarf
+  heightCm: null,
+  birthDate: '',      // YYYY-MM-DD
+  sex: '',            // 'male' | 'female' | ''
+  dailyActivity: 'sedentary', // Alltagsaktivitaet OHNE Training
 };
+
+/** Alltagsaktivitaet (ohne Training – das kommt separat aus dem Wochenplan dazu). */
+export const DAILY_ACTIVITY_LEVELS = [
+  { key: 'sedentary', label: 'Überwiegend sitzend', factor: 1.2, hint: 'Bürojob, wenig Bewegung im Alltag' },
+  { key: 'light', label: 'Leicht aktiv', factor: 1.375, hint: 'etwas Gehen, Haushalt, Wege zu Fuß' },
+  { key: 'moderate', label: 'Aktiv', factor: 1.55, hint: 'viel auf den Beinen' },
+  { key: 'high', label: 'Sehr aktiv', factor: 1.725, hint: 'körperliche Arbeit' },
+];
+
+/** true, wenn alle fuer den Kalorienrechner noetigen Profildaten vorliegen. */
+export function hasCompleteProfile(settings = getSettings()) {
+  return !!(settings.heightCm && settings.birthDate && settings.sex);
+}
 
 export function getSettings() {
   return { ...DEFAULT_SETTINGS, ...read(KEYS.settings, {}) };
@@ -526,6 +593,7 @@ export async function exportAllData() {
     bodyEntries: getBodyEntries(),
     settings: getSettings(),
     calendarEntries: getCalendarEntries(),
+    weeklyPlan: getWeeklyPlan(),
     photos,
   };
 }
@@ -538,6 +606,7 @@ export async function importAllData(data) {
   if (data.bodyEntries) write(KEYS.bodyEntries, data.bodyEntries);
   if (data.settings) write(KEYS.settings, data.settings);
   if (data.calendarEntries) write(KEYS.calendarEntries, data.calendarEntries);
+  if (data.weeklyPlan) write(KEYS.weeklyPlan, data.weeklyPlan);
   if (Array.isArray(data.photos)) {
     for (const p of data.photos) await putPhoto(p);
   }
@@ -660,6 +729,96 @@ export function createDeloadWeek(anyDateInWeek, note = 'Deload-Woche') {
 export function isDeloadWeek(anyDateInWeek) {
   const monday = mondayOfWeekKey(anyDateInWeek);
   return getCalendarEntriesForDate(monday).some((e) => e.type === 'deload');
+}
+
+/* =========================================================
+   Wochenplan – wiederkehrende Trainingswoche (Mo–So)
+   Dient zwei Zwecken: (1) traegt sich automatisch in den Kalender ein,
+   (2) liefert den Trainingsumfang fuer den Kalorienbedarf.
+   ========================================================= */
+// Plan: { days: [ {type:'workout'|'rest', routineId|null}, ...7x ], autoFill: bool, weeksAhead: number }
+
+export const WEEKDAY_LABELS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+
+function emptyWeeklyPlan() {
+  return {
+    autoFill: true,
+    weeksAhead: 8,
+    days: Array.from({ length: 7 }, () => ({ type: 'rest', routineId: null })),
+  };
+}
+
+export function getWeeklyPlan() {
+  const stored = read(KEYS.weeklyPlan, null);
+  if (!stored) return emptyWeeklyPlan();
+  const base = emptyWeeklyPlan();
+  return {
+    ...base,
+    ...stored,
+    days: base.days.map((d, i) => ({ ...d, ...(stored.days?.[i] || {}) })),
+  };
+}
+
+export function saveWeeklyPlan(plan) {
+  write(KEYS.weeklyPlan, plan);
+  return plan;
+}
+
+export function weeklyPlanHasWorkouts(plan = getWeeklyPlan()) {
+  return plan.days.some((d) => d.type === 'workout' && d.routineId);
+}
+
+/**
+ * Traegt den Wochenplan fuer die kommenden Wochen in den Kalender ein.
+ * Alte, noch nicht absolvierte Plan-Eintraege (source 'weeklyPlan') ab heute
+ * werden vorher entfernt, damit Planaenderungen sauber durchschlagen.
+ * Manuell angelegte Eintraege bleiben unangetastet.
+ */
+export function syncWeeklyPlanToCalendar(plan = getWeeklyPlan(), fromDate = null) {
+  const start = fromDate || todayDateKey();
+  const all = getCalendarEntries();
+  const kept = all.filter((e) => !(e.source === 'weeklyPlan' && e.date >= start));
+
+  const created = [];
+  if (plan.autoFill) {
+    const monday = mondayOfWeekKey(start);
+    for (let week = 0; week < (plan.weeksAhead || 8); week++) {
+      plan.days.forEach((slot, idx) => {
+        if (slot.type !== 'workout' || !slot.routineId) return;
+        const date = addDaysToDateKey(monday, week * 7 + idx);
+        if (date < start) return;
+        const routine = getRoutineById(slot.routineId);
+        if (!routine) return;
+        // kein doppelter Eintrag, wenn an dem Tag dieselbe Routine schon manuell geplant ist
+        const dup = kept.some((e) => e.date === date && e.type === 'workout' && e.routineId === slot.routineId);
+        if (dup) return;
+        created.push({
+          id: uid(), createdAt: nowIso(), source: 'weeklyPlan',
+          type: 'workout', date, routineId: routine.id, routineName: routine.name, note: '',
+        });
+      });
+    }
+  }
+
+  write(KEYS.calendarEntries, [...kept, ...created]);
+  return created.length;
+}
+
+/** Tagesschluessel ohne Import-Zyklus (lokales Datum). */
+function todayDateKey() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+}
+
+/** Was ist laut Wochenplan an einem bestimmten Datum vorgesehen? */
+export function plannedForDate(dateKey, plan = getWeeklyPlan()) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const weekday = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // Mo = 0
+  const slot = plan.days[weekday];
+  if (!slot || slot.type !== 'workout' || !slot.routineId) return null;
+  const routine = getRoutineById(slot.routineId);
+  return routine ? { routine, weekday } : null;
 }
 
 /* =========================================================

@@ -115,6 +115,70 @@ export function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
 }
 
+/** Alter in Jahren aus einem Geburtsdatum (YYYY-MM-DD). */
+export function ageFromBirthDate(birthDate, today = new Date()) {
+  if (!birthDate) return null;
+  const [y, m, d] = birthDate.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  let age = today.getFullYear() - y;
+  const hadBirthday = today.getMonth() + 1 > m || (today.getMonth() + 1 === m && today.getDate() >= d);
+  if (!hadBirthday) age--;
+  return age >= 0 && age < 130 ? age : null;
+}
+
+/* =========================================================
+   Zeitreihen-Aggregation fuer Diagramme
+   'day'   -> Rohwerte (ein Punkt je Messung)
+   'week'  -> Mittelwert je Kalenderwoche (Mo-So)
+   'month' -> Mittelwert je Monat
+   'year'  -> Mittelwert je Jahr
+   Bei Koerperdaten schwanken Tageswerte stark; die gemittelten
+   Zeitraeume zeigen den Trend deutlich ruhiger.
+   ========================================================= */
+
+export const GRANULARITIES = [
+  { key: 'day', label: 'Tag' },
+  { key: 'week', label: 'Woche' },
+  { key: 'month', label: 'Monat' },
+  { key: 'year', label: 'Jahr' },
+];
+
+function bucketKeyFor(dateKey, granularity) {
+  if (granularity === 'week') return mondayOfWeekKey(dateKey);
+  if (granularity === 'month') return dateKey.slice(0, 7) + '-01';
+  if (granularity === 'year') return dateKey.slice(0, 4) + '-01-01';
+  return dateKey;
+}
+
+/**
+ * @param {{date:string, value:number}[]} points  nach Datum sortiert
+ * @param {'day'|'week'|'month'|'year'} granularity
+ * @returns {{date:string, value:number, count:number}[]}
+ */
+export function aggregateSeries(points, granularity = 'day') {
+  if (granularity === 'day') return points.map((p) => ({ ...p, count: 1 }));
+  const buckets = new Map();
+  for (const p of points) {
+    const key = bucketKeyFor(p.date, granularity);
+    if (!buckets.has(key)) buckets.set(key, { date: key, sum: 0, count: 0 });
+    const b = buckets.get(key);
+    b.sum += p.value;
+    b.count++;
+  }
+  return [...buckets.values()]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((b) => ({ date: b.date, value: b.sum / b.count, count: b.count }));
+}
+
+/** Achsenbeschriftung passend zur Granularitaet. */
+export function formatAxisLabel(dateKey, granularity) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  if (granularity === 'year') return String(y);
+  if (granularity === 'month') return `${MONTHS[m - 1]} ${String(y).slice(2)}`;
+  if (granularity === 'week') return `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.`;
+  return `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.`;
+}
+
 export function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

@@ -18,6 +18,9 @@ export function render() {
   setTitle('Kalender');
   setBack(null);
   setActions(`
+    <button class="icon-btn" id="cal-weekplan" aria-label="Wochenplan">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><circle cx="19" cy="18" r="2"/></svg>
+    </button>
     <button class="icon-btn" id="cal-toggle-mode" aria-label="Ansicht wechseln">
       ${mode === 'month'
         ? '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/></svg>'
@@ -27,6 +30,7 @@ export function render() {
 
   draw();
 
+  document.getElementById('cal-weekplan').addEventListener('click', () => { location.hash = '#/weekplan'; });
   document.getElementById('cal-toggle-mode').addEventListener('click', () => {
     mode = mode === 'month' ? 'week' : 'month';
     render();

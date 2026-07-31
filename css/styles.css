@@ -351,13 +351,43 @@ textarea.input { resize: vertical; min-height: 60px; }
 
 /* ---------- Simple line/bar chart svg helpers ---------- */
 .chart-wrap { width: 100%; overflow-x: auto; }
+.chart-svg { width: 100%; height: auto; display: block; }
 .chart-svg text { font-size: 9px; fill: var(--text-faint); }
+.chart-svg--large text { font-size: 12px; }
+.chart-svg--large .axis-label { font-size: 12px; }
+.chart-svg--large .chart-value { font-size: 11px; font-weight: 700; fill: var(--text-dim); }
+.chart-axis { stroke: var(--text-faint); stroke-width: 1; opacity: .5; }
+.axis-unit { font-size: 10px; font-weight: 700; fill: var(--text-dim); }
 .chart-grid line { stroke: var(--border); stroke-width: 1; }
 .chart-line { fill: none; stroke: var(--accent); stroke-width: 2.5; }
 .chart-area { fill: var(--accent); opacity: .12; }
 .chart-dot { fill: var(--accent); }
 .chart-bar { fill: var(--accent); }
 .chart-bar.today { fill: var(--accent-strong); }
+
+/* ---------- Metrik-Karten (Koerperdaten) ---------- */
+.metric-card__head { cursor: pointer; }
+.metric-card__head:active { opacity: .7; }
+.metric-card__head svg { transition: transform .15s ease; }
+.metric-card__gran { margin-top: 12px; gap: 6px; }
+.metric-card__gran .chip { padding: 5px 11px; font-size: .76rem; }
+.metric-card__chart { margin-top: 10px; }
+.metric-card__chart--mini { opacity: .9; }
+.chart-fullscreen { width: 100%; overflow-x: auto; }
+
+/* ---------- Kalorienbedarf ---------- */
+.kcal-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.kcal-row:last-child { border-bottom: none; }
+.kcal-row--main { background: var(--bg-input); margin: 0 -8px; padding: 10px 8px; border-radius: var(--radius-s); border-bottom: none; }
+.kcal-value { font-weight: 800; font-size: 1rem; white-space: nowrap; }
+.kcal-value--warn { color: var(--warn); }
+
+/* ---------- Wochenplan ---------- */
+.weekplan-day--active { border-color: var(--accent); }
+
+/* ---------- Heute-geplant-Karte (Start) ---------- */
+.today-plan { border-color: var(--accent); }
+.today-plan--done { border-color: var(--border); opacity: .75; }
 
 /* ---------- Photo grid (Fortschrittsfotos) ---------- */
 .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }

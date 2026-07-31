@@ -11,6 +11,7 @@ import * as history from './views/history.js';
 import * as stats from './views/stats.js';
 import * as body from './views/body.js';
 import * as calendar from './views/calendar.js';
+import * as weekplan from './views/weekplan.js';
 import * as more from './views/more.js';
 
 applyTheme(getSettings());
@@ -24,6 +25,7 @@ addRoute('/history', 'stats', () => history.renderList());
 addRoute('/history/:id', 'stats', (p) => history.renderDetail(p));
 addRoute('/body', 'body', () => body.render());
 addRoute('/calendar', 'calendar', () => calendar.render());
+addRoute('/weekplan', 'calendar', () => weekplan.render());
 addRoute('/more', 'more', () => more.render());
 
 startRouter();
