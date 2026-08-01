@@ -1,6 +1,6 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
-  getSessions, getRoutines, getActiveSession, startSessionFromRoutine, sessionVolume, getSettings,
+  getSessions, getRoutines, getActiveSession, startSessionFromRoutine, startRetroactiveSession, sessionVolume, getSettings,
   getCalendarEntriesForDate, saveCalendarEntry, deleteCalendarEntry, deleteCalendarGroup, createDeloadWeek,
   getWeeklyPlan, syncWeeklyPlanToCalendar,
 } from '../db.js';
@@ -253,6 +253,7 @@ function openDayModal(dateKey) {
       `}
 
       <div class="stack" style="margin-top:16px">
+        ${dateKey <= todayKey() ? `<button class="btn btn-primary" id="cal-log-retro" ${getActiveSession() ? 'disabled' : ''}>✓ Workout nachtragen (bereits absolviert)</button>` : ''}
         <button class="btn btn-ghost" id="cal-add-entry">+ Workout / Notiz planen</button>
         ${!deloadEntry ? `<button class="btn btn-ghost" id="cal-set-deload">Diese Woche als Deload markieren</button>` : ''}
       </div>
@@ -300,6 +301,10 @@ function openDayModal(dateKey) {
     h.sheet.querySelector('#cal-add-entry')?.addEventListener('click', () => {
       openPlanEntryModal(dateKey, () => refresh(h));
     });
+    h.sheet.querySelector('#cal-log-retro')?.addEventListener('click', () => {
+      if (getActiveSession()) { toast('Es läuft bereits ein Training'); return; }
+      openRetroLogModal(dateKey, h);
+    });
   }
 
   function refresh(h) {
@@ -307,6 +312,34 @@ function openDayModal(dateKey) {
     wire(h);
     draw();
   }
+}
+
+/* ---------- Workout nachtragen (bereits real absolviert, nur vergessen einzutragen) ---------- */
+
+function openRetroLogModal(dateKey, dayModalHandle) {
+  const routines = getRoutines();
+  if (!routines.length) { toast('Noch keine Routinen vorhanden'); return; }
+
+  const handle = openModal(`
+    <h3 class="modal-title">Workout nachtragen · ${formatDateKey(dateKey, { withWeekday: true })}</h3>
+    <p class="faint" style="margin-bottom:14px">
+      Für Workouts, die du real gemacht, aber vergessen hast einzutragen. Du landest gleich in der
+      normalen Trainingsansicht für dieses Datum – dort reicht "Komplettes Workout abhaken", wenn du
+      alles wie geplant absolviert hast, oder du trägst einzelne Sätze wie tatsächlich gemacht ein.
+    </p>
+    <div class="stack">
+      ${routines.map((r) => `<button class="btn btn-ghost" data-retro-routine="${r.id}">${escapeHtml(r.name)}</button>`).join('')}
+    </div>
+  `, { center: true });
+
+  handle.sheet.querySelectorAll('[data-retro-routine]').forEach((b) => b.addEventListener('click', () => {
+    const routine = routines.find((r) => r.id === b.dataset.retroRoutine);
+    if (!routine) return;
+    startRetroactiveSession(routine, dateKey);
+    handle.close();
+    dayModalHandle.close();
+    location.hash = '#/session';
+  }));
 }
 
 /* ---------- Eintrag planen (Workout / Ruhetag / Notiz) ---------- */

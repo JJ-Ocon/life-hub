@@ -600,12 +600,28 @@ function toSessionAlternative(alt) {
 }
 
 export function startSessionFromRoutine(routine) {
+  return startSessionInternal(routine, { startedAt: nowIso(), retro: false });
+}
+
+/**
+ * Startet eine Session rueckwirkend fuer ein bereits vergangenes (oder heutiges)
+ * Datum – fuer Workouts, die real gemacht, aber vergessen wurden einzutragen.
+ * Laeuft danach durch die ganz normale Trainings-Oberfluehrung (inkl. "Alle
+ * abhaken" fuer den schnellen Fall). Nur die Startzeit unterscheidet sich.
+ */
+export function startRetroactiveSession(routine, dateKey, startTime = '09:00') {
+  const startedAt = new Date(`${dateKey}T${startTime}:00`).toISOString();
+  return startSessionInternal(routine, { startedAt, retro: true });
+}
+
+function startSessionInternal(routine, { startedAt, retro }) {
   const session = {
     id: uid(),
     routineId: routine.id,
     routineName: routine.name,
-    startedAt: nowIso(),
+    startedAt,
     endedAt: null,
+    retro,
     comment: '',
     exercises: routine.exercises.map((re) => {
       const alternatives = slotAlternatives(re).map(toSessionAlternative);

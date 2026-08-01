@@ -6,6 +6,7 @@ import {
   RPE_SCALE, RECOVERY_LEVELS, cardioFieldDef, cardioRecords,
 } from '../db.js';
 import { analyzeExercise, platesForWeight, warmupSets } from '../coach.js';
+import { estimateRoutineLoad } from '../nutrition.js';
 import { openModal, confirmDialog, toast, toastWithUndo } from '../ui.js';
 import { formatDuration, estimate1RM, formatNum, nowIso, escapeHtml, todayKey } from '../utils.js';
 
@@ -629,7 +630,16 @@ export function render() {
     const recovery = await askRecovery();
     if (recovery) session.recovery = recovery;
 
-    session.endedAt = nowIso();
+    // Bei nachtraeglich erfassten Workouts (retro) waere "jetzt" als Endzeit
+    // falsch (Start liegt in der Vergangenheit) - stattdessen aus den erfassten
+    // Saetzen eine plausible Dauer schaetzen.
+    if (session.retro) {
+      const load = estimateRoutineLoad({ exercises: session.exercises }, 75);
+      const minutes = load.totalMin > 0 ? load.totalMin : 60;
+      session.endedAt = new Date(new Date(session.startedAt).getTime() + minutes * 60000).toISOString();
+    } else {
+      session.endedAt = nowIso();
+    }
     saveFinishedSession(session);
     clearActiveSession();
 

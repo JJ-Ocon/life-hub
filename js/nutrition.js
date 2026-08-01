@@ -67,7 +67,8 @@ export function estimateRoutineLoad(routine, weightKg) {
 
     let exerciseSeconds = 0;
     for (const s of sets) {
-      exerciseSeconds += re.mode === 'time' ? (Number(s.seconds) || 0) : SECONDS_PER_WORKING_SET;
+      // 'time' und 'cardio' tragen ihre Dauer direkt in Sekunden, sonst Pauschale je Satz
+      exerciseSeconds += (re.mode === 'time' || re.mode === 'cardio') ? (Number(s.seconds) || 0) : SECONDS_PER_WORKING_SET;
     }
     workSeconds += exerciseSeconds;
     kcal += kcalFor(met, exerciseSeconds / 60, weightKg);
