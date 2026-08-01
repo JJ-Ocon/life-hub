@@ -49,6 +49,11 @@ function tickSessionBar() {
 }
 setInterval(tickSessionBar, 1000);
 window.addEventListener('hashchange', tickSessionBar);
+// Mobile Browser drosseln setInterval gerne im Hintergrund/bei gesperrtem
+// Bildschirm - beim Zurueckkehren sofort auf die tatsaechlich verstrichene
+// Zeit nachziehen, statt auf den naechsten Intervall-Tick zu warten.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tickSessionBar(); });
+window.addEventListener('focus', tickSessionBar);
 tickSessionBar();
 
 /* ---------- Service Worker (Offline-Faehigkeit) ---------- */

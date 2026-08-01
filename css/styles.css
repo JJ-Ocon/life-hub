@@ -153,6 +153,9 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   padding: 8px 14px; font-size: .85rem; font-weight: 600;
   flex-shrink: 0;
 }
+/* Ohne diese Regel gewinnt die obige .session-bar-Klasse gegen die
+   Browser-Standardregel fuer [hidden] -> die Leiste bliebe immer sichtbar. */
+.session-bar[hidden] { display: none; }
 .session-bar__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 1.4s ease-in-out infinite; }
 .session-bar__text { flex: 1; }
 .session-bar__time { font-variant-numeric: tabular-nums; }
