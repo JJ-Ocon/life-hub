@@ -1,14 +1,21 @@
 /* =========================================================
    Trainings-Auswertung je Uebung: Progression und reaktives Deloaden.
 
-   Ansatz nach Mike Israetel / Menno Henselmans: Deloads werden nicht
-   starr nach Kalender eingelegt, sondern reaktiv – wenn Leistung,
-   Anstrengungsempfinden und Erholung tatsaechlich darauf hindeuten.
-   Und dann gezielt fuer die betroffene Uebung, nicht pauschal fuer
-   das ganze Programm.
+   Ansatz nach Mike Israetel / Menno Henselmans (RP-Podcast): Deloads
+   werden nicht starr nach Kalender eingelegt, sondern in eskalierenden
+   Stufen, je nachdem wie deutlich und wie lange sich Ermuedung zeigt:
+   Stufe 0 (live im Workout) – ein Satz faellt deutlich schwaecher aus
+             als geplant -> restliche Saetze dieser Uebung heute streichen
+             (siehe workout-session.js, direkt beim Abhaken eines Satzes).
+   Stufe 1 (2 Einheiten in Folge schwaecher) – "das ist definitiv ein
+             Trend" -> moderate Lastreduktion, nur fuer diese Uebung.
+   Stufe 2 (3+ Einheiten in Folge schwaecher, Reduktion hat nicht
+             gereicht) – Recovery-Halbwoche: die ganze betroffene
+             Muskelgruppe fuer rund eine halbe Mesozyklus-Laenge auf
+             ca. halbes Volumen/Last/Wiederholungen setzen.
    ========================================================= */
 
-import { exerciseHistory, getSettings, getExerciseById, RECOVERY_LEVELS } from './db.js';
+import { exerciseHistory, getSettings, getExerciseById, getExercises, RECOVERY_LEVELS } from './db.js';
 import { estimate1RM, daysBetween } from './utils.js';
 
 /** Bestes geschaetztes 1RM einer Einheit. */
@@ -30,15 +37,36 @@ function volume(sets) {
 const RECOVERY_SCORE = Object.fromEntries(RECOVERY_LEVELS.map((l) => [l.key, l.score]));
 
 /**
+ * Wie viele der juengsten Einheiten in Folge unter dem bis dahin
+ * erreichten Bestwert lagen. e1rms muss neueste zuerst sortiert sein.
+ * Ein einzelner schwacher Ausreisser zaehlt nicht als Trend; erst wenn
+ * es mehrfach hintereinander passiert.
+ */
+function declineStreak(e1rmsNewestFirst) {
+  const asc = e1rmsNewestFirst.slice().reverse(); // aelteste zuerst
+  let peak = -Infinity;
+  let streak = 0;
+  for (let i = 0; i < asc.length; i++) {
+    const v = asc[i];
+    if (i > 0 && v < peak * 0.97) streak++;
+    else streak = 0;
+    peak = Math.max(peak, v);
+  }
+  return streak;
+}
+
+/**
  * Analysiert eine Uebung anhand ihrer letzten Einheiten.
  *
  * @returns {{
- *   status: 'new'|'progressing'|'watch'|'deload',
+ *   status: 'new'|'progressing'|'watch'|'deload'|'recovery-half-week',
  *   headline: string,
  *   reasons: string[],
- *   suggestion: null | {type:'increase'|'hold'|'deload', weight:number|null, factor?:number, text:string},
+ *   suggestion: null | {type:'increase'|'hold'|'deload'|'half_week', weight:number|null, factor?:number, text:string},
  *   lastWeight: number|null,
- *   sessionsAnalysed: number
+ *   sessionsAnalysed: number,
+ *   muscleGroup?: string|null,
+ *   affectedExercises?: string[]
  * }}
  */
 export function analyzeExercise(exerciseId) {
@@ -125,6 +153,37 @@ export function analyzeExercise(exerciseId) {
   const exercise = getExerciseById(exerciseId);
   const name = exercise?.name || 'Übung';
 
+  // --- Stufe 2: Trend haelt schon seit 3+ Einheiten an – eine kleine
+  // Lastreduktion allein hat das offenbar nicht geloest. Jetzt geht es
+  // um die ganze Muskelgruppe, nicht mehr nur um diese eine Uebung.
+  const streak = declineStreak(e1rms);
+  if (streak >= 3) {
+    const { muscleGroup, siblings } = muscleGroupSiblings(exerciseId);
+    return {
+      status: 'recovery-half-week',
+      headline: `${name}: Recovery-Halbwoche sinnvoll`,
+      reasons: [...reasons, `Leistung ist jetzt ${streak} Einheiten in Folge gesunken – eine einzelne Lastreduktion reicht hier nicht mehr`],
+      lastWeight,
+      sessionsAnalysed: history.length,
+      muscleGroup,
+      affectedExercises: siblings.map((s) => s.name),
+      suggestion: {
+        type: 'half_week',
+        weight: null,
+        text: muscleGroup
+          ? `Für die nächste knappe Woche alle ${muscleGroup}-Übungen auf ungefähr die Hälfte bei Last, Volumen und Wiederholungen setzen – so leicht, dass es sich wie ein Aufwärmen anfühlt. Danach zur normalen Belastung zurückkehren.`
+          : 'Für die nächste knappe Woche bei dieser Übung ungefähr auf die Hälfte bei Last, Volumen und Wiederholungen gehen. Danach zur normalen Belastung zurückkehren.',
+      },
+    };
+  }
+
+  // --- Stufe 1: zwei Einheiten in Folge schwaecher ist laut Israetel/
+  // Henselmans allein schon ein klarer Trend, unabhaengig von anderen Signalen.
+  if (streak === 2) {
+    fatigueSignals += 2;
+    reasons.push('Leistung ist jetzt zwei Einheiten in Folge gesunken – das ist ein klarer Trend');
+  }
+
   // --- Entscheidung
   if (fatigueSignals >= 3 || (declining && fatigueSignals >= 2)) {
     const factor = 0.85; // ca. 15 % weniger Last
@@ -201,6 +260,24 @@ function roundToIncrement(weight, settings) {
 }
 
 /**
+ * Andere Uebungen derselben Muskelgruppe, die zuletzt tatsaechlich
+ * trainiert wurden – das sind die von einer Recovery-Halbwoche
+ * mitbetroffenen Uebungen.
+ */
+export function muscleGroupSiblings(exerciseId, { withinDays = 21 } = {}) {
+  const exercise = getExerciseById(exerciseId);
+  if (!exercise) return { muscleGroup: null, siblings: [] };
+  const group = exercise.muscleGroup;
+  const siblings = getExercises()
+    .filter((e) => e.id !== exerciseId && e.muscleGroup === group)
+    .filter((e) => {
+      const d = daysSinceLastSession(e.id);
+      return d != null && d <= withinDays;
+    });
+  return { muscleGroup: group, siblings };
+}
+
+/**
  * Uebersicht ueber alle Uebungen, die Aufmerksamkeit brauchen.
  * @returns {{exerciseId:string, name:string, analysis:object}[]}
  */
@@ -208,15 +285,12 @@ export function exercisesNeedingAttention(exerciseIds) {
   const out = [];
   for (const id of exerciseIds) {
     const analysis = analyzeExercise(id);
-    if (analysis.status === 'deload' || analysis.status === 'watch') {
+    if (['deload', 'watch', 'recovery-half-week'].includes(analysis.status)) {
       out.push({ exerciseId: id, name: getExerciseById(id)?.name || 'Übung', analysis });
     }
   }
-  // Deload zuerst, dann nach Anzahl der Signale
-  return out.sort((a, a2) => {
-    const rank = (x) => (x.analysis.status === 'deload' ? 0 : 1);
-    return rank(a) - rank(a2) || a2.analysis.reasons.length - a.analysis.reasons.length;
-  });
+  const rank = (x) => (x.analysis.status === 'recovery-half-week' ? 0 : x.analysis.status === 'deload' ? 1 : 2);
+  return out.sort((a, b) => rank(a) - rank(b) || b.analysis.reasons.length - a.analysis.reasons.length);
 }
 
 /* =========================================================

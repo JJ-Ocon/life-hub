@@ -1,7 +1,7 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
   getActiveSession, setActiveSession, clearActiveSession, saveFinishedSession, allSetsForExercise,
-  sessionVolume, getSettings, getCalendarEntriesForDate, deleteCalendarEntry,
+  sessionVolume, getSettings, getCalendarEntriesForDate, deleteCalendarEntry, getExerciseById, getExercises,
   RPE_SCALE, RECOVERY_LEVELS, cardioFieldDef, cardioRecords,
 } from '../db.js';
 import { analyzeExercise, platesForWeight, warmupSets } from '../coach.js';
@@ -14,6 +14,12 @@ let openNotes = new Set(); // Indizes der Uebungen mit sichtbarem Notizfeld
 let cueDismissed = false; // Atmung/Bracing-Banner fuer diesen Besuch ausgeblendet?
 // Empfehlungen werden einmal beim Oeffnen berechnet, nicht bei jedem Neuzeichnen
 let adviceByExercise = new Map();
+// Uebungen, fuer die die Live-Nachfrage (Stufe 0) diese Sitzung schon beantwortet wurde
+let liveCheckHandled = new Set();
+
+function exerciseMuscleGroup(exerciseId) {
+  return getExerciseById(exerciseId)?.muscleGroup || null;
+}
 
 export function render() {
   const session = getActiveSession();
@@ -27,6 +33,7 @@ export function render() {
   session.exercises.forEach((ex) => { ex.note = ex.note || ''; ex.comment = ex.comment || ''; });
   openNotes = new Set();
   cueDismissed = false;
+  liveCheckHandled = new Set();
 
   // Empfehlungen aus der Historie – nur fuer Uebungen mit Vorgeschichte
   adviceByExercise = new Map();
@@ -34,6 +41,26 @@ export function render() {
     if (adviceByExercise.has(ex.exerciseId)) continue;
     const analysis = analyzeExercise(ex.exerciseId);
     if (analysis.suggestion) adviceByExercise.set(ex.exerciseId, analysis);
+  }
+  // Recovery-Halbwoche betrifft die ganze Muskelgruppe und ist sicherheitsrelevanter
+  // als eine einzelne Progressions-/Beobachten-Empfehlung – sie ueberschreibt diese
+  // bewusst fuer alle Uebungen derselben Gruppe in dieser Sitzung. Die ausloesende
+  // Uebung muss dafuer nicht selbst Teil dieser Session sein.
+  for (const ex of session.exercises) {
+    if (adviceByExercise.get(ex.exerciseId)?.status === 'recovery-half-week') continue;
+    const group = exerciseMuscleGroup(ex.exerciseId);
+    if (!group) continue;
+    const sibling = getExercises().find((e) => e.id !== ex.exerciseId && e.muscleGroup === group
+      && analyzeExercise(e.id).status === 'recovery-half-week');
+    if (sibling) {
+      const siblingAnalysis = analyzeExercise(sibling.id);
+      adviceByExercise.set(ex.exerciseId, {
+        ...siblingAnalysis,
+        headline: `${ex.exerciseName}: Teil der Recovery-Halbwoche`,
+        reasons: [`Gehört wie ${sibling.name} zur Muskelgruppe ${group}`],
+        affectedExercises: [],
+      });
+    }
   }
 
   setBack(async () => {
@@ -164,8 +191,8 @@ export function render() {
   /** Hinweis-Box mit Progressions- bzw. Deload-Empfehlung. */
   function adviceHtml(advice, i) {
     if (!advice.suggestion) return '';
-    const kind = advice.suggestion.type; // 'increase' | 'hold' | 'deload'
-    const icon = kind === 'increase' ? '📈' : kind === 'deload' ? '🔄' : '⏸️';
+    const kind = advice.suggestion.type; // 'increase' | 'hold' | 'deload' | 'half_week'
+    const icon = kind === 'increase' ? '📈' : kind === 'deload' ? '🔄' : kind === 'half_week' ? '🛑' : '⏸️';
     return `
       <div class="advice advice--${kind}">
         <div class="row row--between">
@@ -175,6 +202,9 @@ export function render() {
           </button>
         </div>
         <p class="advice__text">${escapeHtml(advice.suggestion.text)}</p>
+        ${kind === 'half_week' && advice.affectedExercises?.length ? `
+          <p class="advice__text faint">Betrifft auch: ${escapeHtml(advice.affectedExercises.join(', '))}</p>
+        ` : ''}
         ${advice.suggestion.weight ? `
           <button class="btn btn-ghost btn-sm" data-apply-advice="${i}" style="margin-top:8px">
             ${formatNum(advice.suggestion.weight)} ${settings.units} für alle Sätze übernehmen
@@ -211,6 +241,7 @@ export function render() {
         if (s.done) {
           startRestTimer(ex.restSeconds || settings.defaultRest, ex.exerciseName);
           if (navigator.vibrate) navigator.vibrate(15);
+          maybeAskCancelRemaining(exIdx, setIdx);
         }
         draw();
       });
@@ -407,6 +438,42 @@ export function render() {
         toast(`${warmups.length} Aufwärmsätze eingefügt`);
       });
       handle.sheet.querySelectorAll('[data-close-modal]').forEach((b) => b.addEventListener('click', handle.close));
+    }
+  }
+
+  /**
+   * Stufe 0 der Deload-Eskalation: faellt ein Satz deutlich schwaecher aus als
+   * geplant, fragt die App direkt, ob die restlichen Saetze dieser Uebung
+   * heute gestrichen werden sollen – statt trotzdem durchzuziehen.
+   */
+  async function maybeAskCancelRemaining(exIdx, setIdx) {
+    if (liveCheckHandled.has(exIdx)) return;
+    const ex = session.exercises[exIdx];
+    if (ex.mode !== 'reps') return;
+    const s = ex.sets[setIdx];
+    if (s.isWarmup || !s.targetReps) return;
+
+    const missedReps = Number(s.reps) < s.targetReps - 1;
+    const failedRpe = s.rpe === 10;
+    if (!missedReps && !failedRpe) return;
+
+    const remaining = ex.sets.filter((x, i) => i > setIdx && !x.isWarmup && !x.done);
+    if (!remaining.length) return;
+
+    liveCheckHandled.add(exIdx);
+    const reason = missedReps
+      ? `Nur ${s.reps} statt ${s.targetReps} Wiederholungen geschafft`
+      : 'Satz bei RPE 10 (Muskelversagen)';
+    const ok = await confirmDialog(
+      `${ex.exerciseName}: Rest streichen?`,
+      `${reason}. Israetel/Henselmans empfehlen in so einem Fall, die restlichen ${remaining.length} Sätze für heute einfach zu streichen, statt sich durchzukämpfen.`,
+      'Sätze streichen', false,
+    );
+    if (ok) {
+      ex.sets = ex.sets.filter((x, i) => !(i > setIdx && !x.isWarmup && !x.done));
+      persist();
+      draw();
+      toast('Restliche Sätze gestrichen');
     }
   }
 

@@ -200,21 +200,33 @@ function attentionSectionHtml(exerciseIds) {
     `;
   }
 
+  const statusMeta = {
+    'recovery-half-week': { icon: '🛑', label: 'Recovery-Halbwoche' },
+    deload: { icon: '🔄', label: 'Deload' },
+    watch: { icon: '⏸️', label: 'Beobachten' },
+  };
+
   return `
     <div class="section-title">Erholung & Deload</div>
     <div class="stack">
-      ${flagged.map(({ name, analysis }) => `
+      ${flagged.map(({ name, analysis }) => {
+        const meta = statusMeta[analysis.status] || statusMeta.watch;
+        return `
         <div class="card advice advice--${analysis.suggestion?.type || 'hold'}" style="margin-bottom:0">
           <div class="row row--between">
-            <span class="advice__title">${analysis.status === 'deload' ? '🔄' : '⏸️'} ${escapeHtml(name)}</span>
-            <span class="badge ${analysis.status === 'deload' ? 'badge--pr' : ''}">${analysis.status === 'deload' ? 'Deload' : 'Beobachten'}</span>
+            <span class="advice__title">${meta.icon} ${escapeHtml(name)}</span>
+            <span class="badge ${analysis.status !== 'watch' ? 'badge--pr' : ''}">${meta.label}</span>
           </div>
           ${analysis.suggestion ? `<p class="advice__text">${escapeHtml(analysis.suggestion.text)}</p>` : ''}
+          ${analysis.affectedExercises?.length ? `
+            <p class="advice__text faint">Betrifft auch: ${escapeHtml(analysis.affectedExercises.join(', '))}</p>
+          ` : ''}
           ${analysis.reasons.length ? `
             <ul class="advice__list">${analysis.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>
           ` : ''}
         </div>
-      `).join('')}
+      `;
+      }).join('')}
     </div>
   `;
 }

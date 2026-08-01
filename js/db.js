@@ -532,7 +532,14 @@ export function startSessionFromRoutine(routine) {
       cardioFields: re.cardioFields ? [...re.cardioFields] : undefined,
       note: re.note || '',
       comment: '',
-      sets: re.sets.map((s) => ({ ...s, done: false, isWarmup: false })),
+      // targetReps merkt sich die urspruengliche Vorgabe, damit man live erkennen
+      // kann, wenn ein Satz deutlich schwaecher ausfaellt als geplant.
+      sets: re.sets.map((s) => ({
+        ...s,
+        ...(re.mode === 'reps' ? { targetReps: s.reps } : {}),
+        done: false,
+        isWarmup: false,
+      })),
     })),
   };
   setActiveSession(session);

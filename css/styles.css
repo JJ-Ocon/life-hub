@@ -391,6 +391,7 @@ textarea.input { resize: vertical; min-height: 60px; }
 .advice--increase { border-left-color: var(--accent); }
 .advice--deload { border-left-color: var(--warn); }
 .advice--hold { border-left-color: var(--text-dim); }
+.advice--half_week { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--bg-input)); }
 .advice__title { font-size: .88rem; font-weight: 700; }
 .advice__text { font-size: .82rem; color: var(--text-dim); margin-top: 4px; }
 .advice__list { margin: 8px 0 0; padding-left: 18px; font-size: .8rem; color: var(--text-dim); }
