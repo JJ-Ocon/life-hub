@@ -5,8 +5,8 @@ import {
 } from '../db.js';
 import { calcCalorieNeeds, missingProfileFields } from '../nutrition.js';
 import {
-  todayKey, formatDate, formatDateShort, formatNum, uid, resizeImage,
-  aggregateSeries, GRANULARITIES,
+  todayKey, formatDate, formatDateShort, formatDateKey, formatNum, uid, resizeImage,
+  aggregateSeries, GRANULARITIES, escapeHtml,
 } from '../utils.js';
 import { lineChart } from '../charts.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
@@ -200,12 +200,12 @@ function openCalorieDetails() {
       <div class="row row--between"><span class="muted">= ohne Training</span><span>${baseWithoutTraining} kcal</span></div>
     </div>
 
-    <div class="section-title">Geplante Trainingswoche</div>
+    <div class="section-title">Geplanter Trainingszyklus</div>
     ${training.sessions === 0 ? `<p class="faint">Noch kein Wochenplan hinterlegt – ohne Plan wird kein Trainingsverbrauch eingerechnet.</p>` : `
       <div class="stack">
         ${training.days.map((d) => `
           <div class="row row--between">
-            <span class="muted">${['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][d.weekday]} · ${d.routineName}</span>
+            <span class="muted">${formatDateKey(d.date, { withWeekday: true })} · ${escapeHtml(d.routineName)}</span>
             <span>${Math.round(d.minutes)} min · ${Math.round(d.kcal)} kcal</span>
           </div>
         `).join('')}

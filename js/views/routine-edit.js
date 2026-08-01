@@ -1,5 +1,9 @@
 import { setTitle, setActions, setBack } from '../router.js';
-import { getRoutineById, saveRoutine, deleteRoutine, getExerciseById, getSettings, CARDIO_FIELDS, cardioFieldDef } from '../db.js';
+import {
+  getRoutineById, saveRoutine, deleteRoutine, getExerciseById, getSettings, CARDIO_FIELDS, cardioFieldDef,
+  getRotations, getRotationById, createRotation, addRoutineToRotation, removeRoutineFromRotation,
+  ensureSlotAlternatives, syncSlotMirror, addSlotAlternative, removeSlotAlternative,
+} from '../db.js';
 import { openExercisePicker } from './exercise-picker.js';
 import { openModal, toast, confirmDialog, promptDialog } from '../ui.js';
 import { uid, escapeHtml } from '../utils.js';
@@ -19,6 +23,7 @@ export function render({ id }) {
     setTitle(routine.name);
     const view = document.getElementById('view');
     view.innerHTML = `
+      ${rotationCardHtml()}
       <div class="stack" id="exercise-list">
         ${routine.exercises.length === 0 ? `
           <div class="empty">
@@ -43,7 +48,7 @@ export function render({ id }) {
         <div class="row row--between">
           <div class="col grow">
             <h3 class="truncate">${escapeHtml(ex?.name || 'Unbekannte Übung')}</h3>
-            <p class="faint">${re.sets.length} Sätze · Pause ${re.restSeconds}s${modeBadge(re)}</p>
+            <p class="faint">${re.sets.length} Sätze · Pause ${re.restSeconds}s${modeBadge(re)}${re.alternatives?.length > 1 ? ` · 🔀 ${re.alternatives.length} Alternativen` : ''}</p>
             ${re.note ? `<p class="exercise-note">${escapeHtml(re.note)}</p>` : ''}
           </div>
         </div>
@@ -58,6 +63,63 @@ export function render({ id }) {
     `;
   }
 
+  function rotationCardHtml() {
+    const rotation = routine.rotationId ? getRotationById(routine.rotationId) : null;
+    const pos = rotation ? rotation.sequence.indexOf(routine.id) : -1;
+    return `
+      <div class="card row row--between">
+        <div class="col grow">
+          <h3>Rotation</h3>
+          <p class="faint">${rotation
+            ? `Teil von "${escapeHtml(rotation.name)}" · Position ${pos + 1}/${rotation.sequence.length}`
+            : 'Nicht Teil einer Rotation – wird nach fixem Wochenplan-Slot verplant'}</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="rotation-edit">${rotation ? 'Ändern' : 'Zuweisen'}</button>
+      </div>
+    `;
+  }
+
+  function openRotationPicker() {
+    const rotations = getRotations();
+    const handle = openModal(`
+      <h3 class="modal-title">Rotation zuweisen</h3>
+      <p class="faint" style="margin-bottom:14px">
+        Eine Rotation ist eine Reihenfolge von Routinen (z.B. A → C → B → C), die im Wochenplan
+        einem Rotations-Slot zugewiesen wird. Verpasst du einen Termin, rutscht die Reihenfolge
+        automatisch nach, statt eine Routine zu überspringen.
+      </p>
+      <div class="stack">
+        <button class="btn ${!routine.rotationId ? 'btn-primary' : 'btn-ghost'}" data-rotation="">Keine Rotation</button>
+        ${rotations.map((r) => `
+          <button class="btn ${routine.rotationId === r.id ? 'btn-primary' : 'btn-ghost'}" data-rotation="${r.id}">
+            ${escapeHtml(r.name)} <span class="faint">(${r.sequence.length} Routinen)</span>
+          </button>
+        `).join('')}
+        <button class="btn btn-ghost" id="rotation-new">+ Neue Rotation</button>
+      </div>
+    `, { center: true });
+
+    handle.sheet.querySelectorAll('[data-rotation]').forEach((b) => b.addEventListener('click', () => {
+      const rotationId = b.dataset.rotation;
+      if (routine.rotationId && routine.rotationId !== rotationId) {
+        removeRoutineFromRotation(routine.rotationId, routine.id);
+      }
+      if (rotationId) addRoutineToRotation(rotationId, routine.id);
+      handle.close();
+      draw();
+    }));
+    handle.sheet.querySelector('#rotation-new').addEventListener('click', async () => {
+      const name = await promptDialog('Name der Rotation', { placeholder: 'z.B. Kraft A/B/C', confirmLabel: 'Anlegen' });
+      if (!name) return;
+      const rotation = createRotation(name);
+      if (routine.rotationId) removeRoutineFromRotation(routine.rotationId, routine.id);
+      addRoutineToRotation(rotation.id, routine.id);
+      handle.close();
+      toast('Rotation angelegt');
+      draw();
+    });
+  }
+
   function modeBadge(re) {
     if (re.mode === 'time') return ' · ⏱ Zeit';
     if (re.mode !== 'cardio') return '';
@@ -69,6 +131,7 @@ export function render({ id }) {
   }
 
   function wire() {
+    document.getElementById('rotation-edit').addEventListener('click', openRotationPicker);
     document.getElementById('add-exercise').addEventListener('click', () => {
       openExercisePicker((exerciseId) => {
         routine.exercises.push({
@@ -124,44 +187,77 @@ export function render({ id }) {
   function openConfigure(i) {
     const re = routine.exercises[i];
     re.mode = re.mode || 'reps';
-    const ex = getExerciseById(re.exerciseId);
-    const handle = openModal(`
-      <h3 class="modal-title">${escapeHtml(ex?.name || 'Übung')}</h3>
-      <div class="field">
-        <label>Art der Erfassung</label>
-        <div class="chip-row" id="cfg-mode-row">
-          <button class="chip ${re.mode === 'reps' ? 'active' : ''}" data-mode="reps">Gewicht × Wdh.</button>
-          <button class="chip ${re.mode === 'time' ? 'active' : ''}" data-mode="time">Zeit</button>
-          <button class="chip ${re.mode === 'cardio' ? 'active' : ''}" data-mode="cardio">Cardio</button>
+    ensureSlotAlternatives(re);
+    let activeIdx = 0;
+    let alt = re.alternatives[activeIdx];
+
+    const handle = openModal(headerHtml() + bodyHtml(), {});
+    wireAll();
+
+    function headerHtml() {
+      const ex = getExerciseById(alt.exerciseId);
+      return `<h3 class="modal-title">${escapeHtml(ex?.name || 'Übung')}</h3>`;
+    }
+
+    function altTabsHtml() {
+      return `
+        <div class="field">
+          <label>Alternative Übungen <span class="faint">(im Training seitlich wechselbar, ganz links = Standard)</span></label>
+          <div class="chip-row" id="cfg-alt-row">
+            ${re.alternatives.map((a, ai) => `
+              <button class="chip ${ai === activeIdx ? 'active' : ''}" data-alt-tab="${ai}">${escapeHtml(getExerciseById(a.exerciseId)?.name || 'Übung')}</button>
+            `).join('')}
+            <button class="chip" id="cfg-alt-add">+ Alternative</button>
+          </div>
+          ${re.alternatives.length > 1 ? `<button class="btn btn-ghost btn-sm" id="cfg-alt-remove" style="margin-top:8px">"${escapeHtml(getExerciseById(alt.exerciseId)?.name || '')}" als Alternative entfernen</button>` : ''}
         </div>
-      </div>
-      <div class="field" id="cfg-cardio-fields" style="${re.mode === 'cardio' ? '' : 'display:none'}">
-        <label>Welche Werte willst du erfassen?</label>
-        <div class="chip-row" id="cfg-cardio-row"></div>
-      </div>
-      <div class="field">
-        <label>Pause zwischen Sätzen (Sekunden)</label>
-        <input class="input" type="number" inputmode="numeric" id="cfg-rest" value="${re.restSeconds}" min="0" step="5">
-      </div>
-      <div class="field">
-        <label>Hinweis (optional, z.B. "pro Seite", Zielbereich, bpm)</label>
-        <textarea class="input" id="cfg-note" placeholder="z.B. ca. 140 bpm">${escapeHtml(re.note || '')}</textarea>
-      </div>
-      <label id="cfg-sets-label" style="font-size:.8rem;font-weight:600;color:var(--text-dim)"></label>
-      <div class="stack" id="cfg-sets" style="margin:8px 0 14px"></div>
-      <button class="btn btn-ghost btn-sm" id="cfg-add-set">+ Satz</button>
-      <button class="btn btn-primary" id="cfg-save" style="margin-top:16px">Fertig</button>
-    `, {});
+      `;
+    }
+
+    function bodyHtml() {
+      return `
+        ${altTabsHtml()}
+        <div class="field">
+          <label>Art der Erfassung</label>
+          <div class="chip-row" id="cfg-mode-row">
+            <button class="chip ${alt.mode === 'reps' ? 'active' : ''}" data-mode="reps">Gewicht × Wdh.</button>
+            <button class="chip ${alt.mode === 'time' ? 'active' : ''}" data-mode="time">Zeit</button>
+            <button class="chip ${alt.mode === 'cardio' ? 'active' : ''}" data-mode="cardio">Cardio</button>
+          </div>
+        </div>
+        <div class="field" id="cfg-cardio-fields" style="${alt.mode === 'cardio' ? '' : 'display:none'}">
+          <label>Welche Werte willst du erfassen?</label>
+          <div class="chip-row" id="cfg-cardio-row"></div>
+        </div>
+        <div class="field">
+          <label>Pause zwischen Sätzen (Sekunden) <span class="faint">(gilt für den Slot, alle Alternativen)</span></label>
+          <input class="input" type="number" inputmode="numeric" id="cfg-rest" value="${re.restSeconds}" min="0" step="5">
+        </div>
+        <div class="field">
+          <label>Hinweis (optional, z.B. "pro Seite", Zielbereich, bpm)</label>
+          <textarea class="input" id="cfg-note" placeholder="z.B. ca. 140 bpm">${escapeHtml(alt.note || '')}</textarea>
+        </div>
+        <label id="cfg-sets-label" style="font-size:.8rem;font-weight:600;color:var(--text-dim)"></label>
+        <div class="stack" id="cfg-sets" style="margin:8px 0 14px"></div>
+        <button class="btn btn-ghost btn-sm" id="cfg-add-set">+ Satz</button>
+        <button class="btn btn-primary" id="cfg-save" style="margin-top:16px">Fertig</button>
+      `;
+    }
+
+    function rerenderBody() {
+      handle.sheet.innerHTML = '<div class="modal-handle"></div>' + headerHtml() + bodyHtml();
+      wireAll();
+    }
 
     function activeCardioFields() {
-      return (re.cardioFields || ['duration']);
+      return (alt.cardioFields || ['duration']);
     }
 
     function setsLabel() {
-      if (re.mode === 'cardio') {
+      if (alt.mode === 'cardio') {
         return `Zielwerte je Satz (${activeCardioFields().map((k) => cardioFieldDef(k).label).join(', ')})`;
       }
-      return re.mode === 'time'
+      return alt.mode === 'time'
         ? `Sätze (Dauer in Minuten × Gewicht in ${settings.units}, optional)`
         : `Sätze (Ziel-Wdh. × Gewicht in ${settings.units})`;
     }
@@ -183,8 +279,8 @@ export function render({ id }) {
       const wrap = handle.sheet.querySelector('#cfg-sets');
       const removeBtn = (si) => `<button class="icon-btn" data-remove-set="${si}" aria-label="Satz entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>`;
 
-      wrap.innerHTML = re.sets.map((s, si) => {
-        if (re.mode === 'cardio') {
+      wrap.innerHTML = alt.sets.map((s, si) => {
+        if (alt.mode === 'cardio') {
           return `
             <div class="col" style="gap:6px" data-set="${si}">
               <span class="faint">Satz ${si + 1}</span>
@@ -195,7 +291,7 @@ export function render({ id }) {
             </div>
           `;
         }
-        if (re.mode === 'time') {
+        if (alt.mode === 'time') {
           return `
             <div class="row" style="gap:8px" data-set="${si}">
               <span class="faint" style="width:44px">Satz ${si + 1}</span>
@@ -218,16 +314,16 @@ export function render({ id }) {
       wrap.querySelectorAll('input').forEach((inp) => inp.addEventListener('input', () => {
         const si = +inp.dataset.set;
         if (inp.dataset.field === 'minutes') {
-          re.sets[si].seconds = Math.round((Number(inp.value) || 0) * 60);
+          alt.sets[si].seconds = Math.round((Number(inp.value) || 0) * 60);
         } else if (inp.value === '') {
-          delete re.sets[si][inp.dataset.field];
+          delete alt.sets[si][inp.dataset.field];
         } else {
-          re.sets[si][inp.dataset.field] = Number(inp.value) || 0;
+          alt.sets[si][inp.dataset.field] = Number(inp.value) || 0;
         }
       }));
       wrap.querySelectorAll('[data-remove-set]').forEach((b) => b.addEventListener('click', () => {
-        if (re.sets.length <= 1) { toast('Mindestens ein Satz nötig'); return; }
-        re.sets.splice(+b.dataset.removeSet, 1);
+        if (alt.sets.length <= 1) { toast('Mindestens ein Satz nötig'); return; }
+        alt.sets.splice(+b.dataset.removeSet, 1);
         drawSets();
       }));
     }
@@ -242,46 +338,73 @@ export function render({ id }) {
       row.querySelectorAll('[data-cardio-field]').forEach((b) => b.addEventListener('click', () => {
         const key = b.dataset.cardioField;
         const list = activeCardioFields();
-        re.cardioFields = list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
+        alt.cardioFields = list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
         // Reihenfolge stabil halten, damit die Spalten nicht springen
-        re.cardioFields = CARDIO_FIELDS.filter((f) => re.cardioFields.includes(f.key)).map((f) => f.key);
+        alt.cardioFields = CARDIO_FIELDS.filter((f) => alt.cardioFields.includes(f.key)).map((f) => f.key);
         drawCardioFieldPicker();
         drawSets();
       }));
     }
 
-    drawCardioFieldPicker();
-    drawSets();
-
-    handle.sheet.querySelectorAll('[data-mode]').forEach((btn) => btn.addEventListener('click', () => {
-      if (re.mode === btn.dataset.mode) return;
-      re.mode = btn.dataset.mode;
-      if (re.mode === 'cardio') {
-        re.cardioFields = re.cardioFields || ['duration'];
-        re.sets = re.sets.map((s) => ({ seconds: s.seconds ?? 600 }));
-      } else if (re.mode === 'time') {
-        re.sets = re.sets.map((s) => ({ seconds: s.seconds ?? 60, weight: s.weight ?? 0 }));
-      } else {
-        re.sets = re.sets.map((s) => ({ reps: s.reps ?? 10, weight: s.weight ?? 0 }));
-      }
-      handle.sheet.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === re.mode));
-      handle.sheet.querySelector('#cfg-cardio-fields').style.display = re.mode === 'cardio' ? '' : 'none';
+    function wireAll() {
       drawCardioFieldPicker();
       drawSets();
-    }));
 
-    handle.sheet.querySelector('#cfg-add-set').addEventListener('click', () => {
-      const last = re.sets[re.sets.length - 1];
-      let fresh;
-      if (re.mode === 'cardio') fresh = { ...(last || { seconds: 600 }) };
-      else if (re.mode === 'time') fresh = { seconds: last?.seconds ?? 60, weight: last?.weight ?? 0 };
-      else fresh = { reps: last?.reps ?? 10, weight: last?.weight ?? 0 };
-      re.sets.push(fresh);
-      drawSets();
-    });
-    handle.sheet.querySelector('#cfg-rest').addEventListener('input', (e) => { re.restSeconds = Number(e.target.value) || 0; });
-    handle.sheet.querySelector('#cfg-note').addEventListener('input', (e) => { re.note = e.target.value; });
-    handle.sheet.querySelector('#cfg-save').addEventListener('click', () => { persist(); draw(); handle.close(); });
+      handle.sheet.querySelectorAll('[data-alt-tab]').forEach((b) => b.addEventListener('click', () => {
+        activeIdx = +b.dataset.altTab;
+        alt = re.alternatives[activeIdx];
+        rerenderBody();
+      }));
+      handle.sheet.querySelector('#cfg-alt-add').addEventListener('click', () => {
+        openExercisePicker((exerciseId) => {
+          addSlotAlternative(re, exerciseId, 'reps');
+          activeIdx = re.alternatives.length - 1;
+          alt = re.alternatives[activeIdx];
+          rerenderBody();
+        });
+      });
+      handle.sheet.querySelector('#cfg-alt-remove')?.addEventListener('click', async () => {
+        const ok = await confirmDialog('Alternative entfernen?', 'Diese Alternative wird aus dem Slot entfernt.', 'Entfernen', true);
+        if (!ok) return;
+        removeSlotAlternative(re, activeIdx);
+        activeIdx = Math.min(activeIdx, re.alternatives.length - 1);
+        alt = re.alternatives[activeIdx];
+        rerenderBody();
+      });
+
+      handle.sheet.querySelectorAll('[data-mode]').forEach((btn) => btn.addEventListener('click', () => {
+        if (alt.mode === btn.dataset.mode) return;
+        alt.mode = btn.dataset.mode;
+        if (alt.mode === 'cardio') {
+          alt.cardioFields = alt.cardioFields || ['duration'];
+          alt.sets = alt.sets.map((s) => ({ seconds: s.seconds ?? 600 }));
+        } else if (alt.mode === 'time') {
+          alt.sets = alt.sets.map((s) => ({ seconds: s.seconds ?? 60, weight: s.weight ?? 0 }));
+        } else {
+          alt.sets = alt.sets.map((s) => ({ reps: s.reps ?? 10, weight: s.weight ?? 0 }));
+        }
+        handle.sheet.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === alt.mode));
+        handle.sheet.querySelector('#cfg-cardio-fields').style.display = alt.mode === 'cardio' ? '' : 'none';
+        drawCardioFieldPicker();
+        drawSets();
+      }));
+
+      handle.sheet.querySelector('#cfg-add-set').addEventListener('click', () => {
+        const last = alt.sets[alt.sets.length - 1];
+        let fresh;
+        if (alt.mode === 'cardio') fresh = { ...(last || { seconds: 600 }) };
+        else if (alt.mode === 'time') fresh = { seconds: last?.seconds ?? 60, weight: last?.weight ?? 0 };
+        else fresh = { reps: last?.reps ?? 10, weight: last?.weight ?? 0 };
+        alt.sets.push(fresh);
+        drawSets();
+      });
+      handle.sheet.querySelector('#cfg-rest').addEventListener('input', (e) => { re.restSeconds = Number(e.target.value) || 0; });
+      handle.sheet.querySelector('#cfg-note').addEventListener('input', (e) => { alt.note = e.target.value; });
+      handle.sheet.querySelector('#cfg-save').addEventListener('click', () => {
+        syncSlotMirror(re, 0); // Routine zeigt immer die ganz linke (erste) Alternative als Standard
+        persist(); draw(); handle.close();
+      });
+    }
   }
 
   document.getElementById('rename-routine').addEventListener('click', async () => {

@@ -8,7 +8,7 @@
    ========================================================= */
 
 import {
-  getSettings, getWeeklyPlan, getRoutineById, getExerciseById,
+  getSettings, getWeeklyPlan, getExerciseById, projectPlanDays,
   getLatestWeight, hasCompleteProfile, DAILY_ACTIVITY_LEVELS,
 } from './db.js';
 import { ageFromBirthDate } from './utils.js';
@@ -87,31 +87,30 @@ export function estimateRoutineLoad(routine, weightKg) {
 }
 
 /**
- * Summiert den Trainingsaufwand der geplanten Woche.
- * @returns {{days:{weekday:number, routineName:string, minutes:number, kcal:number}[],
+ * Summiert den Trainingsaufwand des geplanten Zyklus, gemittelt auf eine Woche.
+ * Projiziert einen vollen Zyklus (kann mehrere Wochen umfassen, inkl. Rotationen)
+ * und teilt die Summen durch die Anzahl Wochen im Zyklus.
+ * @returns {{days:{date:string, routineName:string, minutes:number, kcal:number}[],
  *            weeklyKcal:number, weeklyMinutes:number, dailyKcal:number, sessions:number}}
  */
 export function weeklyTrainingLoad(weightKg, plan = getWeeklyPlan()) {
-  const days = [];
-  let weeklyKcal = 0;
-  let weeklyMinutes = 0;
+  const cycleDays = plan.cycleLength || 7;
+  const projected = projectPlanDays(plan, plan.anchorDate, cycleDays);
+  const weeks = cycleDays / 7;
 
-  plan.days.forEach((slot, weekday) => {
-    if (slot.type !== 'workout' || !slot.routineId) return;
-    const routine = getRoutineById(slot.routineId);
-    if (!routine) return;
+  const days = projected.map(({ date, routine }) => {
     const load = estimateRoutineLoad(routine, weightKg);
-    days.push({ weekday, routineName: routine.name, minutes: load.totalMin, kcal: load.kcal });
-    weeklyKcal += load.kcal;
-    weeklyMinutes += load.totalMin;
+    return { date, routineName: routine.name, minutes: load.totalMin, kcal: load.kcal };
   });
+  const totalKcal = days.reduce((sum, d) => sum + d.kcal, 0);
+  const totalMinutes = days.reduce((sum, d) => sum + d.minutes, 0);
 
   return {
     days,
-    weeklyKcal,
-    weeklyMinutes,
-    dailyKcal: weeklyKcal / 7,
-    sessions: days.length,
+    weeklyKcal: totalKcal / weeks,
+    weeklyMinutes: totalMinutes / weeks,
+    dailyKcal: totalKcal / cycleDays,
+    sessions: days.length / weeks,
   };
 }
 

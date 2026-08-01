@@ -11,6 +11,27 @@ export function toast(msg, ms = 2200) {
   setTimeout(() => el.remove(), ms);
 }
 
+/** Toast mit einer "Rueckgaengig"-Aktion – fuer riskantere Bulk-Aktionen. */
+export function toastWithUndo(msg, onUndo, ms = 5000) {
+  const el = document.createElement('div');
+  el.className = 'toast toast--action';
+  const text = document.createElement('span');
+  text.textContent = msg;
+  const btn = document.createElement('button');
+  btn.className = 'toast__undo';
+  btn.textContent = 'Rückgängig';
+  let settled = false;
+  btn.addEventListener('click', () => {
+    if (settled) return;
+    settled = true;
+    onUndo();
+    el.remove();
+  });
+  el.append(text, btn);
+  toastRoot.appendChild(el);
+  setTimeout(() => { settled = true; el.remove(); }, ms);
+}
+
 let modalStack = [];
 
 /**

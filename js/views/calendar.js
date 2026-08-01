@@ -2,6 +2,7 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getSessions, getRoutines, getActiveSession, startSessionFromRoutine, sessionVolume, getSettings,
   getCalendarEntriesForDate, saveCalendarEntry, deleteCalendarEntry, deleteCalendarGroup, createDeloadWeek,
+  getWeeklyPlan, syncWeeklyPlanToCalendar,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import {
@@ -17,6 +18,11 @@ let cursor = todayKey(); // Referenzdatum fuer Monat/Woche
 export function render() {
   setTitle('Kalender');
   setBack(null);
+
+  // Verpasste Rotations-Termine vor dem Zeichnen nachrutschen lassen
+  const plan = getWeeklyPlan();
+  if (plan.autoFill) syncWeeklyPlanToCalendar(plan);
+
   setActions(`
     <button class="icon-btn" id="cal-weekplan" aria-label="Wochenplan">
       <svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><circle cx="19" cy="18" r="2"/></svg>

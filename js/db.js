@@ -1,7 +1,7 @@
 // Persistenz-Schicht: localStorage fuer Textdaten, IndexedDB fuer Fotos.
 // Alles bleibt lokal auf dem Geraet.
 
-import { uid, nowIso, addDaysToDateKey, mondayOfWeekKey } from './utils.js';
+import { uid, nowIso, addDaysToDateKey, mondayOfWeekKey, daysBetweenDateKeys } from './utils.js';
 
 const KEYS = {
   exercises: 'tl_exercises_v1',
@@ -15,6 +15,7 @@ const KEYS = {
   userRoutinesSeeded: 'tl_user_routines_seeded_v2',
   weeklyPlan: 'tl_weekly_plan_v1',
   migrations: 'tl_migrations_v1',
+  rotations: 'tl_rotations_v1',
 };
 
 function read(key, fallback) {
@@ -174,10 +175,74 @@ export function duplicateRoutine(routine) {
         cardioFields: re.cardioFields ? [...re.cardioFields] : undefined,
         note: re.note || '',
         sets: re.sets.map((s) => ({ ...s })),
+        alternatives: re.alternatives?.map((a) => ({
+          exerciseId: a.exerciseId, mode: a.mode, cardioFields: a.cardioFields ? [...a.cardioFields] : undefined,
+          note: a.note || '', sets: a.sets.map((s) => ({ ...s })),
+        })),
       };
     }),
   };
   return saveRoutine(copy);
+}
+
+/* =========================================================
+   Alternative Uebungen je Slot
+   Ein Routinen-Slot kann mehrere gleichwertige Uebungs-Alternativen haben
+   (z.B. Kniebeuge ODER Beinpresse), jede mit eigener Satz/Wdh-Struktur.
+   Aus Kompatibilitaetsgruenden bleiben die Top-Level-Felder des Slots
+   (exerciseId, mode, cardioFields, note, sets) immer eine Kopie der
+   AKTIVEN Alternative ("Spiegel") – so funktioniert bestehender Code
+   (Statistik, Kalorienrechner, CSV-Export, ...), der diese Felder direkt
+   liest, unveraendert weiter.
+   ========================================================= */
+// Alternative: { exerciseId, mode, cardioFields?, note, sets }
+
+/** Alternativen eines Slots, mit Fallback fuer Slots ohne alternatives[]. */
+export function slotAlternatives(re) {
+  if (re.alternatives && re.alternatives.length) return re.alternatives;
+  return [{ exerciseId: re.exerciseId, mode: re.mode || 'reps', cardioFields: re.cardioFields, note: re.note || '', sets: re.sets }];
+}
+
+/** Legt re.alternatives an (aus dem bisherigen Einzel-Slot), falls noch nicht vorhanden. */
+export function ensureSlotAlternatives(re) {
+  if (!re.alternatives || !re.alternatives.length) {
+    re.alternatives = [{ exerciseId: re.exerciseId, mode: re.mode || 'reps', cardioFields: re.cardioFields, note: re.note || '', sets: re.sets }];
+  }
+  return re.alternatives;
+}
+
+/** Kopiert eine Alternative (per Index) in die Top-Level-Spiegelfelder des Slots. */
+export function syncSlotMirror(re, index = 0) {
+  const alt = re.alternatives?.[index];
+  if (!alt) return re;
+  re.exerciseId = alt.exerciseId;
+  re.mode = alt.mode;
+  re.cardioFields = alt.cardioFields;
+  re.note = alt.note;
+  re.sets = alt.sets;
+  return re;
+}
+
+function defaultSetsForMode(mode) {
+  if (mode === 'cardio') return [{ seconds: 600 }];
+  if (mode === 'time') return [{ seconds: 60, weight: 0 }];
+  return Array.from({ length: 3 }, () => ({ reps: 10, weight: 0 }));
+}
+
+/** Fuegt dem Slot eine neue Alternative hinzu und synchronisiert den Spiegel nicht
+ *  automatisch (das entscheidet der Aufrufer, je nachdem ob sie aktiv werden soll). */
+export function addSlotAlternative(re, exerciseId, mode = 'reps') {
+  ensureSlotAlternatives(re);
+  const alt = { exerciseId, mode, cardioFields: mode === 'cardio' ? ['duration'] : undefined, note: '', sets: defaultSetsForMode(mode) };
+  re.alternatives.push(alt);
+  return alt;
+}
+
+export function removeSlotAlternative(re, index) {
+  ensureSlotAlternatives(re);
+  if (re.alternatives.length <= 1) return re.alternatives;
+  re.alternatives.splice(index, 1);
+  return re.alternatives;
 }
 
 /* =========================================================
@@ -515,6 +580,25 @@ export function clearActiveSession() {
   localStorage.removeItem(KEYS.activeSession);
 }
 
+/** Baut eine Session-taugliche Kopie einer Alternative (frische Satz-Zustaende). */
+function toSessionAlternative(alt) {
+  return {
+    exerciseId: alt.exerciseId,
+    exerciseName: getExerciseById(alt.exerciseId)?.name || 'Übung',
+    mode: alt.mode || 'reps',
+    cardioFields: alt.cardioFields ? [...alt.cardioFields] : undefined,
+    note: alt.note || '',
+    // targetReps merkt sich die urspruengliche Vorgabe, damit man live erkennen
+    // kann, wenn ein Satz deutlich schwaecher ausfaellt als geplant.
+    sets: alt.sets.map((s) => ({
+      ...s,
+      ...((alt.mode || 'reps') === 'reps' ? { targetReps: s.reps } : {}),
+      done: false,
+      isWarmup: false,
+    })),
+  };
+}
+
 export function startSessionFromRoutine(routine) {
   const session = {
     id: uid(),
@@ -523,24 +607,23 @@ export function startSessionFromRoutine(routine) {
     startedAt: nowIso(),
     endedAt: null,
     comment: '',
-    exercises: routine.exercises.map((re) => ({
-      exerciseId: re.exerciseId,
-      exerciseName: getExerciseById(re.exerciseId)?.name || 'Übung',
-      groupId: re.groupId || null,
-      restSeconds: re.restSeconds ?? 90,
-      mode: re.mode || 'reps',
-      cardioFields: re.cardioFields ? [...re.cardioFields] : undefined,
-      note: re.note || '',
-      comment: '',
-      // targetReps merkt sich die urspruengliche Vorgabe, damit man live erkennen
-      // kann, wenn ein Satz deutlich schwaecher ausfaellt als geplant.
-      sets: re.sets.map((s) => ({
-        ...s,
-        ...(re.mode === 'reps' ? { targetReps: s.reps } : {}),
-        done: false,
-        isWarmup: false,
-      })),
-    })),
+    exercises: routine.exercises.map((re) => {
+      const alternatives = slotAlternatives(re).map(toSessionAlternative);
+      const active = alternatives[0]; // ganz linke Alternative ist immer zuerst ausgewaehlt
+      return {
+        exerciseId: active.exerciseId,
+        exerciseName: active.exerciseName,
+        groupId: re.groupId || null,
+        restSeconds: re.restSeconds ?? 90,
+        mode: active.mode,
+        cardioFields: active.cardioFields,
+        note: active.note,
+        comment: '',
+        sets: active.sets,
+        alternatives,
+        activeAlternativeIndex: 0,
+      };
+    }),
   };
   setActiveSession(session);
   return session;
@@ -711,6 +794,7 @@ export async function exportAllData() {
     settings: getSettings(),
     calendarEntries: getCalendarEntries(),
     weeklyPlan: getWeeklyPlan(),
+    rotations: getRotations(),
     photos,
   };
 }
@@ -724,6 +808,7 @@ export async function importAllData(data) {
   if (data.settings) write(KEYS.settings, data.settings);
   if (data.calendarEntries) write(KEYS.calendarEntries, data.calendarEntries);
   if (data.weeklyPlan) write(KEYS.weeklyPlan, data.weeklyPlan);
+  if (data.rotations) write(KEYS.rotations, data.rotations);
   if (Array.isArray(data.photos)) {
     for (const p of data.photos) await putPhoto(p);
   }
@@ -849,77 +934,106 @@ export function isDeloadWeek(anyDateInWeek) {
 }
 
 /* =========================================================
-   Wochenplan – wiederkehrende Trainingswoche (Mo–So)
+   Rotationen – geordnete Routinen-Warteschlangen
+   Der Zeiger (cursor) rueckt NUR vor, wenn ein Workout aus der Rotation
+   tatsaechlich abgeschlossen wird (advanceRotationIfNeeded). Wird ein
+   geplanter Rotations-Termin verpasst, bleibt der Zeiger stehen -> beim
+   naechsten Trainingstag dieser Rotation kommt automatisch dieselbe
+   Routine dran, und alles Nachfolgende rutscht mit. Das ergibt die
+   "Verpasst-Kaskade" ganz ohne Sonderfall-Code.
+   ========================================================= */
+// Rotation: { id, name, sequence: [routineId,...], cursor: number, createdAt }
+
+export function getRotations() {
+  return read(KEYS.rotations, []);
+}
+
+export function getRotationById(id) {
+  return getRotations().find((r) => r.id === id) || null;
+}
+
+export function saveRotation(rotation) {
+  const list = getRotations();
+  const idx = list.findIndex((r) => r.id === rotation.id);
+  if (idx >= 0) list[idx] = rotation; else list.push(rotation);
+  write(KEYS.rotations, list);
+  return rotation;
+}
+
+export function createRotation(name) {
+  return saveRotation({ id: uid(), name: (name || 'Rotation').trim(), sequence: [], cursor: 0, createdAt: nowIso() });
+}
+
+export function deleteRotation(id) {
+  write(KEYS.rotations, getRotations().filter((r) => r.id !== id));
+  // Betroffene Routinen von der geloeschten Rotation loesen
+  for (const routine of getRoutines()) {
+    if (routine.rotationId === id) { delete routine.rotationId; saveRoutine(routine); }
+  }
+  // Zyklus-Slots, die auf diese Rotation zeigten, zu Ruhetagen machen
+  const plan = getWeeklyPlan();
+  let changed = false;
+  plan.days.forEach((slot) => {
+    if (slot.type === 'rotation' && slot.rotationId === id) { slot.type = 'rest'; delete slot.rotationId; changed = true; }
+  });
+  if (changed) saveWeeklyPlan(plan);
+}
+
+/** Fuegt eine Routine ans Ende der Rotation an und markiert sie entsprechend. */
+export function addRoutineToRotation(rotationId, routineId) {
+  const rotation = getRotationById(rotationId);
+  if (!rotation) return null;
+  if (!rotation.sequence.includes(routineId)) rotation.sequence.push(routineId);
+  saveRotation(rotation);
+  const routine = getRoutineById(routineId);
+  if (routine) { routine.rotationId = rotationId; saveRoutine(routine); }
+  return rotation;
+}
+
+export function removeRoutineFromRotation(rotationId, routineId) {
+  const rotation = getRotationById(rotationId);
+  if (!rotation) return null;
+  rotation.sequence = rotation.sequence.filter((id) => id !== routineId);
+  if (rotation.cursor >= rotation.sequence.length) rotation.cursor = 0;
+  saveRotation(rotation);
+  const routine = getRoutineById(routineId);
+  if (routine?.rotationId === rotationId) { delete routine.rotationId; saveRoutine(routine); }
+  return rotation;
+}
+
+export function reorderRotation(rotationId, newSequence) {
+  const rotation = getRotationById(rotationId);
+  if (!rotation) return null;
+  rotation.sequence = newSequence;
+  saveRotation(rotation);
+  return rotation;
+}
+
+/** Rueckt den Zeiger einer Rotation auf die Position direkt nach der
+ *  abgeschlossenen Routine vor – aufrufen, wenn eine Session beendet wird. */
+export function advanceRotationIfNeeded(routineId) {
+  let changed = false;
+  for (const rotation of getRotations()) {
+    const pos = rotation.sequence.indexOf(routineId);
+    if (pos === -1) continue;
+    rotation.cursor = (pos + 1) % rotation.sequence.length;
+    saveRotation(rotation);
+    changed = true;
+  }
+  return changed;
+}
+
+/* =========================================================
+   Trainings-Zyklus – wiederkehrendes Muster ueber N Wochen
+   Jeder Tag im Zyklus ist entweder Ruhetag, eine feste Routine oder ein
+   Rotations-Slot (zieht die jeweils naechste Routine aus einer Rotation).
    Dient zwei Zwecken: (1) traegt sich automatisch in den Kalender ein,
    (2) liefert den Trainingsumfang fuer den Kalorienbedarf.
    ========================================================= */
-// Plan: { days: [ {type:'workout'|'rest', routineId|null}, ...7x ], autoFill: bool, weeksAhead: number }
+// Plan: { anchorDate, cycleLength, days: [ {type:'rest'} | {type:'routine',routineId} |
+//         {type:'rotation',rotationId}, ...cycleLength x ], autoFill: bool, weeksAhead: number }
 
 export const WEEKDAY_LABELS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
-
-function emptyWeeklyPlan() {
-  return {
-    autoFill: true,
-    weeksAhead: 8,
-    days: Array.from({ length: 7 }, () => ({ type: 'rest', routineId: null })),
-  };
-}
-
-export function getWeeklyPlan() {
-  const stored = read(KEYS.weeklyPlan, null);
-  if (!stored) return emptyWeeklyPlan();
-  const base = emptyWeeklyPlan();
-  return {
-    ...base,
-    ...stored,
-    days: base.days.map((d, i) => ({ ...d, ...(stored.days?.[i] || {}) })),
-  };
-}
-
-export function saveWeeklyPlan(plan) {
-  write(KEYS.weeklyPlan, plan);
-  return plan;
-}
-
-export function weeklyPlanHasWorkouts(plan = getWeeklyPlan()) {
-  return plan.days.some((d) => d.type === 'workout' && d.routineId);
-}
-
-/**
- * Traegt den Wochenplan fuer die kommenden Wochen in den Kalender ein.
- * Alte, noch nicht absolvierte Plan-Eintraege (source 'weeklyPlan') ab heute
- * werden vorher entfernt, damit Planaenderungen sauber durchschlagen.
- * Manuell angelegte Eintraege bleiben unangetastet.
- */
-export function syncWeeklyPlanToCalendar(plan = getWeeklyPlan(), fromDate = null) {
-  const start = fromDate || todayDateKey();
-  const all = getCalendarEntries();
-  const kept = all.filter((e) => !(e.source === 'weeklyPlan' && e.date >= start));
-
-  const created = [];
-  if (plan.autoFill) {
-    const monday = mondayOfWeekKey(start);
-    for (let week = 0; week < (plan.weeksAhead || 8); week++) {
-      plan.days.forEach((slot, idx) => {
-        if (slot.type !== 'workout' || !slot.routineId) return;
-        const date = addDaysToDateKey(monday, week * 7 + idx);
-        if (date < start) return;
-        const routine = getRoutineById(slot.routineId);
-        if (!routine) return;
-        // kein doppelter Eintrag, wenn an dem Tag dieselbe Routine schon manuell geplant ist
-        const dup = kept.some((e) => e.date === date && e.type === 'workout' && e.routineId === slot.routineId);
-        if (dup) return;
-        created.push({
-          id: uid(), createdAt: nowIso(), source: 'weeklyPlan',
-          type: 'workout', date, routineId: routine.id, routineName: routine.name, note: '',
-        });
-      });
-    }
-  }
-
-  write(KEYS.calendarEntries, [...kept, ...created]);
-  return created.length;
-}
 
 /** Tagesschluessel ohne Import-Zyklus (lokales Datum). */
 function todayDateKey() {
@@ -928,14 +1042,137 @@ function todayDateKey() {
   return d.toISOString().slice(0, 10);
 }
 
-/** Was ist laut Wochenplan an einem bestimmten Datum vorgesehen? */
+function emptyPlan() {
+  return {
+    anchorDate: mondayOfWeekKey(todayDateKey()),
+    cycleLength: 7,
+    autoFill: true,
+    weeksAhead: 8,
+    days: Array.from({ length: 7 }, () => ({ type: 'rest' })),
+  };
+}
+
+export function getWeeklyPlan() {
+  const stored = read(KEYS.weeklyPlan, null);
+  if (!stored) return emptyPlan();
+
+  // Altes Modell (vor Mehrwochen-/Rotations-Unterstuetzung, nur 7 feste Tage)
+  // automatisch ins neue Format ueberfuehren – Bestandsdaten bleiben erhalten.
+  if (!stored.cycleLength) {
+    const converted = {
+      anchorDate: mondayOfWeekKey(todayDateKey()),
+      cycleLength: 7,
+      autoFill: stored.autoFill ?? true,
+      weeksAhead: stored.weeksAhead ?? 8,
+      days: Array.from({ length: 7 }, (_, i) => {
+        const d = stored.days?.[i];
+        return d?.type === 'workout' && d.routineId ? { type: 'routine', routineId: d.routineId } : { type: 'rest' };
+      }),
+    };
+    write(KEYS.weeklyPlan, converted);
+    return converted;
+  }
+
+  const base = emptyPlan();
+  const days = Array.from({ length: stored.cycleLength }, (_, i) => stored.days?.[i] || { type: 'rest' });
+  return { ...base, ...stored, days };
+}
+
+export function saveWeeklyPlan(plan) {
+  write(KEYS.weeklyPlan, plan);
+  return plan;
+}
+
+export function weeklyPlanHasWorkouts(plan = getWeeklyPlan()) {
+  return plan.days.some((slot) => {
+    if (slot.type === 'routine') return !!slot.routineId;
+    if (slot.type === 'rotation') return !!getRotationById(slot.rotationId)?.sequence.length;
+    return false;
+  });
+}
+
+function cycleDayIndex(dateKey, plan) {
+  const len = plan.cycleLength || 7;
+  const diff = daysBetweenDateKeys(plan.anchorDate, dateKey);
+  return ((diff % len) + len) % len;
+}
+
+/**
+ * Loest einen einzelnen Zyklus-Tag zu einer Routine auf. rotationOffsets
+ * zaehlt fuer die Vorschau/Projektion mit, das wievielte Mal eine Rotation
+ * seit dem Ausgangspunkt "dran" war (0 = der naechste anstehende Termin).
+ */
+function resolvePlanDay(plan, dateKey, rotationOffsets) {
+  const slot = plan.days[cycleDayIndex(dateKey, plan)];
+  if (!slot) return null;
+  if (slot.type === 'routine' && slot.routineId) {
+    return getRoutineById(slot.routineId);
+  }
+  if (slot.type === 'rotation' && slot.rotationId) {
+    const rotation = getRotationById(slot.rotationId);
+    if (!rotation || !rotation.sequence.length) return null;
+    const offset = rotationOffsets.get(slot.rotationId) || 0;
+    rotationOffsets.set(slot.rotationId, offset + 1);
+    return getRoutineById(rotation.sequence[(rotation.cursor + offset) % rotation.sequence.length]);
+  }
+  return null;
+}
+
+/**
+ * Projiziert die kommenden geplanten Einheiten ab einem Datum (rein lesend,
+ * fuer die Vorschau im Editor). Rotations-Termine gehen davon aus, dass alle
+ * Termine bis dahin planmaessig absolviert werden.
+ * @returns {{date:string, routine:object}[]}
+ */
+export function projectPlanDays(plan = getWeeklyPlan(), fromDate = null, totalDays = 60) {
+  if (!plan.autoFill || !plan.cycleLength) return [];
+  const start = fromDate || todayDateKey();
+  const rotationOffsets = new Map();
+  const out = [];
+  for (let i = 0; i < totalDays; i++) {
+    const date = addDaysToDateKey(start, i);
+    const routine = resolvePlanDay(plan, date, rotationOffsets);
+    if (routine) out.push({ date, routine });
+  }
+  return out;
+}
+
+/**
+ * Traegt den Zyklus fuer die kommenden Wochen in den Kalender ein. Alte,
+ * noch nicht absolvierte Plan-Eintraege (source 'weeklyPlan') ab heute
+ * werden vorher entfernt, damit Planaenderungen/Rotations-Fortschritt
+ * sauber durchschlagen. Manuell angelegte Eintraege bleiben unangetastet.
+ * Sollte nach jedem abgeschlossenen Workout und beim Oeffnen von Kalender/
+ * Wochenplan erneut aufgerufen werden, damit verpasste Rotations-Termine
+ * sichtbar nachrutschen.
+ */
+export function syncWeeklyPlanToCalendar(plan = getWeeklyPlan(), fromDate = null) {
+  const start = fromDate || todayDateKey();
+  const all = getCalendarEntries();
+  const kept = all.filter((e) => !(e.source === 'weeklyPlan' && e.date >= start));
+
+  const projected = projectPlanDays(plan, start, (plan.weeksAhead || 8) * 7);
+  const created = [];
+  for (const { date, routine } of projected) {
+    const dup = kept.some((e) => e.date === date && e.type === 'workout' && e.routineId === routine.id);
+    if (dup) continue;
+    created.push({
+      id: uid(), createdAt: nowIso(), source: 'weeklyPlan',
+      type: 'workout', date, routineId: routine.id, routineName: routine.name, note: '',
+    });
+  }
+
+  write(KEYS.calendarEntries, [...kept, ...created]);
+  return created.length;
+}
+
+/** Was ist laut Plan HEUTE vorgesehen (aktueller Rotations-Stand)? Fuer
+ *  beliebige zukuenftige Daten stattdessen die synchronisierten
+ *  Kalender-Eintraege verwenden (getCalendarEntriesForDate) – die
+ *  beruecksichtigen die Projektion inkl. aller Rotationen korrekt. */
 export function plannedForDate(dateKey, plan = getWeeklyPlan()) {
-  const [y, m, d] = dateKey.split('-').map(Number);
-  const weekday = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // Mo = 0
-  const slot = plan.days[weekday];
-  if (!slot || slot.type !== 'workout' || !slot.routineId) return null;
-  const routine = getRoutineById(slot.routineId);
-  return routine ? { routine, weekday } : null;
+  const routine = resolvePlanDay(plan, dateKey, new Map());
+  return routine ? { routine } : null;
 }
 
 /* =========================================================

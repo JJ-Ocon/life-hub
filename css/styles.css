@@ -431,8 +431,22 @@ textarea.input { resize: vertical; min-height: 60px; }
 .kcal-value { font-weight: 800; font-size: 1rem; white-space: nowrap; }
 .kcal-value--warn { color: var(--warn); }
 
-/* ---------- Wochenplan ---------- */
+/* ---------- Wochenplan / Rotationen ---------- */
 .weekplan-day--active { border-color: var(--accent); }
+.rotation-item { padding: 6px 0; }
+.rotation-item--next { color: var(--accent); font-weight: 700; }
+
+/* ---------- Alternative Uebungen (Swipe-Karussell) ---------- */
+.alt-dots { display: flex; align-items: center; gap: 6px; margin: 6px 0 8px; }
+.alt-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--border); border: none; padding: 0; flex-shrink: 0;
+}
+.alt-dot.active { background: var(--accent); width: 18px; border-radius: 4px; }
+.alt-dots__hint { margin-left: 6px; font-size: .72rem; }
+
+/* ---------- Toast mit Rueckgaengig-Aktion ---------- */
+.toast--action { display: flex; align-items: center; gap: 12px; padding-right: 8px; }
+.toast__undo { background: none; border: none; color: var(--accent); font-weight: 800; font-size: .85rem; padding: 4px; flex-shrink: 0; }
 
 /* ---------- Heute-geplant-Karte (Start) ---------- */
 .today-plan { border-color: var(--accent); }

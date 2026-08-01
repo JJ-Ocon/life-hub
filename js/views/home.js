@@ -1,7 +1,7 @@
 import { setTitle, setActions } from '../router.js';
 import {
   getRoutines, getSessions, getActiveSession, startSessionFromRoutine, sessionVolume, getSettings,
-  getCalendarEntriesForDate, plannedForDate, planAdherence,
+  getCalendarEntriesForDate, plannedForDate, planAdherence, getWeeklyPlan, syncWeeklyPlanToCalendar,
 } from '../db.js';
 import { formatDate, formatDateKey, formatDuration, formatNum, isoWeekKey, todayKey, escapeHtml } from '../utils.js';
 import { toast } from '../ui.js';
@@ -9,6 +9,11 @@ import { toast } from '../ui.js';
 export function render() {
   setTitle('Start');
   setActions('');
+
+  // Verpasste Rotations-Termine vor dem Zeichnen nachrutschen lassen, damit
+  // "Heute geplant" auch nach laengerer Abwesenheit korrekt ist.
+  const plan0 = getWeeklyPlan();
+  if (plan0.autoFill) syncWeeklyPlanToCalendar(plan0);
 
   const routines = getRoutines();
   const sessions = getSessions().filter((s) => s.endedAt);

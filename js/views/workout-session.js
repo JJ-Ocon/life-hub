@@ -2,10 +2,11 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getActiveSession, setActiveSession, clearActiveSession, saveFinishedSession, allSetsForExercise,
   sessionVolume, getSettings, getCalendarEntriesForDate, deleteCalendarEntry, getExerciseById, getExercises,
+  advanceRotationIfNeeded, syncWeeklyPlanToCalendar,
   RPE_SCALE, RECOVERY_LEVELS, cardioFieldDef, cardioRecords,
 } from '../db.js';
 import { analyzeExercise, platesForWeight, warmupSets } from '../coach.js';
-import { openModal, confirmDialog, toast } from '../ui.js';
+import { openModal, confirmDialog, toast, toastWithUndo } from '../ui.js';
 import { formatDuration, estimate1RM, formatNum, nowIso, escapeHtml, todayKey } from '../utils.js';
 
 let restTimer = null; // { remaining, total, intervalId, exerciseName }
@@ -80,7 +81,8 @@ export function render() {
       <div class="stack" id="ex-blocks">
         ${session.exercises.map((ex, i) => exerciseBlockHtml(ex, i, session)).join('')}
       </div>
-      <div class="field" style="margin-top:6px">
+      <button class="btn btn-ghost" id="check-all-session" style="margin-top:6px">✓ Komplettes Workout abhaken</button>
+      <div class="field" style="margin-top:12px">
         <label>Notiz zum gesamten Workout</label>
         <textarea class="input" id="session-comment" placeholder="Wie fühlt sich das Training an? Beschwerden, Highlights, …">${escapeHtml(session.comment)}</textarea>
       </div>
@@ -124,8 +126,10 @@ export function render() {
     const isCardio = ex.mode === 'cardio';
     const cardioFields = isCardio ? (ex.cardioFields || ['duration']) : null;
 
+    const hasAlternatives = ex.alternatives?.length > 1;
+
     return `
-      <div class="card" style="${sameAsPrev ? 'margin-top:-6px' : ''}">
+      <div class="card" style="${sameAsPrev ? 'margin-top:-6px' : ''}" data-swipe-area="${i}">
         ${grouped ? `<div class="badge badge--accent" style="margin-bottom:8px">🔁 Zirkel/Supersatz</div>` : ''}
         <div class="row row--between">
           <h3 style="margin-bottom:2px">${escapeHtml(ex.exerciseName)}</h3>
@@ -138,6 +142,12 @@ export function render() {
             </button>
           </div>
         </div>
+        ${hasAlternatives ? `
+          <div class="alt-dots">
+            ${ex.alternatives.map((a, ai) => `<button class="alt-dot ${ai === ex.activeAlternativeIndex ? 'active' : ''}" data-alt-select="${i}:${ai}" aria-label="${escapeHtml(a.exerciseName)}"></button>`).join('')}
+            <span class="faint alt-dots__hint">◂ wischen für Alternative ▸</span>
+          </div>
+        ` : ''}
         ${ex.note ? `<p class="exercise-note">${escapeHtml(ex.note)}</p>` : ''}
         ${advice ? adviceHtml(advice, i) : ''}
         ${noteOpen ? `<textarea class="input" data-ex-comment="${i}" placeholder="Notiz zu dieser Übung (z.B. Ausführung, Gefühl)" style="margin:8px 0">${escapeHtml(ex.comment)}</textarea>` : ''}
@@ -176,6 +186,7 @@ export function render() {
         <div class="row" style="gap:8px; margin-top:10px">
           <button class="btn btn-ghost btn-sm grow" data-add-set="${i}">+ Satz</button>
           ${ex.mode === 'reps' ? `<button class="btn btn-ghost btn-sm" data-add-warmup="${i}">+ Aufwärmsatz</button>` : ''}
+          <button class="btn btn-ghost btn-sm" data-check-all="${i}">✓ Alle</button>
         </div>
       </div>
     `;
@@ -276,6 +287,33 @@ export function render() {
         persist(); draw();
       });
     });
+    document.querySelectorAll('[data-alt-select]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const [exIdx, altIdx] = btn.dataset.altSelect.split(':').map(Number);
+        switchAlternative(exIdx, altIdx);
+      });
+    });
+    document.querySelectorAll('[data-swipe-area]').forEach((area) => {
+      let startX = 0, startY = 0, tracking = false;
+      area.addEventListener('touchstart', (e) => {
+        const t = e.touches[0];
+        startX = t.clientX; startY = t.clientY; tracking = true;
+      }, { passive: true });
+      area.addEventListener('touchend', (e) => {
+        if (!tracking) return;
+        tracking = false;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - startX;
+        const dy = t.clientY - startY;
+        if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+        const exIdx = +area.dataset.swipeArea;
+        const ex = session.exercises[exIdx];
+        if (!ex.alternatives || ex.alternatives.length < 2) return;
+        const dir = dx < 0 ? 1 : -1; // nach links wischen = naechste Alternative
+        const next = Math.max(0, Math.min(ex.alternatives.length - 1, ex.activeAlternativeIndex + dir));
+        if (next !== ex.activeAlternativeIndex) switchAlternative(exIdx, next);
+      }, { passive: true });
+    });
     document.querySelectorAll('[data-toggle-note]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const i = +btn.dataset.toggleNote;
@@ -333,6 +371,33 @@ export function render() {
       session.comment = e.target.value;
       persist();
     });
+    document.querySelectorAll('[data-check-all]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = +btn.dataset.checkAll;
+        const ex = session.exercises[idx];
+        if (ex.sets.every((s) => s.done)) { toast('Schon alles abgehakt'); return; }
+        const prevStates = ex.sets.map((s) => s.done);
+        ex.sets.forEach((s) => { s.done = true; });
+        persist(); draw();
+        if (ex.mode !== 'cardio') startRestTimer(ex.restSeconds || settings.defaultRest, ex.exerciseName);
+        toastWithUndo(`${ex.exerciseName}: alle Sätze abgehakt`, () => {
+          ex.sets.forEach((s, i) => { s.done = prevStates[i]; });
+          persist(); draw();
+        });
+      });
+    });
+    document.getElementById('check-all-session')?.addEventListener('click', async () => {
+      if (session.exercises.every((ex) => ex.sets.every((s) => s.done))) { toast('Schon alles abgehakt'); return; }
+      const ok = await confirmDialog('Komplettes Workout abhaken?', 'Alle Sätze aller Übungen werden als erledigt markiert.', 'Alle abhaken', false);
+      if (!ok) return;
+      const snapshot = session.exercises.map((ex) => ex.sets.map((s) => s.done));
+      session.exercises.forEach((ex) => ex.sets.forEach((s) => { s.done = true; }));
+      persist(); draw();
+      toastWithUndo('Ganzes Workout abgehakt', () => {
+        session.exercises.forEach((ex, i) => ex.sets.forEach((s, j) => { s.done = snapshot[i][j]; }));
+        persist(); draw();
+      });
+    });
     document.getElementById('form-cue-dismiss')?.addEventListener('click', () => {
       cueDismissed = true;
       document.getElementById('form-cue-banner')?.remove();
@@ -341,6 +406,24 @@ export function render() {
     document.getElementById('rest-skip')?.addEventListener('click', () => stopRestTimer(true));
     document.getElementById('rest-plus')?.addEventListener('click', () => { restTimer.remaining += 15; updateRestDisplay(); });
     document.getElementById('rest-minus')?.addEventListener('click', () => { restTimer.remaining = Math.max(0, restTimer.remaining - 15); updateRestDisplay(); });
+  }
+
+  /** Wechselt die aktive Alternative einer Uebung (Swipe oder Punkt-Tap). Der
+   *  bisherige Fortschritt jeder Alternative bleibt erhalten – ex.sets zeigt
+   *  danach einfach auf die (eigenen, live gefuehrten) Saetze der neuen Wahl. */
+  function switchAlternative(exIdx, newIndex) {
+    const ex = session.exercises[exIdx];
+    if (!ex.alternatives?.[newIndex] || newIndex === ex.activeAlternativeIndex) return;
+    ex.activeAlternativeIndex = newIndex;
+    const alt = ex.alternatives[newIndex];
+    ex.exerciseId = alt.exerciseId;
+    ex.exerciseName = alt.exerciseName;
+    ex.mode = alt.mode;
+    ex.cardioFields = alt.cardioFields;
+    ex.note = alt.note;
+    ex.sets = alt.sets;
+    persist();
+    draw();
   }
 
   /** Kleine RPE-Auswahl fuer einen einzelnen Satz. */
@@ -554,6 +637,13 @@ export function render() {
     getCalendarEntriesForDate(todayKey(new Date(session.endedAt)))
       .filter((e) => e.type === 'workout' && e.routineId === session.routineId)
       .forEach((e) => deleteCalendarEntry(e.id));
+
+    // Gehoert die Routine zu einer Rotation, ruecke den Zeiger vor und
+    // aktualisiere die Kalender-Projektion – das ist die "Verpasst-Kaskade":
+    // verpasste Termine bleiben stehen, bis sie tatsaechlich absolviert werden.
+    if (advanceRotationIfNeeded(session.routineId)) {
+      syncWeeklyPlanToCalendar();
+    }
 
     const durationSec = (new Date(session.endedAt) - new Date(session.startedAt)) / 1000;
     const volume = sessionVolume(session);

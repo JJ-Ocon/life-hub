@@ -111,6 +111,14 @@ export function daysBetween(a, b) {
   return Math.round((new Date(b).setHours(0, 0, 0, 0) - new Date(a).setHours(0, 0, 0, 0)) / MS);
 }
 
+/** Wie daysBetween, aber fuer zwei reine Datums-Keys (YYYY-MM-DD) – timezone-sicher
+ *  ueber Date.UTC, konsistent mit addDaysToDateKey/weekdayOfDateKey. */
+export function daysBetweenDateKeys(a, b) {
+  const [ay, am, ad] = a.split('-').map(Number);
+  const [by, bm, bd] = b.split('-').map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
+}
+
 export function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
 }
