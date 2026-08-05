@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Same-Origin Test B</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#1a1030">
+<style>
+  body { font-family: system-ui, sans-serif; background: #1a1030; color: #eef1f5; margin: 0; padding: 24px 20px; min-height: 100vh; box-sizing: border-box; }
+  h1 { font-size: 1.3rem; }
+  button { font-size: 1rem; padding: 14px 20px; border-radius: 10px; border: none; background: #8a6fd8; color: #1a1030; font-weight: 700; width: 100%; margin-top: 16px; }
+  #log { margin-top: 20px; font-size: .85rem; color: #b3a9c9; white-space: pre-wrap; }
+  a { color: #8a6fd8; }
+</style>
+</head>
+<body>
+  <h1>Same-Origin Test &middot; Seite B</h1>
+  <p>Liest aus derselben geteilten IndexedDB wie <a href="../test-a/">Seite A</a>. Wenn beide Seiten zum
+  Homescreen hinzugefuegt wurden und A einen Eintrag geschrieben hat: erscheint er hier?</p>
+  <button id="read">Eintraege lesen</button>
+  <div id="log"></div>
+  <script type="module">
+    import { readEvents } from '../test-shared.js';
+    const log = document.getElementById('log');
+    document.getElementById('read').addEventListener('click', async () => {
+      const all = await readEvents();
+      log.textContent = all.length
+        ? `${all.length} Eintraege gefunden:\n` + JSON.stringify(all, null, 2)
+        : 'Keine Eintraege gefunden - entweder A hat noch nichts geschrieben, oder die Seiten teilen sich die Storage NICHT (z.B. isolierte Homescreen-Icons auf iOS).';
+    });
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  </script>
+</body>
+</html>

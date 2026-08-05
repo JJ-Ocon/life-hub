@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Same-Origin Test A</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#11151c">
+<style>
+  body { font-family: system-ui, sans-serif; background: #11151c; color: #eef1f5; margin: 0; padding: 24px 20px; min-height: 100vh; box-sizing: border-box; }
+  h1 { font-size: 1.3rem; }
+  button { font-size: 1rem; padding: 14px 20px; border-radius: 10px; border: none; background: #2fd9a0; color: #06231a; font-weight: 700; width: 100%; margin-top: 16px; }
+  #log { margin-top: 20px; font-size: .85rem; color: #9aa3af; white-space: pre-wrap; }
+  a { color: #2fd9a0; }
+</style>
+</head>
+<body>
+  <h1>Same-Origin Test &middot; Seite A</h1>
+  <p>Schreibt einen Testwert in die geteilte IndexedDB (<code>shared-test</code> / <code>events</code>).
+  Diese Seite zum Homescreen hinzufuegen, dann <a href="../test-b/">Seite B</a> ebenfalls hinzufuegen und
+  oeffnen - sieht B den hier geschriebenen Eintrag?</p>
+  <button id="write">Eintrag schreiben</button>
+  <div id="log"></div>
+  <script type="module">
+    import { writeEvent, readEvents } from '../test-shared.js';
+    const log = document.getElementById('log');
+    document.getElementById('write').addEventListener('click', async () => {
+      await writeEvent('A');
+      const all = await readEvents();
+      log.textContent = `Geschrieben. Insgesamt ${all.length} Eintraege in dieser DB:\n` + JSON.stringify(all, null, 2);
+    });
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  </script>
+</body>
+</html>
