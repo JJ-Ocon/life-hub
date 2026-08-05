@@ -5,6 +5,7 @@ import {
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { todayKey, monthKey, addMonths, monthLabel, formatDateKey, formatMoney, escapeHtml } from '../utils.js';
+import { recognizeText, parseReceiptText } from '../../../shared/receipt-ocr.js';
 
 let cursor = monthKey();
 
@@ -79,6 +80,9 @@ export function openExpenseModal(existing, onSaved) {
   function content() {
     return `
       <h3 class="modal-title">${existing ? 'Ausgabe bearbeiten' : 'Ausgabe erfassen'}</h3>
+      <button class="btn btn-ghost" id="exp-scan" type="button" style="margin-bottom:14px">📷 Beleg scannen</button>
+      <input type="file" accept="image/*" capture="environment" id="exp-scan-input" hidden>
+      <p class="faint" id="exp-scan-status" hidden style="margin:-6px 0 14px"></p>
       <div class="field">
         <label>Betrag</label>
         <input class="input" type="number" inputmode="decimal" id="exp-amount" min="0" step="0.01" value="${existing?.amount ?? ''}" placeholder="0.00">
@@ -126,6 +130,36 @@ export function openExpenseModal(existing, onSaved) {
   wire();
 
   function wire() {
+    handle.sheet.querySelector('#exp-scan').addEventListener('click', () => {
+      handle.sheet.querySelector('#exp-scan-input').click();
+    });
+    handle.sheet.querySelector('#exp-scan-input').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const scanBtn = handle.sheet.querySelector('#exp-scan');
+      const status = handle.sheet.querySelector('#exp-scan-status');
+      scanBtn.disabled = true;
+      status.hidden = false;
+      status.textContent = 'Beleg wird erkannt … (beim ersten Mal laedt die OCR-Engine, das dauert etwas laenger)';
+      try {
+        const text = await recognizeText(file, (info) => {
+          if (info.status === 'recognizing text') {
+            status.textContent = `Text wird erkannt … ${Math.round(info.progress * 100)}%`;
+          }
+        });
+        const parsed = parseReceiptText(text);
+        if (parsed.amount !== null) handle.sheet.querySelector('#exp-amount').value = parsed.amount.toFixed(2);
+        if (parsed.date) handle.sheet.querySelector('#exp-date').value = parsed.date;
+        if (parsed.merchant) handle.sheet.querySelector('#exp-merchant').value = parsed.merchant;
+        status.textContent = (parsed.amount === null && !parsed.date && !parsed.merchant)
+          ? 'Konnte nichts Eindeutiges erkennen - bitte manuell eintragen.'
+          : 'Erkannt - bitte pruefen und bei Bedarf korrigieren.';
+      } catch (err) {
+        status.textContent = 'Beleg-Scan fehlgeschlagen. Bitte manuell eintragen.';
+      } finally {
+        scanBtn.disabled = false;
+      }
+    });
     handle.sheet.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => {
       categoryId = b.dataset.cat;
       handle.sheet.querySelectorAll('[data-cat]').forEach((x) => x.classList.toggle('active', x.dataset.cat === categoryId));

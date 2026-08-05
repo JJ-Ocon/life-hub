@@ -1,0 +1,4 @@
+# Vendorte Bibliotheksdateien nie durch CRLF/LF-Konvertierung anfassen -
+# muessen byte-genau bleiben, damit Tesseract.js korrekt laedt.
+shared/vendor/tesseract/*.js -text
+shared/vendor/tesseract/*.gz -text binary
