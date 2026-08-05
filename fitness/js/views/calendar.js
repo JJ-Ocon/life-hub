@@ -2,7 +2,7 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getSessions, getRoutines, getActiveSession, startSessionFromRoutine, startRetroactiveSession, sessionVolume, getSettings,
   getCalendarEntriesForDate, saveCalendarEntry, deleteCalendarEntry, deleteCalendarGroup, createDeloadWeek,
-  getWeeklyPlan, syncWeeklyPlanToCalendar, getCalendarColor, clearMissedPlannedEntries,
+  getWeeklyPlan, syncWeeklyPlanToCalendar, getCalendarColor, clearMissedPlannedEntries, refreshSharedCalendarMirror,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import {
@@ -314,6 +314,7 @@ function openDayModal(dateKey) {
     h.sheet.innerHTML = '<div class="modal-handle"></div>' + content();
     wire(h);
     draw();
+    refreshSharedCalendarMirror();
   }
 }
 

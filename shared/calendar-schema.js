@@ -32,3 +32,34 @@ export function createCalendarEvent(fields) {
     recurrence: fields.recurrence ?? null,
   };
 }
+
+/* ---------- Farben pro Quell-App ----------
+ * Jede App bekommt eine Default-Farbe, damit man sie im Hauptkalender
+ * unterscheiden kann. Ueberschreibungen liegen (App-uebergreifend, da
+ * localStorage same-origin geteilt wird) unter COLOR_OVERRIDES_KEY. */
+const SOURCE_META = {
+  fitness: { label: 'Trainingslog', color: '#2fd9a0' },
+};
+const COLOR_OVERRIDES_KEY = 'hub_source_colors_v1';
+
+function readOverrides() {
+  try { return JSON.parse(localStorage.getItem(COLOR_OVERRIDES_KEY) || '{}'); } catch { return {}; }
+}
+
+export function knownSources() {
+  return Object.keys(SOURCE_META);
+}
+
+export function getSourceLabel(source) {
+  return SOURCE_META[source]?.label || source;
+}
+
+export function getSourceColor(source) {
+  return readOverrides()[source] || SOURCE_META[source]?.color || '#888888';
+}
+
+export function setSourceColor(source, color) {
+  const overrides = readOverrides();
+  overrides[source] = color;
+  localStorage.setItem(COLOR_OVERRIDES_KEY, JSON.stringify(overrides));
+}

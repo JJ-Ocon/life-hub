@@ -2,6 +2,8 @@
 // Alles bleibt lokal auf dem Geraet.
 
 import { uid, nowIso, addDaysToDateKey, mondayOfWeekKey, daysBetweenDateKeys, todayKey } from './utils.js';
+import { createCalendarEvent } from '../../shared/calendar-schema.js';
+import { replaceSourceEvents } from '../../shared/event-store.js';
 
 const KEYS = {
   exercises: 'tl_exercises_v1',
@@ -947,6 +949,49 @@ export function getCalendarEntries() {
   return read(KEYS.calendarEntries, []);
 }
 
+/**
+ * Spiegelt abgeschlossene Sessions + geplante Workout-/Deload-Eintraege in
+ * den geteilten Event-Store (shared/event-store.js), damit der Hub sie im
+ * app-uebergreifenden Kalender anzeigen kann. Feuert asynchron im
+ * Hintergrund (nicht awaiten) - schlaegt der Zugriff fehl (z.B. IndexedDB
+ * blockiert), bleibt die Fitness-App trotzdem voll funktionsfaehig.
+ */
+export async function refreshSharedCalendarMirror() {
+  try {
+    const events = [];
+    for (const s of getSessions()) {
+      if (!s.endedAt) continue;
+      events.push(createCalendarEvent({
+        id: `fitness-session-${s.id}`,
+        title: s.routineName,
+        start: s.startedAt,
+        end: s.endedAt,
+        source: 'fitness',
+      }));
+    }
+    for (const e of getCalendarEntries()) {
+      if (e.type === 'workout') {
+        events.push(createCalendarEvent({
+          id: `fitness-plan-${e.id}`,
+          title: e.routineName || 'Workout geplant',
+          start: e.date,
+          source: 'fitness',
+        }));
+      } else if (e.type === 'deload') {
+        events.push(createCalendarEvent({
+          id: `fitness-plan-${e.id}`,
+          title: 'Deload-Woche',
+          start: e.date,
+          source: 'fitness',
+        }));
+      }
+    }
+    await replaceSourceEvents('fitness', events);
+  } catch {
+    // Shared Storage ist ein optionales Extra, kein Kernfeature.
+  }
+}
+
 export function getCalendarEntriesForDate(date) {
   return getCalendarEntries().filter((e) => e.date === date);
 }
@@ -1225,6 +1270,7 @@ export function syncWeeklyPlanToCalendar(plan = getWeeklyPlan(), fromDate = null
   }
 
   write(KEYS.calendarEntries, [...kept, ...created]);
+  refreshSharedCalendarMirror();
   return created.length;
 }
 
@@ -1245,7 +1291,7 @@ export function clearMissedPlannedEntries(today = todayDateKey()) {
     if (e.type !== 'workout' || e.date >= today) return true;
     return doneByDateRoutine.has(`${e.date}:${e.routineId}`);
   });
-  if (kept.length !== all.length) write(KEYS.calendarEntries, kept);
+  if (kept.length !== all.length) { write(KEYS.calendarEntries, kept); refreshSharedCalendarMirror(); }
   return all.length - kept.length;
 }
 

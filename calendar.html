@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Kalender – Life Hub</title>
+<meta name="theme-color" content="#0d1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="fitness/icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Kalender</h1>
+      <p class="subtitle">Alle Apps an einem Ort</p>
+    </div>
+    <a class="header-link" href="./" aria-label="Zurück">
+      <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+    </a>
+  </header>
+
+  <div class="row cal-nav" style="display:flex; justify-content:space-between">
+    <button class="icon-btn" id="cal-prev" aria-label="Zurück"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <h3 id="cal-title"></h3>
+    <button class="icon-btn" id="cal-next" aria-label="Weiter"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+  </div>
+
+  <div class="cal-grid cal-grid--headers">
+    <div class="cal-weekday">Mo</div><div class="cal-weekday">Di</div><div class="cal-weekday">Mi</div>
+    <div class="cal-weekday">Do</div><div class="cal-weekday">Fr</div><div class="cal-weekday">Sa</div><div class="cal-weekday">So</div>
+  </div>
+  <div class="cal-grid" id="cal-grid"></div>
+
+  <div class="day-panel" id="day-panel"></div>
+  <div class="legend" id="legend"></div>
+
+  <script type="module" src="calendar.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>

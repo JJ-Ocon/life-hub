@@ -2,7 +2,7 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getActiveSession, setActiveSession, clearActiveSession, saveFinishedSession, allSetsForExercise,
   sessionVolume, getSettings, getCalendarEntriesForDate, deleteCalendarEntry, getExerciseById, getExercises,
-  advanceRotationIfNeeded, syncWeeklyPlanToCalendar,
+  advanceRotationIfNeeded, syncWeeklyPlanToCalendar, refreshSharedCalendarMirror,
   RPE_SCALE, RECOVERY_LEVELS, cardioFieldDef, cardioRecords,
 } from '../db.js';
 import { analyzeExercise, platesForWeight, warmupSets } from '../coach.js';
@@ -701,6 +701,9 @@ export function render() {
     if (advanceRotationIfNeeded(session.routineId)) {
       syncWeeklyPlanToCalendar();
     }
+    // Die abgeschlossene Session selbst muss unabhaengig von der Rotation
+    // in den geteilten Kalender gespiegelt werden.
+    refreshSharedCalendarMirror();
 
     const durationSec = (new Date(session.endedAt) - new Date(session.startedAt)) / 1000;
     const volume = sessionVolume(session);
