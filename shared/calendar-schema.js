@@ -2,11 +2,7 @@
 // Abschnitt "Gemeinsame Datenmodelle"). Jede App, die Termine in den
 // Haupt-Kalender spiegeln will, erzeugt ihre Eintraege ueber createCalendarEvent()
 // und haelt sich an dieses Schema - der Hub kennt dadurch keine App-Interna,
-// nur dieses eine gemeinsame Format.
-//
-// Wird noch nicht aktiv genutzt (die Fitness-App hat ihr eigenes,
-// aelteres Kalender-Datenmodell) - Anschluss folgt in einer spaeteren Etappe,
-// sobald der Same-Origin-Trick auf echten Geraeten verifiziert ist.
+// nur dieses eine gemeinsame Format. Aktiv genutzt von: fitness, goals.
 
 /**
  * @typedef {Object} CalendarEvent
@@ -39,6 +35,7 @@ export function createCalendarEvent(fields) {
  * localStorage same-origin geteilt wird) unter COLOR_OVERRIDES_KEY. */
 const SOURCE_META = {
   fitness: { label: 'Trainingslog', color: '#2fd9a0' },
+  goals: { label: 'Ziele/Todo', color: '#c76ae0' },
 };
 const COLOR_OVERRIDES_KEY = 'hub_source_colors_v1';
 

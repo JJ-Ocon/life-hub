@@ -1,0 +1,17 @@
+{
+  "name": "Ziele & Todo",
+  "short_name": "Ziele & Todo",
+  "description": "Todos, Ziele und Meilensteine mit Kalender-Sync.",
+  "lang": "de",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "categories": ["productivity"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
