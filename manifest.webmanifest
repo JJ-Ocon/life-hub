@@ -1,24 +1,19 @@
 {
-  "name": "Trainingslog – Workouts & Fortschritt",
-  "short_name": "Trainingslog",
-  "description": "Sportroutinen erstellen, Workouts durchführen und den Fortschritt über die Zeit festhalten.",
+  "name": "Life Hub",
+  "short_name": "Life Hub",
+  "description": "Zentrale Startseite fuer die persoenlichen Apps (Fitness, Budget, ...).",
   "lang": "de",
   "dir": "ltr",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#11151c",
-  "theme_color": "#11151c",
-  "categories": ["health", "fitness", "lifestyle"],
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "categories": ["productivity", "lifestyle"],
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
-  ],
-  "shortcuts": [
-    { "name": "Statistik", "url": "./index.html#/stats" },
-    { "name": "Routinen", "url": "./index.html#/routines" },
-    { "name": "Körperdaten", "url": "./index.html#/body" }
+    { "src": "fitness/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "fitness/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "fitness/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

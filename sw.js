@@ -1,60 +1,25 @@
-// Service Worker: cached die App-Shell fuer Offline-Nutzung.
-// Bei einer neuen Version einfach CACHE_VERSION erhoehen.
-
-const CACHE_VERSION = 'trainingslog-v12';
-
-const ASSETS = [
-  './',
-  './index.html',
-  './manifest.webmanifest',
-  './css/styles.css',
-  './js/app.js',
-  './js/router.js',
-  './js/db.js',
-  './js/ui.js',
-  './js/utils.js',
-  './js/theme.js',
-  './js/charts.js',
-  './js/nutrition.js',
-  './js/coach.js',
-  './js/achievements.js',
-  './js/views/home.js',
-  './js/views/routines.js',
-  './js/views/routine-edit.js',
-  './js/views/exercise-picker.js',
-  './js/views/workout-session.js',
-  './js/views/history.js',
-  './js/views/stats.js',
-  './js/views/body.js',
-  './js/views/calendar.js',
-  './js/views/weekplan.js',
-  './js/views/more.js',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/icon-maskable-512.png',
-  './icons/apple-touch-icon.png',
-];
+// Service Worker fuer den Hub-Shell (App-Launcher). Bei neuer Version
+// CACHE_VERSION erhoehen. Cached bewusst nicht die Unterordner der
+// Einzel-Apps (fitness/, ...) - die haben ihren eigenen Service Worker
+// mit eigenem Scope.
+const CACHE_VERSION = 'life-hub-v1';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './styles.css'];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_VERSION).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
-  );
+  event.waitUntil(caches.open(CACHE_VERSION).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(
-      keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k))
-    )).then(() => self.clients.claim())
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
-// Strategie: Netzwerk zuerst (fuer frische Inhalte), Fallback auf Cache bei Offline.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
-
   event.respondWith(
     fetch(event.request)
       .then((response) => {
