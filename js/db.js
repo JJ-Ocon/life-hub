@@ -734,6 +734,17 @@ const DEFAULT_SETTINGS = {
   plateInventory: [25, 20, 15, 10, 5, 2.5, 1.25], // verfuegbare Scheiben je Seite
   progressionStep: 2.5, // Standard-Steigerung
   lastBackupAt: '',     // fuer die Backup-Erinnerung
+  // Kalenderfarben je Quell-App (aktuell nur 'fitness' - weitere Oekosystem-Apps
+  // bekommen spaeter eigene Eintraege), manuell im Mehr-Bereich ueberschreibbar.
+  calendarColors: {
+    fitness: {
+      done: '#2fd9a0',
+      planned: '#7c8591',
+      rest: '#5b6672',
+      note: '#8a6fd8',
+      deload: '#e0a63a',
+    },
+  },
 };
 
 /* =========================================================
@@ -792,6 +803,34 @@ export function saveSettings(patch) {
   const merged = { ...getSettings(), ...patch };
   write(KEYS.settings, merged);
   return merged;
+}
+
+/** Kalender-Eintragstypen, denen im Hauptkalender eine Farbe zugeordnet wird.
+ *  'source' ist die App, die den Eintrag erzeugt hat - im Oekosystem-Plan
+ *  bekommt jede weitere App hier spaeter ihren eigenen Satz Defaults. */
+export const CALENDAR_ENTRY_TYPES = [
+  { key: 'done', label: 'Absolviert' },
+  { key: 'planned', label: 'Workout geplant' },
+  { key: 'rest', label: 'Ruhetag' },
+  { key: 'note', label: 'Notiz' },
+  { key: 'deload', label: 'Deload-Woche' },
+];
+
+export function getCalendarColor(type, source = 'fitness') {
+  const settings = getSettings();
+  return settings.calendarColors?.[source]?.[type] || DEFAULT_SETTINGS.calendarColors.fitness[type] || '#888';
+}
+
+export function saveCalendarColor(type, color, source = 'fitness') {
+  const settings = getSettings();
+  const calendarColors = { ...settings.calendarColors, [source]: { ...settings.calendarColors?.[source], [type]: color } };
+  return saveSettings({ calendarColors });
+}
+
+export function resetCalendarColors(source = 'fitness') {
+  const settings = getSettings();
+  const calendarColors = { ...settings.calendarColors, [source]: { ...DEFAULT_SETTINGS.calendarColors.fitness } };
+  return saveSettings({ calendarColors });
 }
 
 /* =========================================================
@@ -1025,14 +1064,21 @@ export function reorderRotation(rotationId, newSequence) {
   return rotation;
 }
 
-/** Rueckt den Zeiger einer Rotation auf die Position direkt nach der
- *  abgeschlossenen Routine vor – aufrufen, wenn eine Session beendet wird. */
+/** Rueckt den Zeiger einer Rotation genau dann um eins vor, wenn die
+ *  abgeschlossene Routine auch die laut Zeiger aktuell faellige war –
+ *  aufrufen, wenn eine Session beendet wird.
+ *  Wichtig: NICHT ueber sequence.indexOf(routineId) springen – das wuerde
+ *  bei einer Ad-hoc-/Nachhol-Session einer ANDEREN Routine aus derselben
+ *  Rotation (z.B. nach einem verpassten Termin) den Zeiger auf eine falsche
+ *  Position setzen und die Reihenfolge der noch offenen Routine durcheinander
+ *  bringen. Passt die completed Routine nicht zum Zeiger, bleibt er stehen –
+ *  die eigentlich faellige Routine bleibt so korrekt weiterhin offen. */
 export function advanceRotationIfNeeded(routineId) {
   let changed = false;
   for (const rotation of getRotations()) {
-    const pos = rotation.sequence.indexOf(routineId);
-    if (pos === -1) continue;
-    rotation.cursor = (pos + 1) % rotation.sequence.length;
+    if (!rotation.sequence.length) continue;
+    if (rotation.sequence[rotation.cursor] !== routineId) continue;
+    rotation.cursor = (rotation.cursor + 1) % rotation.sequence.length;
     saveRotation(rotation);
     changed = true;
   }

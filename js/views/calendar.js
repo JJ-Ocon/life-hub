@@ -2,7 +2,7 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getSessions, getRoutines, getActiveSession, startSessionFromRoutine, startRetroactiveSession, sessionVolume, getSettings,
   getCalendarEntriesForDate, saveCalendarEntry, deleteCalendarEntry, deleteCalendarGroup, createDeloadWeek,
-  getWeeklyPlan, syncWeeklyPlanToCalendar,
+  getWeeklyPlan, syncWeeklyPlanToCalendar, getCalendarColor,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import {
@@ -113,12 +113,14 @@ function monthGridHtml() {
     const inMonth = dateKey.startsWith(monthPrefix);
     const { sessions, planned, deloadEntry } = dayInfo(dateKey);
     const dayNum = Number(dateKey.slice(8, 10));
+    const deloadColor = getCalendarColor('deload');
     cells += `
-      <div class="cal-cell ${inMonth ? '' : 'cal-cell--muted'} ${dateKey === today ? 'cal-cell--today' : ''} ${deloadEntry ? 'cal-cell--deload' : ''}" data-day="${dateKey}">
+      <div class="cal-cell ${inMonth ? '' : 'cal-cell--muted'} ${dateKey === today ? 'cal-cell--today' : ''}" data-day="${dateKey}"
+        ${deloadEntry ? `style="background:color-mix(in srgb, ${deloadColor} 20%, var(--bg-card)); border-color:${deloadColor}"` : ''}>
         <span class="cal-cell__num">${dayNum}</span>
         <span class="cal-dots">
-          ${sessions.length ? '<span class="cal-dot cal-dot--done"></span>' : ''}
-          ${planned.length ? '<span class="cal-dot cal-dot--planned"></span>' : ''}
+          ${sessions.length ? `<span class="cal-dot" style="background:${getCalendarColor('done')}"></span>` : ''}
+          ${planned.length ? `<span class="cal-dot" style="background:${getCalendarColor('planned')}"></span>` : ''}
         </span>
       </div>
     `;
@@ -144,9 +146,9 @@ function hasContentInLastRow(gridStart, from, to, monthPrefix) {
 function legendHtml() {
   return `
     <div class="row cal-legend">
-      <span class="cal-dot cal-dot--done"></span><span class="faint">Absolviert</span>
-      <span class="cal-dot cal-dot--planned"></span><span class="faint">Geplant</span>
-      <span class="cal-legend__deload"></span><span class="faint">Deload</span>
+      <span class="cal-dot" style="background:${getCalendarColor('done')}"></span><span class="faint">Absolviert</span>
+      <span class="cal-dot" style="background:${getCalendarColor('planned')}"></span><span class="faint">Geplant</span>
+      <span class="cal-legend__deload" style="background:${getCalendarColor('deload')}"></span><span class="faint">Deload</span>
     </div>
   `;
 }
@@ -167,20 +169,20 @@ function weekListHtml() {
           <div class="card card--tap ${dateKey === today ? 'cal-week-row--today' : ''}" data-day="${dateKey}">
             <div class="row row--between">
               <h3>${formatDateKey(dateKey, { withWeekday: true })}</h3>
-              ${deloadEntry ? '<span class="badge" style="background:var(--warn);color:#1a1400">Deload</span>' : ''}
+              ${deloadEntry ? `<span class="badge" style="background:${getCalendarColor('deload')};color:#1a1400">Deload</span>` : ''}
             </div>
             ${sessions.length === 0 && planned.length === 0 ? `<p class="faint" style="margin-top:6px">–</p>` : ''}
             ${sessions.map((s) => `
               <div class="row row--between" style="margin-top:8px">
                 <div class="col grow">
-                  <p>✅ ${escapeHtml(s.routineName)}</p>
+                  <p><span class="cal-dot" style="background:${getCalendarColor('done')}"></span> ${escapeHtml(s.routineName)}</p>
                   ${s.comment ? `<p class="faint truncate">${escapeHtml(s.comment.split('\n')[0])}</p>` : ''}
                 </div>
                 <div class="badge">${formatNum(sessionVolume(s), 0)} ${settings.units}</div>
               </div>
             `).join('')}
             ${planned.map((p) => `
-              <p class="faint" style="margin-top:8px">${plannedIcon(p)} ${escapeHtml(p.routineName || p.note || plannedLabel(p))}</p>
+              <p class="faint" style="margin-top:8px"><span class="cal-dot" style="background:${getCalendarColor(p.type === 'workout' ? 'planned' : p.type)}"></span> ${plannedIcon(p)} ${escapeHtml(p.routineName || p.note || plannedLabel(p))}</p>
             `).join('')}
           </div>
         `;
@@ -211,7 +213,7 @@ function openDayModal(dateKey) {
       <h3 class="modal-title">${formatDateKey(dateKey, { withWeekday: true, withYear: true })}</h3>
       ${deloadEntry ? `
         <div class="row row--between" style="margin-bottom:14px">
-          <span class="badge" style="background:var(--warn);color:#1a1400">Deload-Woche</span>
+          <span class="badge" style="background:${getCalendarColor('deload')};color:#1a1400">Deload-Woche</span>
           <button class="btn btn-ghost btn-sm" id="cal-unset-deload">Aufheben</button>
         </div>
       ` : ''}
@@ -223,7 +225,7 @@ function openDayModal(dateKey) {
             <div class="card card--tap" data-open-session="${s.id}" style="margin-bottom:0">
               <div class="row row--between">
                 <div class="col grow">
-                  <h3 class="truncate">${escapeHtml(s.routineName)}</h3>
+                  <h3 class="truncate"><span class="cal-dot" style="background:${getCalendarColor('done')}"></span> ${escapeHtml(s.routineName)}</h3>
                   <p class="faint">${formatDuration((new Date(s.endedAt) - new Date(s.startedAt)) / 1000)}</p>
                 </div>
                 <div class="badge">${formatNum(sessionVolume(s), 0)} ${settings.units}</div>
@@ -240,7 +242,7 @@ function openDayModal(dateKey) {
           ${planned.map((p) => `
             <div class="row row--between">
               <div class="col grow">
-                <p>${plannedIcon(p)} ${escapeHtml(p.routineName || plannedLabel(p))}</p>
+                <p><span class="cal-dot" style="background:${getCalendarColor(p.type === 'workout' ? 'planned' : p.type)}"></span> ${plannedIcon(p)} ${escapeHtml(p.routineName || plannedLabel(p))}</p>
                 ${p.note ? `<p class="faint">${escapeHtml(p.note)}</p>` : ''}
               </div>
               <div class="row" style="gap:6px">

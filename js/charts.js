@@ -14,13 +14,16 @@ export function lineChart(points, opts = {}) {
   } = opts;
   if (!points.length) return `<div class="empty"><p>Noch keine Daten</p></div>`;
 
-  // Grosse Variante: mehr Platz fuer Achsen und Beschriftungen
-  const width = opts.width ?? (large ? 680 : 320);
-  const height = opts.height ?? (large ? 380 : 160);
-  const padL = large ? 56 : 38;
-  const padR = large ? 18 : 12;
-  const padT = large ? 20 : 14;
-  const padB = large ? 44 : 24;
+  // Grosse Variante: mehr Platz fuer Achsen und Beschriftungen. Die Basisgroesse
+  // orientiert sich an der realen Breite auf dem Handy (statt einer Desktop-
+  // Groesse) - sonst wird per CSS width:100% stark herunterskaliert, was den
+  // SVG-Text (v.a. Achsen-Beschriftung) sichtbar unscharf rendert.
+  const width = opts.width ?? (large ? 340 : 320);
+  const height = opts.height ?? (large ? 200 : 160);
+  const padL = large ? 34 : 38;
+  const padR = large ? 10 : 12;
+  const padT = large ? 12 : 14;
+  const padB = large ? 28 : 24;
   const w = width - padL - padR;
   const h = height - padT - padB;
 
@@ -53,13 +56,13 @@ export function lineChart(points, opts = {}) {
     <line class="chart-axis" x1="${padL}" y1="${padT + h}" x2="${width - padR}" y2="${padT + h}" />
   `;
 
-  const maxLabels = large ? 8 : 5;
+  const maxLabels = large ? 6 : 5;
   const step = Math.max(1, Math.ceil(points.length / maxLabels));
   let labels = '';
   points.forEach((p, i) => {
     if (i % step !== 0 && i !== points.length - 1) return;
     const text = granularity ? formatAxisLabel(p.date, granularity) : formatDateShort(p.date);
-    labels += `<text class="axis-label" x="${x(i).toFixed(1)}" y="${padT + h + (large ? 20 : 16)}" text-anchor="middle">${text}</text>`;
+    labels += `<text class="axis-label" x="${x(i).toFixed(1)}" y="${padT + h + (large ? 18 : 16)}" text-anchor="middle">${text}</text>`;
   });
 
   // Einheit an der Y-Achse

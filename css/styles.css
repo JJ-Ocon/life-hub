@@ -353,6 +353,10 @@ textarea.input { resize: vertical; min-height: 60px; }
   background: linear-gradient(to right, hsl(0 70% 55%), hsl(60 70% 55%), hsl(120 70% 55%), hsl(180 70% 55%), hsl(240 70% 55%), hsl(300 70% 55%), hsl(360 70% 55%)); }
 .hue-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 30px; height: 30px; border-radius: 50%; background: #fff; border: 3px solid #0002; box-shadow: 0 0 0 1px #0003; }
 
+.color-input { width: 40px; height: 32px; border-radius: var(--radius-s); border: 1px solid var(--border); background: none; padding: 2px; cursor: pointer; }
+.color-input::-webkit-color-swatch-wrapper { padding: 0; }
+.color-input::-webkit-color-swatch { border: none; border-radius: 4px; }
+
 /* ---------- Simple line/bar chart svg helpers ---------- */
 .chart-wrap { width: 100%; overflow-x: auto; }
 .chart-svg { width: 100%; height: auto; display: block; }
@@ -371,6 +375,11 @@ textarea.input { resize: vertical; min-height: 60px; }
 
 /* ---------- Heatmap (Trainings-Uebersicht) ---------- */
 .heatmap-wrap { overflow-x: auto; }
+/* .chart-svg zwingt sonst width:100% -> die 53-Wochen-Heatmap wird auf
+   Handy-Breite zusammengequetscht (Skalierungsfaktor <0.5), was Zellen und
+   Monats-/Wochentag-Labels sichtbar unscharf macht. Native Groesse behalten
+   und stattdessen im Wrapper horizontal scrollen lassen. */
+.heatmap-svg { width: auto; max-width: none; height: auto; flex-shrink: 0; }
 .heatmap-svg .hm-label { font-size: 8px; fill: var(--text-faint); }
 .hm-cell { fill: var(--bg-input); }
 .hm-cell--0 { fill: var(--bg-input); }
@@ -476,13 +485,10 @@ textarea.input { resize: vertical; min-height: 60px; }
 .cal-cell--muted { opacity: .35; }
 .cal-cell--today { border-color: var(--accent); border-width: 2px; }
 .cal-cell--today .cal-cell__num { color: var(--accent); font-weight: 800; }
-.cal-cell--deload { background: color-mix(in srgb, var(--warn) 20%, var(--bg-card)); border-color: var(--warn); }
 .cal-dots { display: flex; gap: 3px; height: 6px; }
-.cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); }
-.cal-dot--done { background: var(--accent); }
-.cal-dot--planned { background: var(--text-dim); }
+.cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; display: inline-block; }
 .cal-legend { margin-top: 14px; align-items: center; gap: 6px; flex-wrap: wrap; }
-.cal-legend__deload { width: 10px; height: 10px; border-radius: 3px; background: var(--warn); display: inline-block; }
+.cal-legend__deload { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 .cal-week-row--today { border-color: var(--accent); }
 
 /* ---------- Formhinweis-Banner (Atmung/Bracing) ---------- */

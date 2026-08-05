@@ -70,7 +70,10 @@ export function render() {
     if (ok) location.hash = '#/';
   });
   setTitle(session.routineName);
-  setActions(`<button class="icon-btn" id="cancel-session" aria-label="Abbrechen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>`);
+  setActions(`
+    <button class="icon-btn" id="manual-rest" aria-label="Pause starten"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2"/><path d="M9 2h6"/></svg></button>
+    <button class="icon-btn" id="cancel-session" aria-label="Abbrechen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+  `);
 
   function persist() { setActiveSession(session); }
 
@@ -78,9 +81,12 @@ export function render() {
     const view = document.getElementById('view');
     view.innerHTML = `
       ${!cueDismissed ? formCueBannerHtml() : ''}
-      ${restTimer ? restBannerHtml() : ''}
+      ${restTimer && restTimer.exIdx == null ? restBannerHtml() : ''}
       <div class="stack" id="ex-blocks">
-        ${session.exercises.map((ex, i) => exerciseBlockHtml(ex, i, session)).join('')}
+        ${session.exercises.map((ex, i) => `
+          ${restTimer && restTimer.exIdx === i ? restBannerHtml() : ''}
+          ${exerciseBlockHtml(ex, i, session)}
+        `).join('')}
       </div>
       <button class="btn btn-ghost" id="check-all-session" style="margin-top:6px">✓ Komplettes Workout abhaken</button>
       <div class="field" style="margin-top:12px">
@@ -106,7 +112,7 @@ export function render() {
     return `
       <div class="timer-banner" id="rest-banner">
         <div class="col">
-          <span class="faint">Pause · ${escapeHtml(restTimer.exerciseName)}</span>
+          <span class="faint">Pause${restTimer.exerciseName ? ' · ' + escapeHtml(restTimer.exerciseName) : ''}</span>
           <span class="timer-banner__time" id="rest-time">${formatDuration(restTimer.remaining)}</span>
         </div>
         <div class="row" style="gap:6px">
@@ -239,6 +245,7 @@ export function render() {
         } else {
           set[inp.dataset.field] = Number(inp.value) || 0;
         }
+        session.lastActiveExerciseIndex = +inp.closest('tr').dataset.ex;
         persist();
       });
     });
@@ -249,9 +256,10 @@ export function render() {
         const ex = session.exercises[exIdx];
         const s = ex.sets[setIdx];
         s.done = !s.done;
+        session.lastActiveExerciseIndex = exIdx;
         persist();
         if (s.done) {
-          startRestTimer(ex.restSeconds || settings.defaultRest, ex.exerciseName);
+          startRestTimer(ex.restSeconds || settings.defaultRest, ex.exerciseName, exIdx);
           if (navigator.vibrate) navigator.vibrate(15);
           maybeAskCancelRemaining(exIdx, setIdx);
         }
@@ -379,8 +387,9 @@ export function render() {
         if (ex.sets.every((s) => s.done)) { toast('Schon alles abgehakt'); return; }
         const prevStates = ex.sets.map((s) => s.done);
         ex.sets.forEach((s) => { s.done = true; });
+        session.lastActiveExerciseIndex = idx;
         persist(); draw();
-        if (ex.mode !== 'cardio') startRestTimer(ex.restSeconds || settings.defaultRest, ex.exerciseName);
+        if (ex.mode !== 'cardio') startRestTimer(ex.restSeconds || settings.defaultRest, ex.exerciseName, idx);
         toastWithUndo(`${ex.exerciseName}: alle Sätze abgehakt`, () => {
           ex.sets.forEach((s, i) => { s.done = prevStates[i]; });
           persist(); draw();
@@ -407,6 +416,43 @@ export function render() {
     document.getElementById('rest-skip')?.addEventListener('click', () => stopRestTimer(true));
     document.getElementById('rest-plus')?.addEventListener('click', () => { restTimer.remaining += 15; updateRestDisplay(); });
     document.getElementById('rest-minus')?.addEventListener('click', () => { restTimer.remaining = Math.max(0, restTimer.remaining - 15); updateRestDisplay(); });
+    document.getElementById('manual-rest')?.addEventListener('click', openManualRestPicker);
+  }
+
+  /** Separater, manuell startbarer Pausentimer - unabhaengig vom automatischen
+   *  Pausentimer nach einem abgehakten Satz. Fuer Pausen, die nicht direkt an
+   *  eine bestimmte Uebung gebunden sind (z.B. laenger unterbrechen). */
+  function openManualRestPicker() {
+    if (restTimer) {
+      stopRestTimer(false);
+      toast('Laufende Pause gestoppt');
+      draw();
+      return;
+    }
+    const presets = [30, 60, 90, 120, 180];
+    const handle = openModal(`
+      <h3 class="modal-title">Pause starten</h3>
+      <div class="chip-row" style="margin-bottom:14px">
+        ${presets.map((s) => `<button class="chip" data-rest-preset="${s}">${formatDuration(s)}</button>`).join('')}
+      </div>
+      <div class="field">
+        <label>Oder eigene Dauer (Sekunden)</label>
+        <input class="input" type="number" inputmode="numeric" id="rest-custom" value="${settings.defaultRest}" min="1">
+      </div>
+      <button class="btn btn-primary" id="rest-custom-start" style="margin-top:6px">Starten</button>
+    `, { center: true });
+    handle.sheet.querySelectorAll('[data-rest-preset]').forEach((b) => b.addEventListener('click', () => {
+      startRestTimer(Number(b.dataset.restPreset), '', null);
+      handle.close();
+      draw();
+    }));
+    handle.sheet.querySelector('#rest-custom-start').addEventListener('click', () => {
+      const seconds = Number(handle.sheet.querySelector('#rest-custom').value) || 0;
+      if (seconds <= 0) { toast('Bitte eine Dauer angeben'); return; }
+      startRestTimer(seconds, '', null);
+      handle.close();
+      draw();
+    });
   }
 
   /** Wechselt die aktive Alternative einer Uebung (Swipe oder Punkt-Tap). Der
@@ -423,6 +469,7 @@ export function render() {
     ex.cardioFields = alt.cardioFields;
     ex.note = alt.note;
     ex.sets = alt.sets;
+    session.lastActiveExerciseIndex = exIdx;
     persist();
     draw();
   }
@@ -566,10 +613,10 @@ export function render() {
     if (el) el.textContent = formatDuration(restTimer.remaining);
   }
 
-  function startRestTimer(seconds, exerciseName) {
+  function startRestTimer(seconds, exerciseName, exIdx = null) {
     if (!seconds) return;
     stopRestTimer(false, { silent: true });
-    restTimer = { remaining: seconds, total: seconds, exerciseName };
+    restTimer = { remaining: seconds, total: seconds, exerciseName, exIdx };
     tickHandle = setInterval(() => {
       restTimer.remaining -= 1;
       if (restTimer.remaining <= 0) {
@@ -727,6 +774,13 @@ export function render() {
   });
 
   draw();
+
+  // Bei laengeren Routinen sonst jedes Mal oben anfangen zu suchen, obwohl
+  // man schon mitten in der Uebung X war - stattdessen direkt dorthin springen.
+  if (session.lastActiveExerciseIndex != null && session.exercises[session.lastActiveExerciseIndex]) {
+    document.querySelector(`[data-swipe-area="${session.lastActiveExerciseIndex}"]`)
+      ?.scrollIntoView({ block: 'start', behavior: 'auto' });
+  }
 
   return function cleanup() {
     stopRestTimer(false);

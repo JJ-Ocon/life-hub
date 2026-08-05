@@ -1,7 +1,7 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
   getSettings, saveSettings, exportAllData, importAllData, resetAllData, getSessions,
-  DAILY_ACTIVITY_LEVELS,
+  DAILY_ACTIVITY_LEVELS, CALENDAR_ENTRY_TYPES, getCalendarColor, saveCalendarColor, resetCalendarColors,
 } from '../db.js';
 import { ageFromBirthDate } from '../utils.js';
 import { applyTheme } from '../theme.js';
@@ -109,6 +109,20 @@ export function render() {
       </div>
     </div>
 
+    <div class="section-title">Kalenderfarben</div>
+    <div class="card">
+      <p class="faint" style="margin-bottom:12px">Farben der Fitness-App im Hauptkalender. Sobald weitere Apps im Ökosystem dazukommen, bekommt jede hier ihre eigenen, frei änderbaren Farben.</p>
+      <div class="stack">
+        ${CALENDAR_ENTRY_TYPES.map((t) => `
+          <div class="row row--between">
+            <p>${t.label}</p>
+            <input type="color" class="color-input" id="cal-color-${t.key}" value="${getCalendarColor(t.key)}">
+          </div>
+        `).join('')}
+      </div>
+      <button class="btn btn-ghost btn-sm" id="cal-colors-reset" style="margin-top:12px">Auf Standard zurücksetzen</button>
+    </div>
+
     <div class="section-title">Daten</div>
     ${backupReminderHtml(settings.lastBackupAt)}
     <div class="card stack">
@@ -186,6 +200,17 @@ export function render() {
     if (!plates.length) { toast('Mindestens eine Scheibe angeben'); render(); return; }
     saveSettings({ plateInventory: plates });
     toast('Gespeichert');
+    render();
+  });
+
+  CALENDAR_ENTRY_TYPES.forEach((t) => {
+    document.getElementById(`cal-color-${t.key}`).addEventListener('input', (e) => {
+      saveCalendarColor(t.key, e.target.value);
+    });
+  });
+  document.getElementById('cal-colors-reset').addEventListener('click', () => {
+    resetCalendarColors();
+    toast('Kalenderfarben zurückgesetzt');
     render();
   });
 
