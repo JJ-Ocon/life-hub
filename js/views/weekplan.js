@@ -4,6 +4,7 @@ import {
   getLatestWeight, weeklyPlanHasWorkouts,
   getRotations, getRotationById, createRotation, saveRotation, deleteRotation,
   addRoutineToRotation, removeRoutineFromRotation, reorderRotation, getRoutineById,
+  clearMissedPlannedEntries,
 } from '../db.js';
 import { estimateRoutineLoad, weeklyTrainingLoad } from '../nutrition.js';
 import { toast, confirmDialog, promptDialog } from '../ui.js';
@@ -19,6 +20,7 @@ export function render() {
   // Kaskaden-Effekt (verpasste Rotationstermine) sichtbar machen, bevor gezeichnet wird
   const plan = getWeeklyPlan();
   if (plan.autoFill) syncWeeklyPlanToCalendar(plan);
+  clearMissedPlannedEntries();
 
   const routines = getRoutines();
   const rotations = getRotations();

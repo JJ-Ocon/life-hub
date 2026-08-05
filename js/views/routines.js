@@ -11,6 +11,7 @@ export function render() {
   const active = getActiveSession();
 
   document.getElementById('view').innerHTML = `
+    <button class="btn btn-primary" id="create-routine">+ Neue Routine von Grund auf erstellen</button>
     ${routines.length === 0 ? `
       <div class="empty">
         <svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
@@ -46,11 +47,13 @@ export function render() {
     </div>
   `;
 
-  document.getElementById('add-routine').addEventListener('click', () => {
+  function createRoutine() {
     const r = newRoutineSkeleton();
     saveRoutine(r);
     location.hash = `#/routines/${r.id}/edit`;
-  });
+  }
+  document.getElementById('add-routine').addEventListener('click', createRoutine);
+  document.getElementById('create-routine').addEventListener('click', createRoutine);
 
   document.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => location.hash = `#/routines/${el.dataset.open}/edit`));
   document.querySelectorAll('[data-edit]').forEach((el) => el.addEventListener('click', () => location.hash = `#/routines/${el.dataset.edit}/edit`));

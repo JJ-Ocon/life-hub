@@ -2,7 +2,7 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getSessions, getRoutines, getActiveSession, startSessionFromRoutine, startRetroactiveSession, sessionVolume, getSettings,
   getCalendarEntriesForDate, saveCalendarEntry, deleteCalendarEntry, deleteCalendarGroup, createDeloadWeek,
-  getWeeklyPlan, syncWeeklyPlanToCalendar, getCalendarColor,
+  getWeeklyPlan, syncWeeklyPlanToCalendar, getCalendarColor, clearMissedPlannedEntries,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import {
@@ -22,6 +22,7 @@ export function render() {
   // Verpasste Rotations-Termine vor dem Zeichnen nachrutschen lassen
   const plan = getWeeklyPlan();
   if (plan.autoFill) syncWeeklyPlanToCalendar(plan);
+  clearMissedPlannedEntries();
 
   setActions(`
     <button class="icon-btn" id="cal-weekplan" aria-label="Wochenplan">

@@ -1,7 +1,7 @@
 // Persistenz-Schicht: localStorage fuer Textdaten, IndexedDB fuer Fotos.
 // Alles bleibt lokal auf dem Geraet.
 
-import { uid, nowIso, addDaysToDateKey, mondayOfWeekKey, daysBetweenDateKeys } from './utils.js';
+import { uid, nowIso, addDaysToDateKey, mondayOfWeekKey, daysBetweenDateKeys, todayKey } from './utils.js';
 
 const KEYS = {
   exercises: 'tl_exercises_v1',
@@ -1226,6 +1226,27 @@ export function syncWeeklyPlanToCalendar(plan = getWeeklyPlan(), fromDate = null
 
   write(KEYS.calendarEntries, [...kept, ...created]);
   return created.length;
+}
+
+/**
+ * Entfernt vergangene "geplant"-Eintraege (Typ 'workout'), die nicht
+ * durchgefuehrt wurden - ein verpasster Tag soll nicht fuer immer als
+ * "geplant" stehen bleiben, sondern das Kalenderfeld wird leer. Betrifft
+ * sowohl automatisch (weeklyPlan) als auch manuell angelegte Eintraege.
+ * Der Rotations-Zeiger selbst haengt NICHT an diesen Eintraegen (siehe
+ * advanceRotationIfNeeded) - die Kaskade bleibt also unberuehrt davon.
+ */
+export function clearMissedPlannedEntries(today = todayDateKey()) {
+  const all = getCalendarEntries();
+  const doneByDateRoutine = new Set(
+    getSessions().filter((s) => s.endedAt).map((s) => `${todayKey(new Date(s.startedAt))}:${s.routineId}`)
+  );
+  const kept = all.filter((e) => {
+    if (e.type !== 'workout' || e.date >= today) return true;
+    return doneByDateRoutine.has(`${e.date}:${e.routineId}`);
+  });
+  if (kept.length !== all.length) write(KEYS.calendarEntries, kept);
+  return all.length - kept.length;
 }
 
 /** Was ist laut Plan HEUTE vorgesehen (aktueller Rotations-Stand)? Fuer

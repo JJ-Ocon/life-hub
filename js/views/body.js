@@ -54,6 +54,9 @@ export async function render() {
       </div>
     </div>
 
+    <div class="section-title">Aktuelle Werte</div>
+    ${overviewTableHtml(settings)}
+
     <button class="btn btn-primary" id="add-entry" style="margin-top:12px">+ Messung eintragen</button>
 
     <div class="section-title">Verläufe</div>
@@ -97,6 +100,35 @@ export async function render() {
   `;
 
   wire(settings, photos);
+}
+
+/* ---------- Uebersichtstabelle aller aktuellen Werte ---------- */
+
+function overviewTableHtml(settings) {
+  const rows = CHART_METRICS.map((m) => {
+    const unit = m.key === 'weight' ? settings.units : m.unit;
+    const raw = bodySeries(m.key);
+    if (!raw.length) return { metric: m, value: null };
+    return { metric: m, value: raw[raw.length - 1].value, date: raw[raw.length - 1].date, unit };
+  });
+  if (rows.every((r) => r.value == null)) {
+    return `<p class="faint" style="padding:0 2px">Noch keine Messwerte erfasst.</p>`;
+  }
+  return `
+    <div class="card">
+      <table class="overview-table">
+        <tbody>
+          ${rows.map((r) => `
+            <tr>
+              <td class="faint">${r.metric.label}</td>
+              <td class="overview-table__value">${r.value != null ? `${formatNum(r.value, r.metric.decimals)} ${r.unit}` : '–'}</td>
+              <td class="faint overview-table__date">${r.date ? formatDateShort(r.date) : ''}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 /* ---------- Metrik-Karte mit Zeitraum-Umschalter ---------- */
