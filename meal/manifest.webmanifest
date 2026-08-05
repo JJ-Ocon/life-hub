@@ -1,0 +1,17 @@
+{
+  "name": "Meal Planning",
+  "short_name": "Meal Planning",
+  "description": "Rezepte, Wochenplan und Einkaufsliste mit automatischer Kalorien-/Makro-Berechnung.",
+  "lang": "de",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "categories": ["food", "lifestyle", "health"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
