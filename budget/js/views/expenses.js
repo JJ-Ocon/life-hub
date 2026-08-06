@@ -76,6 +76,7 @@ function draw() {
 export function openExpenseModal(existing, onSaved) {
   const categories = getCategories();
   let categoryId = existing?.categoryId || categories[0].id;
+  let recurringInterval = existing?.recurringInterval || 'monthly';
 
   function content() {
     return `
@@ -111,6 +112,13 @@ export function openExpenseModal(existing, onSaved) {
           <input type="checkbox" id="exp-recurring" ${existing?.recurring ? 'checked' : ''}>
           <span class="switch__track"></span><span class="switch__thumb"></span>
         </label>
+      </div>
+      <div class="field" id="exp-interval-wrap" style="${existing?.recurring ? '' : 'display:none'}">
+        <label>Rhythmus</label>
+        <div class="chip-row">
+          <button type="button" class="chip ${(existing?.recurringInterval || 'monthly') === 'monthly' ? 'active' : ''}" data-interval="monthly">Monatlich</button>
+          <button type="button" class="chip ${existing?.recurringInterval === 'yearly' ? 'active' : ''}" data-interval="yearly">Jährlich</button>
+        </div>
       </div>
       <div class="switch-row" style="padding-bottom:0">
         <p>Steuerlich relevant</p>
@@ -164,6 +172,13 @@ export function openExpenseModal(existing, onSaved) {
       categoryId = b.dataset.cat;
       handle.sheet.querySelectorAll('[data-cat]').forEach((x) => x.classList.toggle('active', x.dataset.cat === categoryId));
     }));
+    handle.sheet.querySelectorAll('[data-interval]').forEach((b) => b.addEventListener('click', () => {
+      recurringInterval = b.dataset.interval;
+      handle.sheet.querySelectorAll('[data-interval]').forEach((x) => x.classList.toggle('active', x.dataset.interval === recurringInterval));
+    }));
+    handle.sheet.querySelector('#exp-recurring').addEventListener('change', (e) => {
+      handle.sheet.querySelector('#exp-interval-wrap').style.display = e.target.checked ? '' : 'none';
+    });
     handle.sheet.querySelector('#exp-save').addEventListener('click', () => {
       const amount = Number(handle.sheet.querySelector('#exp-amount').value);
       if (!amount || amount <= 0) { toast('Bitte einen Betrag eingeben'); return; }
@@ -173,9 +188,9 @@ export function openExpenseModal(existing, onSaved) {
       const recurring = handle.sheet.querySelector('#exp-recurring').checked;
       const taxRelevant = handle.sheet.querySelector('#exp-tax').checked;
       if (existing) {
-        saveExpense({ ...existing, amount, date, categoryId, merchant, note, recurring, taxRelevant });
+        saveExpense({ ...existing, amount, date, categoryId, merchant, note, recurring, recurringInterval, taxRelevant });
       } else {
-        createExpense({ amount, date, categoryId, merchant, note, recurring, taxRelevant });
+        createExpense({ amount, date, categoryId, merchant, note, recurring, recurringInterval, taxRelevant });
       }
       toast('Gespeichert');
       handle.close();

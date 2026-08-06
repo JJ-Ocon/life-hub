@@ -1,5 +1,5 @@
-import { setTitle, setActions, setBack } from '../router.js';
-import { getCategories, budgetStatus, monthTotal, getSettings } from '../db.js';
+import { setTitle, setActions, setBack, navigate } from '../router.js';
+import { getCategories, budgetStatus, monthTotal, getSettings, totalEnvelopeBalance, subscriptionSummary } from '../db.js';
 import { monthKey, monthLabel, formatMoney, escapeHtml, clamp } from '../utils.js';
 import { openExpenseModal } from './expenses.js';
 
@@ -18,10 +18,23 @@ function draw() {
   const total = monthTotal(cursor);
   const view = document.getElementById('view');
 
+  const savedTotal = totalEnvelopeBalance();
+  const abosMonthly = subscriptionSummary().totalMonthly;
+
   view.innerHTML = `
     <div class="stat-tile" style="margin-bottom:16px">
       <div class="stat-tile__value">${formatMoney(total, settings.currency)}</div>
       <div class="stat-tile__label">Ausgaben ${monthLabel(cursor)}</div>
+    </div>
+    <div class="grid-2" style="margin-bottom:16px">
+      <div class="stat-tile card--tap" id="home-savings-tile">
+        <div class="stat-tile__value">${formatMoney(savedTotal, settings.currency)}</div>
+        <div class="stat-tile__label">Gespart</div>
+      </div>
+      <div class="stat-tile card--tap" id="home-subs-tile">
+        <div class="stat-tile__value">${formatMoney(abosMonthly, settings.currency)}</div>
+        <div class="stat-tile__label">Abos/Monat</div>
+      </div>
     </div>
 
     <button class="btn btn-primary" id="home-add" style="margin-bottom:20px">+ Ausgabe erfassen</button>
@@ -56,4 +69,6 @@ function draw() {
   `;
 
   document.getElementById('home-add').addEventListener('click', () => openExpenseModal(null, draw));
+  document.getElementById('home-savings-tile').addEventListener('click', () => navigate('#/savings'));
+  document.getElementById('home-subs-tile').addEventListener('click', () => navigate('#/savings'));
 }
