@@ -3,7 +3,8 @@
 // Haupt-Kalender spiegeln will, erzeugt ihre Eintraege ueber createCalendarEvent()
 // und haelt sich an dieses Schema - der Hub kennt dadurch keine App-Interna,
 // nur dieses eine gemeinsame Format. Aktiv genutzt von: fitness, goals, job,
-// household.
+// household, possessions. (Digitaler Safe nutzt dieses Modul bewusst NICHT -
+// ein Mirror wuerde verschluesselte Dokumentdaten im Klartext preisgeben.)
 
 /**
  * @typedef {Object} CalendarEvent
@@ -39,6 +40,7 @@ const SOURCE_META = {
   goals: { label: 'Ziele/Todo', color: '#c76ae0' },
   job: { label: 'Job', color: '#4f8fd9' },
   household: { label: 'Haushalt', color: '#5fa06a' },
+  possessions: { label: 'Inventar', color: '#c98a3e' },
 };
 const COLOR_OVERRIDES_KEY = 'hub_source_colors_v1';
 
