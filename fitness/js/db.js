@@ -616,6 +616,29 @@ export function startRetroactiveSession(routine, dateKey, startTime = '09:00') {
   return startSessionInternal(routine, { startedAt, retro: true });
 }
 
+/** Rundet auf die naechste halbe Einheit - lokale, leichte Alternative zu
+ *  coach.js' plattenbasiertem Runden, um keinen Zirkelbezug db.js<->coach.js
+ *  einzugehen (coach.js importiert bereits von db.js). */
+function roundToHalf(n) {
+  return Math.round(n * 2) / 2;
+}
+
+/** Reduziert die Satzgewichte einer frisch gestarteten Session automatisch,
+ *  wenn ihr Datum in eine als Deload markierte Woche faellt - das setzt die
+ *  "Deload-Woche" direkt in der Trainingsausfuehrung um, statt nur im
+ *  Kalender zu stehen. Zeit-/Cardio-Saetze (kein weight-Feld) bleiben unberuehrt. */
+function applyDeloadReduction(exercises, dateKey) {
+  const settings = getSettings();
+  if (!settings.autoDeloadReduction || !isDeloadWeek(dateKey)) return exercises;
+  const factor = 1 - (Number(settings.deloadPercent) || 0) / 100;
+  return exercises.map((ex) => ({
+    ...ex,
+    sets: ex.sets.map((s) => (
+      s.weight ? { ...s, weight: roundToHalf(Number(s.weight) * factor) } : s
+    )),
+  }));
+}
+
 function startSessionInternal(routine, { startedAt, retro }) {
   const session = {
     id: uid(),
@@ -643,6 +666,7 @@ function startSessionInternal(routine, { startedAt, retro }) {
       };
     }),
   };
+  session.exercises = applyDeloadReduction(session.exercises, startedAt.slice(0, 10));
   setActiveSession(session);
   return session;
 }
@@ -736,6 +760,8 @@ const DEFAULT_SETTINGS = {
   barWeight: 20,      // Langhantel-Gewicht fuer den Plattenrechner
   plateInventory: [25, 20, 15, 10, 5, 2.5, 1.25], // verfuegbare Scheiben je Seite
   progressionStep: 2.5, // Standard-Steigerung
+  autoDeloadReduction: true, // in einer als Deload markierten Woche Satzgewichte automatisch reduzieren
+  deloadPercent: 50,    // Prozent Lastreduktion in Deload-Wochen
   lastBackupAt: '',     // fuer die Backup-Erinnerung
   // Kalenderfarben je Quell-App (aktuell nur 'fitness' - weitere Oekosystem-Apps
   // bekommen spaeter eigene Eintraege), manuell im Mehr-Bereich ueberschreibbar.

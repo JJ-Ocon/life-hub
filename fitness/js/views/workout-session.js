@@ -690,9 +690,11 @@ export function render() {
     saveFinishedSession(session);
     clearActiveSession();
 
-    // Erfuellte Kalender-Planung fuer diesen Tag/diese Routine automatisch entfernen
+    // Geplante Workout-Eintraege fuer diesen Tag automatisch entfernen - nicht nur
+    // die absolvierte Routine selbst, sondern auch andere fuer denselben Tag geplante
+    // Routinen: es wurde bereits trainiert, ein zweiter geplanter Eintrag waere ueberholt.
     getCalendarEntriesForDate(todayKey(new Date(session.endedAt)))
-      .filter((e) => e.type === 'workout' && e.routineId === session.routineId)
+      .filter((e) => e.type === 'workout')
       .forEach((e) => deleteCalendarEntry(e.id));
 
     // Gehoert die Routine zu einer Rotation, ruecke den Zeiger vor und

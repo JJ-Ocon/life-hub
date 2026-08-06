@@ -15,7 +15,7 @@
              ca. halbes Volumen/Last/Wiederholungen setzen.
    ========================================================= */
 
-import { exerciseHistory, getSettings, getExerciseById, getExercises, RECOVERY_LEVELS } from './db.js';
+import { exerciseHistory, getSettings, getExerciseById, getExercises, RECOVERY_LEVELS, isDeloadWeek } from './db.js';
 import { estimate1RM, daysBetween } from './utils.js';
 
 /** Bestes geschaetztes 1RM einer Einheit. */
@@ -71,18 +71,37 @@ function declineStreak(e1rmsNewestFirst) {
  */
 export function analyzeExercise(exerciseId) {
   const settings = getSettings();
-  const history = exerciseHistory(exerciseId, 6);
+  const historyRaw = exerciseHistory(exerciseId, 6);
 
   const empty = {
     status: 'new', headline: 'Noch zu wenig Daten',
-    reasons: [], suggestion: null, lastWeight: null, sessionsAnalysed: history.length,
+    reasons: [], suggestion: null, lastWeight: null, sessionsAnalysed: historyRaw.length,
   };
-  if (history.length === 0) return empty;
+  if (historyRaw.length === 0) return empty;
 
   // Zeit-basierte Uebungen (Halten, Cardio) werden nicht ueber Last gesteuert
-  if (history[0].mode === 'time') {
+  if (historyRaw[0].mode === 'time') {
     return { ...empty, headline: 'Zeit-basiert – keine Lastanalyse' };
   }
+
+  // Eine als Deload markierte Woche senkt Gewicht/Volumen absichtlich - das darf
+  // nicht als Ermuedungssignal gewertet werden (sonst empfiehlt der Coach nach
+  // einem geplanten Deload faelschlich noch einen weiteren Deload).
+  if (isDeloadWeek(historyRaw[0].date.slice(0, 10))) {
+    const exerciseName = getExerciseById(exerciseId)?.name || 'Übung';
+    return {
+      ...empty,
+      status: 'progressing',
+      headline: `${exerciseName}: Deload-Woche`,
+      reasons: ['Aktuelle Woche ist als Deload markiert – reduzierte Last/Sätze sind hier beabsichtigt, keine Ermüdung.'],
+      lastWeight: Math.max(...historyRaw[0].sets.map((s) => Number(s.weight) || 0)),
+    };
+  }
+
+  // Fuer die Trendanalyse zaehlen vergangene Deload-Wochen nicht mit - sonst wirkt
+  // die erste normale Einheit danach faelschlich wie ein Leistungseinbruch.
+  const history = historyRaw.filter((h) => !isDeloadWeek(h.date.slice(0, 10)));
+  if (history.length === 0) return empty;
 
   const last = history[0];
   const lastWeight = Math.max(...last.sets.map((s) => Number(s.weight) || 0));

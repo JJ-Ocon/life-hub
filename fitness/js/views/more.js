@@ -86,6 +86,20 @@ export function render() {
       </div>
       <div class="switch-row">
         <div class="col grow">
+          <p>Automatischer Deload-Abzug</p>
+          <p class="faint">In als Deload markierten Wochen die Satzgewichte beim Sessionstart automatisch reduzieren</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="auto-deload" ${settings.autoDeloadReduction ? 'checked' : ''}>
+          <span class="switch__track"></span><span class="switch__thumb"></span>
+        </label>
+      </div>
+      <div class="field" id="deload-percent-wrap" style="${settings.autoDeloadReduction ? '' : 'display:none'}">
+        <label>Deload-Reduktion (%)</label>
+        <input class="input" type="number" id="deload-percent" value="${settings.deloadPercent}" min="5" max="80" step="5">
+      </div>
+      <div class="switch-row">
+        <div class="col grow">
           <p>RPE je Satz erfassen</p>
           <p class="faint">Anstrengung pro Satz – verbessert die Deload-Erkennung</p>
         </div>
@@ -191,6 +205,16 @@ export function render() {
   });
   document.getElementById('progression-step').addEventListener('change', (e) => {
     saveSettings({ progressionStep: Number(e.target.value) || 2.5 });
+    toast('Gespeichert');
+  });
+  document.getElementById('auto-deload').addEventListener('change', (e) => {
+    saveSettings({ autoDeloadReduction: e.target.checked });
+    document.getElementById('deload-percent-wrap').style.display = e.target.checked ? '' : 'none';
+    toast(e.target.checked ? 'Automatischer Deload-Abzug aktiv' : 'Automatischer Deload-Abzug aus');
+  });
+  document.getElementById('deload-percent').addEventListener('change', (e) => {
+    const v = Math.min(80, Math.max(5, Number(e.target.value) || 50));
+    saveSettings({ deloadPercent: v });
     toast('Gespeichert');
   });
   document.getElementById('track-rpe').addEventListener('change', (e) => {
