@@ -38,7 +38,7 @@ function uid() {
 // Person: {
 //   id, name, birthday (YYYY-MM-DD|null), interests (string),
 //   socialProfile: { groupName, howMet, tags: string[], remindWeeks } | null,
-//   jobProfile: { company, position, relation: 'colleague'|'client' } | null,
+//   jobProfile: { company, position, relation: 'colleague'|'client', careerNotes } | null,
 //   createdAt
 // }
 
@@ -69,6 +69,14 @@ export function createPerson(fields) {
     createdAt: new Date().toISOString(),
   };
   return savePerson(person);
+}
+
+/** Entfernt nur das jobProfile aller Personen (Social-Profil, Kern-Daten,
+ *  Beziehungs-Log und Verknuepfungen bleiben unangetastet) - fuer die
+ *  Job-App, damit "Alle Daten loeschen" dort NICHT versehentlich die
+ *  geteilten Kontaktdaten der Social-App mitreisst. */
+export function clearJobProfiles() {
+  write(KEYS.people, getPeople().map((p) => ({ ...p, jobProfile: null })));
 }
 
 /** Loescht eine Person inkl. Beziehungs-Log-Eintraegen und Verknuepfungen -
