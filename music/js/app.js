@@ -1,0 +1,45 @@
+import { addRoute, startRouter } from './router.js';
+import { getSettings, isConnected } from './db.js';
+import { applyTheme } from './theme.js';
+import { initPlayer } from './player.js';
+import { renderConnect } from './views/connect.js';
+
+import * as library from './views/library.js';
+import * as artist from './views/artist.js';
+import * as album from './views/album.js';
+import * as downloads from './views/downloads.js';
+import * as more from './views/more.js';
+
+applyTheme(getSettings());
+
+function boot() {
+  if (!isConnected()) {
+    renderConnect({ onSuccess: startApp });
+    return;
+  }
+  startApp();
+}
+
+function startApp() {
+  const tabbar = document.getElementById('tabbar');
+  if (tabbar) tabbar.style.display = '';
+
+  addRoute('/', 'library', () => library.render());
+  addRoute('/artist/:id', 'library', (p) => artist.render(p));
+  addRoute('/album/:id', 'library', (p) => album.render(p));
+  addRoute('/downloads', 'downloads', () => downloads.render());
+  addRoute('/more', 'more', () => more.render());
+
+  initPlayer();
+
+  if (!location.hash || location.hash === '#') location.hash = '#/';
+  startRouter();
+}
+
+boot();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => { /* Offline-Support optional */ });
+  });
+}
