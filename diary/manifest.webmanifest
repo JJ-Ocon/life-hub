@@ -1,0 +1,17 @@
+{
+  "name": "Tagebuch",
+  "short_name": "Tagebuch",
+  "description": "Stimmung, Reflexion und Muster im Blick.",
+  "lang": "de",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "categories": ["lifestyle", "health"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
