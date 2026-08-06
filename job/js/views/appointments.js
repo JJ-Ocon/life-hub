@@ -3,6 +3,8 @@ import { getAppointmentsSorted, getAppointmentById, createAppointment, saveAppoi
 import { getPeople, getPersonById } from '../../../shared/contacts.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { todayKey, formatDateKey, escapeHtml } from '../utils.js';
+import { findConflictingEvents } from '../../../shared/event-store.js';
+import { getSourceLabel } from '../../../shared/calendar-schema.js';
 
 export function render() {
   setTitle('Termine');
@@ -84,12 +86,24 @@ function openApptModal(existing, onSaved) {
     </div>
   `, { center: true });
 
-  handle.sheet.querySelector('#a-save').addEventListener('click', () => {
+  handle.sheet.querySelector('#a-save').addEventListener('click', async () => {
     const title = handle.sheet.querySelector('#a-title').value.trim();
     if (!title) { toast('Bitte einen Titel eingeben'); return; }
     const date = handle.sheet.querySelector('#a-date').value || todayKey();
     const personId = handle.sheet.querySelector('#a-person')?.value || null;
     const note = handle.sheet.querySelector('#a-note').value.trim();
+    if (date !== existing?.date) {
+      const conflicts = await findConflictingEvents(date, 'job').catch(() => []);
+      if (conflicts.length) {
+        const names = [...new Set(conflicts.map((c) => getSourceLabel(c.source)))].join(', ');
+        const ok = await confirmDialog(
+          'Termin überschneidet sich',
+          `Am ${formatDateKey(date)} gibt es bereits Einträge in: ${names}. Trotzdem speichern?`,
+          'Trotzdem speichern', false
+        );
+        if (!ok) return;
+      }
+    }
     if (isNew) {
       createAppointment({ title, date, personId, note });
     } else {

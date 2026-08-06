@@ -84,13 +84,23 @@ export function render() {
         <label>Standard-Steigerung (${settings.units})</label>
         <input class="input" type="number" id="progression-step" value="${settings.progressionStep}" min="0.5" step="0.5">
       </div>
-      <div class="switch-row" style="padding-bottom:0">
+      <div class="switch-row">
         <div class="col grow">
           <p>RPE je Satz erfassen</p>
           <p class="faint">Anstrengung pro Satz – verbessert die Deload-Erkennung</p>
         </div>
         <label class="switch">
           <input type="checkbox" id="track-rpe" ${settings.trackRpe ? 'checked' : ''}>
+          <span class="switch__track"></span><span class="switch__thumb"></span>
+        </label>
+      </div>
+      <div class="switch-row" style="padding-bottom:0">
+        <div class="col grow">
+          <p>Verpasste Routinen automatisch entfernen</p>
+          <p class="faint">Geplante, aber nicht absolvierte Einträge verschwinden aus Kalender & Wochenplan, statt stehen zu bleiben</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="auto-remove-missed" ${settings.autoRemoveMissed ? 'checked' : ''}>
           <span class="switch__track"></span><span class="switch__thumb"></span>
         </label>
       </div>
@@ -186,6 +196,10 @@ export function render() {
   document.getElementById('track-rpe').addEventListener('change', (e) => {
     saveSettings({ trackRpe: e.target.checked });
     toast(e.target.checked ? 'RPE-Erfassung aktiv' : 'RPE-Erfassung aus');
+  });
+  document.getElementById('auto-remove-missed').addEventListener('change', (e) => {
+    saveSettings({ autoRemoveMissed: e.target.checked });
+    toast(e.target.checked ? 'Verpasste Routinen werden automatisch entfernt' : 'Verpasste Routinen bleiben stehen');
   });
   document.getElementById('bar-weight').addEventListener('change', (e) => {
     saveSettings({ barWeight: Number(e.target.value) || 20 });

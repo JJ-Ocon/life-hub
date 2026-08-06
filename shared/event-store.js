@@ -30,6 +30,13 @@ export async function getAllCalendarEvents() {
   });
 }
 
+/** Findet Kalender-Events an einem Datum aus ANDEREN Quellen - Konfliktpruefung
+ *  beim Anlegen neuer Termine, damit zwei Apps nicht unbemerkt denselben Tag belegen. */
+export async function findConflictingEvents(dateKey, excludeSource) {
+  const all = await getAllCalendarEvents();
+  return all.filter((e) => e.source !== excludeSource && e.start.slice(0, 10) === dateKey);
+}
+
 /** Ersetzt alle Events einer Quell-App in einem Rutsch (loeschen + neu einfuegen) -
  *  vermeidet Drift zwischen App-eigenem Datenmodell und gespiegelten Events. */
 export async function replaceSourceEvents(source, events) {

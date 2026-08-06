@@ -8,6 +8,8 @@ import {
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { todayKey, formatDateKey, formatMoney, escapeHtml } from '../utils.js';
 import { openTripModal } from './trips.js';
+import { findConflictingEvents } from '../../../shared/event-store.js';
+import { getSourceLabel } from '../../../shared/calendar-schema.js';
 
 let section = 'overview'; // 'overview' | 'packing' | 'itinerary' | 'expenses'
 let tripId = null;
@@ -195,12 +197,22 @@ function openItineraryModal(trip) {
     <button class="btn btn-primary" id="i-save">Speichern</button>
   `, { center: true });
 
-  handle.sheet.querySelector('#i-save').addEventListener('click', () => {
+  handle.sheet.querySelector('#i-save').addEventListener('click', async () => {
     const title = handle.sheet.querySelector('#i-title').value.trim();
     if (!title) { toast('Bitte einen Titel eingeben'); return; }
     const date = handle.sheet.querySelector('#i-date').value || trip.startDate;
     const time = handle.sheet.querySelector('#i-time').value || null;
     const note = handle.sheet.querySelector('#i-note').value.trim();
+    const conflicts = await findConflictingEvents(date, 'travel').catch(() => []);
+    if (conflicts.length) {
+      const names = [...new Set(conflicts.map((c) => getSourceLabel(c.source)))].join(', ');
+      const ok = await confirmDialog(
+        'Termin überschneidet sich',
+        `Am ${formatDateKey(date)} gibt es bereits Einträge in: ${names}. Trotzdem speichern?`,
+        'Trotzdem speichern', false
+      );
+      if (!ok) return;
+    }
     createItineraryEntry({ tripId: trip.id, date, time, title, note });
     toast('Gespeichert');
     handle.close();

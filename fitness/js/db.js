@@ -725,6 +725,7 @@ const DEFAULT_SETTINGS = {
   units: 'kg', // 'kg' | 'lb'
   defaultRest: 90,
   userName: '',
+  autoRemoveMissed: true, // verpasste geplante Routinen automatisch aus dem Kalender entfernen
   // Profil – Basis fuer BMI und Kalorienbedarf
   heightCm: null,
   birthDate: '',      // YYYY-MM-DD
@@ -1283,6 +1284,7 @@ export function syncWeeklyPlanToCalendar(plan = getWeeklyPlan(), fromDate = null
  * advanceRotationIfNeeded) - die Kaskade bleibt also unberuehrt davon.
  */
 export function clearMissedPlannedEntries(today = todayDateKey()) {
+  if (!getSettings().autoRemoveMissed) return 0;
   const all = getCalendarEntries();
   const doneByDateRoutine = new Set(
     getSessions().filter((s) => s.endedAt).map((s) => `${todayKey(new Date(s.startedAt))}:${s.routineId}`)

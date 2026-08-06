@@ -7,10 +7,24 @@ let cursor = new Date();
 let selectedDay = toDateKey(new Date());
 let allEvents = [];
 
+const HIDDEN_KEY = 'hub_hidden_sources_v1';
+function getHiddenSources() {
+  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')); } catch { return new Set(); }
+}
+function setHiddenSources(set) {
+  localStorage.setItem(HIDDEN_KEY, JSON.stringify([...set]));
+}
+function toggleSourceVisibility(source) {
+  const hidden = getHiddenSources();
+  if (hidden.has(source)) hidden.delete(source); else hidden.add(source);
+  setHiddenSources(hidden);
+}
+
 function pad(n) { return String(n).padStart(2, '0'); }
 function toDateKey(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 function eventsForDay(dateKey) {
-  return allEvents.filter((e) => e.start.slice(0, 10) === dateKey);
+  const hidden = getHiddenSources();
+  return allEvents.filter((e) => e.start.slice(0, 10) === dateKey && !hidden.has(e.source));
 }
 
 async function load() {
@@ -78,15 +92,22 @@ function renderLegend() {
   const sources = [...new Set(allEvents.map((e) => e.source))];
   const legend = document.getElementById('legend');
   if (!sources.length) { legend.innerHTML = ''; return; }
+  const hidden = getHiddenSources();
   legend.innerHTML = sources.map((src) => `
-    <label class="legend-item">
+    <div class="legend-item ${hidden.has(src) ? 'legend-item--hidden' : ''}">
       <input type="color" class="legend-swatch" value="${getSourceColor(src)}" data-source="${src}" style="background:${getSourceColor(src)}">
-      ${escapeHtml(getSourceLabel(src))}
-    </label>
+      <span class="legend-item__text" data-toggle-source="${src}" title="Ein-/ausblenden">${escapeHtml(getSourceLabel(src))}</span>
+    </div>
   `).join('');
   legend.querySelectorAll('input[type=color]').forEach((el) => {
     el.addEventListener('input', () => {
       setSourceColor(el.dataset.source, el.value);
+      render();
+    });
+  });
+  legend.querySelectorAll('[data-toggle-source]').forEach((el) => {
+    el.addEventListener('click', () => {
+      toggleSourceVisibility(el.dataset.toggleSource);
       render();
     });
   });

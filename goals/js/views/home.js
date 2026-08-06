@@ -2,6 +2,8 @@ import { setTitle, setActions, setBack } from '../router.js';
 import { getTodosSorted, getTodoById, createTodo, saveTodo, deleteTodo, toggleTodo, getGoals } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { todayKey, formatDateKey, escapeHtml } from '../utils.js';
+import { findConflictingEvents } from '../../../shared/event-store.js';
+import { getSourceLabel } from '../../../shared/calendar-schema.js';
 
 export function render() {
   setTitle('Todos');
@@ -96,11 +98,23 @@ function openTodoModal(todo, onSaved) {
     </div>
   `, { center: true });
 
-  handle.sheet.querySelector('#todo-save').addEventListener('click', () => {
+  handle.sheet.querySelector('#todo-save').addEventListener('click', async () => {
     const title = handle.sheet.querySelector('#todo-title').value.trim();
     if (!title) { toast('Bitte einen Titel eingeben'); return; }
     const dueDate = handle.sheet.querySelector('#todo-due').value || null;
     const goalId = handle.sheet.querySelector('#todo-goal')?.value || null;
+    if (dueDate && dueDate !== todo.dueDate) {
+      const conflicts = await findConflictingEvents(dueDate, 'goals').catch(() => []);
+      if (conflicts.length) {
+        const names = [...new Set(conflicts.map((c) => getSourceLabel(c.source)))].join(', ');
+        const ok = await confirmDialog(
+          'Termin überschneidet sich',
+          `Am ${formatDateKey(dueDate)} gibt es bereits Einträge in: ${names}. Trotzdem speichern?`,
+          'Trotzdem speichern', false
+        );
+        if (!ok) return;
+      }
+    }
     if (isNew) {
       createTodo({ title, dueDate, goalId });
     } else {

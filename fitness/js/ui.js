@@ -54,6 +54,14 @@ export function openModal(innerHtml, opts = {}) {
     modalStack = modalStack.filter((m) => m.overlay !== overlay);
     opts.onClose?.();
   }
+  if (!opts.hideClose) {
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-close';
+    closeBtn.setAttribute('aria-label', 'Schließen');
+    closeBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    closeBtn.addEventListener('click', close);
+    sheet.appendChild(closeBtn);
+  }
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
   });

@@ -5,7 +5,7 @@
 const CACHE_VERSION = 'life-hub-v2';
 const ASSETS = [
   './', './index.html', './calendar.html', './manifest.webmanifest', './styles.css', './calendar.js',
-  './shared/calendar-schema.js', './shared/event-store.js',
+  './shared/calendar-schema.js', './shared/event-store.js', './icons/icon.svg',
 ];
 
 self.addEventListener('install', (event) => {
