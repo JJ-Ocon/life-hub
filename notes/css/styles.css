@@ -195,9 +195,13 @@ textarea.input { resize: vertical; min-height: 60px; }
 /* ---------- Notizen ---------- */
 .note-card { position: relative; }
 .note-card__text { white-space: pre-wrap; font-size: .92rem; }
+.note-card__preview { font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note-card__meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .note-card__actions { display: flex; gap: 8px; margin-top: 12px; }
+.note-card__thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
 .remind-badge { background: color-mix(in srgb, var(--warn) 20%, var(--bg-input)); color: var(--warn); }
 .remind-badge--due { background: color-mix(in srgb, var(--danger) 20%, var(--bg-input)); color: var(--danger); }
 .quick-add { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 18px; }
 .quick-add textarea { flex: 1; min-height: 44px; }
+.checklist-row { align-items: center; }
+.check-item { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent); }

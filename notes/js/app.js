@@ -3,11 +3,13 @@ import { getSettings } from './db.js';
 import { applyTheme } from './theme.js';
 
 import * as home from './views/home.js';
+import * as editor from './views/editor.js';
 import * as more from './views/more.js';
 
 applyTheme(getSettings());
 
 addRoute('/', 'home', () => home.render());
+addRoute('/note/:id', 'home', (params) => editor.render(params));
 addRoute('/more', 'more', () => more.render());
 
 startRouter();

@@ -21,11 +21,14 @@ function write(key, value) {
 }
 
 /* =========================================================
-   Notizen – schnelle Erfassung ohne Kategorisierung (GTD-Prinzip).
-   remindAt ("Wiedervorlage") ist optional: ein Datum, an dem die Notiz
-   wieder auffallen soll, statt in der Liste unterzugehen.
+   Notizen – schnelle Erfassung ohne Zwangs-Kategorisierung (GTD-Prinzip),
+   optional trotzdem in einen Ordner einsortierbar. remindAt ("Wiedervorlage")
+   ist optional: ein Datum, an dem die Notiz wieder auffallen soll, statt in
+   der Liste unterzugehen.
    ========================================================= */
-// Note: { id, text, remindAt (YYYY-MM-DD|null), createdAt }
+// Note: { id, type ('text'|'checklist'), text, items ({id,text,done}[] - nur
+//         bei type 'checklist'), folder (string|null), photo (dataURL|null),
+//         remindAt (YYYY-MM-DD|null), createdAt, updatedAt }
 
 export function getNotes() {
   return read(KEYS.notes, []);
@@ -45,21 +48,45 @@ export function getNotesSorted(today = todayKey()) {
   return [...due, ...upcoming, ...plain];
 }
 
+/** Alle bereits benutzten Ordnernamen, alphabetisch - keine eigene
+ *  Ordner-Verwaltung noetig, ein Ordner existiert einfach dadurch, dass
+ *  mindestens eine Notiz ihn traegt. */
+export function getFolders() {
+  const set = new Set(getNotes().map((n) => n.folder).filter(Boolean));
+  return [...set].sort((a, b) => a.localeCompare(b, 'de'));
+}
+
 export function saveNote(note) {
   const list = getNotes();
   const idx = list.findIndex((n) => n.id === note.id);
-  if (idx >= 0) list[idx] = note; else list.push(note);
+  const updated = { ...note, updatedAt: nowIso() };
+  if (idx >= 0) list[idx] = updated; else list.push(updated);
   write(KEYS.notes, list);
-  return note;
+  return updated;
 }
 
-export function createNote(text, remindAt = null) {
-  const note = { id: uid(), text, remindAt, createdAt: nowIso() };
-  return saveNote(note);
+export function createNote(fields) {
+  return saveNote({
+    id: uid(),
+    type: fields.type || 'text',
+    text: fields.text || '',
+    items: fields.items || [],
+    folder: fields.folder || null,
+    photo: fields.photo || null,
+    remindAt: fields.remindAt || null,
+    createdAt: nowIso(),
+  });
 }
 
 export function deleteNote(id) {
   write(KEYS.notes, getNotes().filter((n) => n.id !== id));
+}
+
+/** Fortschritt einer Checklisten-Notiz, sonst null. */
+export function checklistProgress(note) {
+  if (note.type !== 'checklist' || !note.items?.length) return null;
+  const done = note.items.filter((i) => i.done).length;
+  return { done, total: note.items.length };
 }
 
 /* =========================================================
