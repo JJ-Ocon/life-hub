@@ -4,6 +4,7 @@ import { escapeHtml, todayKey, daysBetweenDateKeys, formatDateKey } from '../uti
 import { openModal, toast } from '../ui.js';
 
 let activeTag = null;
+let query = '';
 
 export function render() {
   setTitle('Kontakte');
@@ -13,8 +14,19 @@ export function render() {
       <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
     </button>
   `);
-  draw();
+
+  document.getElementById('view').innerHTML = `
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input class="input" id="person-search" placeholder="Kontakt suchen…" value="${escapeHtml(query)}">
+    </div>
+    <div id="person-list"></div>
+  `;
+
   document.getElementById('person-add').addEventListener('click', () => openAddModal(draw));
+  const searchInput = document.getElementById('person-search');
+  searchInput.addEventListener('input', () => { query = searchInput.value; draw(); });
+  draw();
 }
 
 function allTags(people) {
@@ -24,13 +36,16 @@ function allTags(people) {
 }
 
 function draw() {
-  const view = document.getElementById('view');
-  const people = getPeople().sort((a, b) => a.name.localeCompare(b.name));
+  const list = document.getElementById('person-list');
+  if (!list) return;
+  const people = getPeople().sort((a, b) => a.name.localeCompare(b.name, 'de'));
   const tags = allTags(people);
   const today = todayKey();
-  const filtered = activeTag ? people.filter((p) => p.socialProfile?.tags?.includes(activeTag)) : people;
+  const q = query.trim().toLowerCase();
+  let filtered = activeTag ? people.filter((p) => p.socialProfile?.tags?.includes(activeTag)) : people;
+  if (q) filtered = filtered.filter((p) => p.name.toLowerCase().includes(q));
 
-  view.innerHTML = `
+  list.innerHTML = `
     ${tags.length ? `
       <div class="filter-row">
         <button class="chip ${!activeTag ? 'active' : ''}" data-tag="">Alle</button>
@@ -39,8 +54,8 @@ function draw() {
     ` : ''}
     ${filtered.length === 0 ? `
       <div class="empty">
-        <h3>Noch keine Kontakte</h3>
-        <p class="faint">Lege deinen ersten Kontakt über das Plus oben rechts an.</p>
+        <h3>${q || activeTag ? 'Keine Treffer' : 'Noch keine Kontakte'}</h3>
+        <p class="faint">${q || activeTag ? 'Andere Suche oder Filter versuchen.' : 'Lege deinen ersten Kontakt über das Plus oben rechts an.'}</p>
       </div>
     ` : `
       <div class="stack">
@@ -68,10 +83,10 @@ function draw() {
     `}
   `;
 
-  view.querySelectorAll('[data-tag]').forEach((el) => {
+  list.querySelectorAll('[data-tag]').forEach((el) => {
     el.addEventListener('click', () => { activeTag = el.dataset.tag || null; draw(); });
   });
-  view.querySelectorAll('[data-open]').forEach((el) => {
+  list.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => navigate(`#/person/${el.dataset.open}`));
   });
 }

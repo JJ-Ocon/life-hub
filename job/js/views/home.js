@@ -4,6 +4,7 @@ import { escapeHtml } from '../utils.js';
 import { openModal, toast } from '../ui.js';
 
 let activeRelation = null; // null = alle, 'colleague', 'client'
+let query = '';
 
 export function render() {
   setTitle('Kontakte');
@@ -13,16 +14,30 @@ export function render() {
       <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
     </button>
   `);
-  draw();
+
+  document.getElementById('view').innerHTML = `
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input class="input" id="person-search" placeholder="Kontakt suchen…" value="${escapeHtml(query)}">
+    </div>
+    <div id="person-list"></div>
+  `;
+
   document.getElementById('person-add').addEventListener('click', () => openAddModal(draw));
+  const searchInput = document.getElementById('person-search');
+  searchInput.addEventListener('input', () => { query = searchInput.value; draw(); });
+  draw();
 }
 
 function draw() {
-  const view = document.getElementById('view');
-  const jobPeople = getPeople().filter((p) => p.jobProfile).sort((a, b) => a.name.localeCompare(b.name));
-  const filtered = activeRelation ? jobPeople.filter((p) => p.jobProfile.relation === activeRelation) : jobPeople;
+  const list = document.getElementById('person-list');
+  if (!list) return;
+  const jobPeople = getPeople().filter((p) => p.jobProfile).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const q = query.trim().toLowerCase();
+  let filtered = activeRelation ? jobPeople.filter((p) => p.jobProfile.relation === activeRelation) : jobPeople;
+  if (q) filtered = filtered.filter((p) => p.name.toLowerCase().includes(q));
 
-  view.innerHTML = `
+  list.innerHTML = `
     <div class="filter-row">
       <button class="chip ${!activeRelation ? 'active' : ''}" data-rel="">Alle</button>
       <button class="chip ${activeRelation === 'colleague' ? 'active' : ''}" data-rel="colleague">Kollegen</button>
@@ -30,8 +45,8 @@ function draw() {
     </div>
     ${filtered.length === 0 ? `
       <div class="empty">
-        <h3>Noch keine Job-Kontakte</h3>
-        <p class="faint">Lege über das Plus oben rechts einen Kontakt an - entweder neu oder ergänze das Job-Profil einer bestehenden Person.</p>
+        <h3>${q || activeRelation ? 'Keine Treffer' : 'Noch keine Job-Kontakte'}</h3>
+        <p class="faint">${q || activeRelation ? 'Andere Suche oder Filter versuchen.' : 'Lege über das Plus oben rechts einen Kontakt an - entweder neu oder ergänze das Job-Profil einer bestehenden Person.'}</p>
       </div>
     ` : `
       <div class="stack">
@@ -52,10 +67,10 @@ function draw() {
     `}
   `;
 
-  view.querySelectorAll('[data-rel]').forEach((el) => {
+  list.querySelectorAll('[data-rel]').forEach((el) => {
     el.addEventListener('click', () => { activeRelation = el.dataset.rel || null; draw(); });
   });
-  view.querySelectorAll('[data-open]').forEach((el) => {
+  list.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => navigate(`#/person/${el.dataset.open}`));
   });
 }
