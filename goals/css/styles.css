@@ -196,6 +196,12 @@ textarea.input { resize: vertical; min-height: 60px; }
 ::-webkit-scrollbar { width: 0; height: 0; }
 
 /* ---------- Todos ---------- */
+.set-check {
+  width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--bg-input);
+  color: var(--text-faint); display: inline-flex; align-items: center; justify-content: center;
+}
+.set-check.done { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.set-check svg { width: 18px; height: 18px; }
 .todo-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .todo-row:last-child { border-bottom: none; }
 .todo-row.done .todo-row__title { text-decoration: line-through; color: var(--text-faint); }
