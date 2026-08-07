@@ -1,6 +1,6 @@
 // Persistenz-Schicht: alles in localStorage, bleibt lokal auf dem Geraet.
 
-import { uid, nowIso } from './utils.js';
+import { uid, nowIso, addDaysToDateKey, addMonthsToDateKey, addYearsToDateKey } from './utils.js';
 import { createCalendarEvent } from '../../shared/calendar-schema.js';
 import { replaceSourceEvents } from '../../shared/event-store.js';
 
@@ -101,7 +101,36 @@ export function goalProgress(goalId) {
 /* =========================================================
    Todos
    ========================================================= */
-// Todo: { id, title, dueDate (YYYY-MM-DD|null), done, goalId (optional), createdAt }
+// Todo: { id, title, dueDate (YYYY-MM-DD|null), done, goalId (optional),
+//         repeat ({freq:'daily'|'weekly'|'monthly'|'yearly'|'custom', intervalDays?} | null),
+//         createdAt }
+
+export const REPEAT_FREQUENCIES = [
+  { key: 'daily', label: 'Täglich' },
+  { key: 'weekly', label: 'Wöchentlich' },
+  { key: 'monthly', label: 'Monatlich' },
+  { key: 'yearly', label: 'Jährlich' },
+  { key: 'custom', label: 'Benutzerdefiniert' },
+];
+
+export function repeatLabel(repeat) {
+  if (!repeat) return null;
+  if (repeat.freq === 'custom') return `Alle ${repeat.intervalDays || 1} Tage`;
+  return REPEAT_FREQUENCIES.find((f) => f.key === repeat.freq)?.label || null;
+}
+
+/** Naechstes Faelligkeitsdatum ausgehend vom aktuellen, nach Wiederholungsregel. */
+export function nextRepeatDate(dateKey, repeat) {
+  if (!repeat || !dateKey) return null;
+  switch (repeat.freq) {
+    case 'daily': return addDaysToDateKey(dateKey, 1);
+    case 'weekly': return addDaysToDateKey(dateKey, 7);
+    case 'monthly': return addMonthsToDateKey(dateKey, 1);
+    case 'yearly': return addYearsToDateKey(dateKey, 1);
+    case 'custom': return addDaysToDateKey(dateKey, Math.max(1, Number(repeat.intervalDays) || 1));
+    default: return null;
+  }
+}
 
 export function getTodos() {
   return read(KEYS.todos, []);
@@ -140,14 +169,25 @@ export function createTodo(fields) {
     dueDate: fields.dueDate || null,
     done: false,
     goalId: fields.goalId || null,
+    repeat: fields.repeat || null,
     createdAt: nowIso(),
   };
   return saveTodo(todo);
 }
 
+/** Beim Erledigen eines wiederkehrenden Todos mit Faelligkeitsdatum wird
+ *  direkt die naechste Instanz angelegt (Datum ausgehend vom bisherigen
+ *  Faelligkeitsdatum fortgeschrieben, nicht vom heutigen - so bleibt z.B.
+ *  ein woechentliches Todo immer auf demselben Wochentag). */
 export function toggleTodo(id) {
   const t = getTodos().find((x) => x.id === id);
-  if (t) saveTodo({ ...t, done: !t.done });
+  if (!t) return;
+  const wasDone = t.done;
+  saveTodo({ ...t, done: !wasDone });
+  if (!wasDone && t.repeat && t.dueDate) {
+    const nextDate = nextRepeatDate(t.dueDate, t.repeat);
+    if (nextDate) createTodo({ title: t.title, dueDate: nextDate, goalId: t.goalId, repeat: t.repeat });
+  }
 }
 
 export function deleteTodo(id) {

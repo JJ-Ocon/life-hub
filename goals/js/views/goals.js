@@ -4,6 +4,18 @@ import {
   getMilestonesForGoal, createMilestone, toggleMilestone, deleteMilestone,
   getTodos,
 } from '../db.js';
+
+/** Fortschrittsbalken mit einem Marker-Punkt pro Meilenstein an seiner
+ *  anteiligen Position - zeigt auf einen Blick sowohl die Anzahl als auch
+ *  wo im Balken jeder Meilenstein liegt, statt nur der reinen Prozentzahl. */
+function progressBarHtml(pct, milestones) {
+  return `
+    <div class="pbar-wrap">
+      <div class="pbar goal-card__progress"><div class="pbar__fill" style="width:${pct * 100}%"></div></div>
+      ${milestones.map((m, i) => `<span class="pbar__marker ${m.done ? 'done' : ''}" style="left:${((i + 1) / milestones.length) * 100}%" title="${escapeHtml(m.title)}"></span>`).join('')}
+    </div>
+  `;
+}
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { escapeHtml, formatNum } from '../utils.js';
 
@@ -37,13 +49,14 @@ function draw() {
     <div class="stack">
       ${goals.map((g) => {
         const pct = goalProgress(g.id);
+        const milestones = getMilestonesForGoal(g.id);
         return `
           <div class="card card--tap" data-open="${g.id}">
             <p>${escapeHtml(g.title)}</p>
             ${pct === null ? `
               <p class="faint goal-card__pct">Noch keine Meilensteine</p>
             ` : `
-              <div class="pbar goal-card__progress"><div class="pbar__fill" style="width:${pct * 100}%"></div></div>
+              ${progressBarHtml(pct, milestones)}
               <p class="goal-card__pct">${formatNum(pct * 100)}% erledigt</p>
             `}
           </div>
@@ -77,7 +90,7 @@ export function renderDetail({ id }) {
     document.getElementById('view').innerHTML = `
       ${goal.note ? `<p class="faint" style="margin-bottom:16px">${escapeHtml(goal.note)}</p>` : ''}
       ${pct !== null ? `
-        <div class="pbar goal-card__progress"><div class="pbar__fill" style="width:${pct * 100}%"></div></div>
+        ${progressBarHtml(pct, milestones)}
         <p class="goal-card__pct" style="margin-bottom:16px">${formatNum(pct * 100)}% erledigt</p>
       ` : ''}
 
