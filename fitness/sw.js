@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'trainingslog-v13';
+const CACHE_VERSION = 'trainingslog-v14';
 
 const ASSETS = [
   './',
@@ -33,6 +33,9 @@ const ASSETS = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
+  '../shared/calendar-schema.js',
+  '../shared/event-store.js',
+  '../shared/body-data.js',
 ];
 
 self.addEventListener('install', (event) => {

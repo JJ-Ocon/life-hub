@@ -12,6 +12,7 @@ import {
   getLatestWeight, hasCompleteProfile, DAILY_ACTIVITY_LEVELS,
 } from './db.js';
 import { ageFromBirthDate } from './utils.js';
+import { publishCalorieNeeds } from '../../shared/body-data.js';
 
 /* ---------- MET-Werte (metabolisches Aequivalent) ---------- */
 // Quelle der Groessenordnungen: Compendium of Physical Activities.
@@ -133,14 +134,14 @@ export function calcBmr({ weightKg, heightCm, age, sex }) {
  */
 export function calcCalorieNeeds() {
   const settings = getSettings();
-  if (!hasCompleteProfile(settings)) return null;
+  if (!hasCompleteProfile(settings)) { publishCalorieNeeds(null); return null; }
 
   const weightKg = getLatestWeight();
-  if (!weightKg) return null;
+  if (!weightKg) { publishCalorieNeeds(null); return null; }
 
   const age = ageFromBirthDate(settings.birthDate);
   const bmr = calcBmr({ weightKg, heightCm: settings.heightCm, age, sex: settings.sex });
-  if (!bmr) return null;
+  if (!bmr) { publishCalorieNeeds(null); return null; }
 
   const level = DAILY_ACTIVITY_LEVELS.find((l) => l.key === settings.dailyActivity) || DAILY_ACTIVITY_LEVELS[0];
   const baseWithoutTraining = bmr * level.factor;
@@ -156,7 +157,7 @@ export function calcCalorieNeeds() {
     { key: 'bulk10', label: 'Aufbau – stark', kcal: maintenance * 1.10, hint: '+10 % Überschuss' },
   ].map((t) => ({ ...t, kcal: Math.round(t.kcal), belowBmr: t.kcal < bmr }));
 
-  return {
+  const result = {
     bmr: Math.round(bmr),
     activityFactor: level.factor,
     activityLabel: level.label,
@@ -168,6 +169,8 @@ export function calcCalorieNeeds() {
     weightKg,
     age,
   };
+  publishCalorieNeeds(result);
+  return result;
 }
 
 /** Welche Profilangaben fehlen noch fuer die Berechnung? */

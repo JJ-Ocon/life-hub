@@ -2,7 +2,8 @@ import { setTitle, setActions, setBack } from '../router.js';
 import { getSettings, saveSettings, exportAllData, importAllData, resetAllData } from '../db.js';
 import { applyTheme } from '../theme.js';
 import { confirmDialog, toast, promptDialog } from '../ui.js';
-import { download, readFileAsText, todayKey } from '../utils.js';
+import { download, readFileAsText, todayKey, formatNum } from '../utils.js';
+import { getSharedCalorieNeeds } from '../../../shared/body-data.js';
 
 const THEMES = [
   { key: 'light', label: 'Light', dot: '#f5f6f8' },
@@ -17,6 +18,7 @@ export function render() {
   setBack(null);
 
   const settings = getSettings();
+  const shared = getSharedCalorieNeeds();
 
   document.getElementById('view').innerHTML = `
     <div class="section-title" style="margin-top:0">Erscheinungsbild</div>
@@ -37,11 +39,18 @@ export function render() {
 
     <div class="section-title">Kalorienziel</div>
     <div class="card">
-      <div class="field" style="margin-bottom:0">
+      <div class="field" style="margin-bottom:${shared ? '14px' : '0'}">
         <label>Tagesziel (kcal, optional)</label>
         <input class="input" type="number" min="0" step="10" id="target-kcal" value="${settings.targetKcal ?? ''}" placeholder="leer = kein Ziel angezeigt">
       </div>
-      <p class="faint" style="margin-top:10px">Noch kein automatischer Abgleich mit den Körperdaten aus der Fitness-App - das Ziel wird hier manuell eingetragen.</p>
+      ${shared ? `
+        <p class="faint" style="margin-bottom:8px">Aus der Fitness-App übernehmen (${formatNum(shared.weightKg, 1)} kg, ${shared.age} Jahre, inkl. Trainingsverbrauch):</p>
+        <div class="chip-row">
+          ${shared.targets.map((t) => `<button type="button" class="chip ${settings.targetKcal === t.kcal ? 'active' : ''}" data-take-kcal="${t.kcal}">${t.label} · ${formatNum(t.kcal)} kcal</button>`).join('')}
+        </div>
+      ` : `
+        <p class="faint" style="margin-top:10px">Noch keine Körperdaten aus der Fitness-App verfügbar. Öffne die Fitness-App und vervollständige dort dein Profil (Größe, Geburtsdatum, Geschlecht) sowie einen Gewichtseintrag, damit hier automatische Zielvorschläge erscheinen.</p>
+      `}
     </div>
 
     <div class="section-title">Daten</div>
@@ -76,6 +85,11 @@ export function render() {
     saveSettings({ targetKcal: v > 0 ? v : null });
     toast('Gespeichert');
   });
+  document.querySelectorAll('[data-take-kcal]').forEach((b) => b.addEventListener('click', () => {
+    saveSettings({ targetKcal: Number(b.dataset.takeKcal) });
+    toast('Übernommen');
+    render();
+  }));
 
   document.getElementById('export-json').addEventListener('click', () => {
     const data = exportAllData();
