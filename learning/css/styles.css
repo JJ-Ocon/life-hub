@@ -137,6 +137,7 @@ p { margin: 0; }
 textarea.input { resize: vertical; min-height: 60px; }
 
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { border: 1px solid var(--border); background: var(--bg-input); color: var(--text-dim); border-radius: 999px; padding: 7px 14px; font-size: .82rem; font-weight: 600; }
 .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 

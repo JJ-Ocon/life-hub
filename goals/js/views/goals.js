@@ -29,6 +29,18 @@ export function render() {
   `);
   draw();
   document.getElementById('goal-add').addEventListener('click', () => openGoalModal(null, draw));
+  handleQuickAddParam();
+}
+
+/** Deep-Link von anderen Apps (aktuell Lernen's "Als Ziel anlegen"-Button)
+ *  zum Anlegen eines vorausgefuellten Ziels - gleiches Muster wie das
+ *  Todo-quickAdd aus E7 und Budgets Sparumschlag-quickAdd aus E27. */
+function handleQuickAddParam() {
+  const query = new URLSearchParams(location.hash.split('?')[1] || '');
+  const text = query.get('goalQuickAdd');
+  if (!text) return;
+  history.replaceState(null, '', location.pathname + '#/goals');
+  openGoalModal({ title: text, note: '' }, draw);
 }
 
 function draw() {
@@ -166,7 +178,7 @@ export function renderDetail({ id }) {
 }
 
 function openGoalModal(existing, onSaved) {
-  const isNew = !existing;
+  const isNew = !existing?.id;
   const handle = openModal(`
     <h3 class="modal-title">${isNew ? 'Ziel anlegen' : 'Ziel bearbeiten'}</h3>
     <div class="field">

@@ -45,6 +45,7 @@ const SOURCE_META = {
   possessions: { label: 'Inventar', color: '#c98a3e' },
   travel: { label: 'Reisen', color: '#2fb0c9' },
   cosmetics: { label: 'Kosmetik', color: '#e0629a' },
+  learning: { label: 'Lernen', color: '#7c5cff' },
 };
 const COLOR_OVERRIDES_KEY = 'hub_source_colors_v1';
 

@@ -1,6 +1,8 @@
 // Persistenz-Schicht: alles in localStorage, bleibt lokal auf dem Geraet.
 
 import { uid, nowIso, todayKey, addDaysToDateKey, mondayOfWeekKey, daysBetweenDateKeys } from './utils.js';
+import { createCalendarEvent } from '../../shared/calendar-schema.js';
+import { replaceSourceEvents } from '../../shared/event-store.js';
 
 const KEYS = {
   skills: 'lr_skills_v1',
@@ -21,6 +23,11 @@ function write(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+// Frueher eine feste Kategorie-Liste. Jetzt sind Kategorien frei benennbar -
+// diese Keys/Labels bleiben nur als Uebersetzungstabelle fuer bereits vor der
+// Umstellung angelegte Skills (deren `category`-Feld noch einen dieser Keys
+// enthaelt) sowie als Vorschlagsliste im Kategorie-Picker - gleiches Muster
+// wie der Digitale Safe aus E26.
 export const CATEGORIES = [
   { key: 'sprache', label: 'Sprache' },
   { key: 'instrument', label: 'Instrument' },
@@ -30,17 +37,39 @@ export const CATEGORIES = [
   { key: 'sonstiges', label: 'Sonstiges' },
 ];
 
-export function categoryLabel(key) {
-  return CATEGORIES.find((c) => c.key === key)?.label || 'Sonstiges';
+export function categoryLabel(category) {
+  return CATEGORIES.find((c) => c.key === category)?.label || category || 'Sonstiges';
+}
+
+/** Alle aktuell genutzten Kategorienamen (aus bestehenden Skills abgeleitet,
+ *  Altbestand mit festen Keys wird dabei uebersetzt). */
+export function getCategories() {
+  const set = new Set(read(KEYS.skills, []).map((s) => categoryLabel(s.category)));
+  return [...set].sort((a, b) => a.localeCompare(b, 'de'));
+}
+
+export const SKILL_TYPES = [
+  { key: 'generic', label: 'Allgemein' },
+  { key: 'book', label: 'Buch' },
+  { key: 'course', label: 'Kurs' },
+];
+
+export function skillTypeLabel(type) {
+  return SKILL_TYPES.find((t) => t.key === type)?.label || 'Allgemein';
 }
 
 /* =========================================================
    Skills – was gelernt/geuebt wird, optional mit woechentlichem
-   Zeitziel. Keine Kalender-Spiegelung (bewusst): Uebe-Erinnerungen
-   waeren taeglich/hochfrequent wie das Giessen im Haushalt - kein
-   sinnvolles einzelnes Fristdatum zum Spiegeln.
+   Zeitziel. Fuer taegliche Uebe-Sessions selbst gibt es bewusst KEINE
+   Kalender-Spiegelung (waere hochfrequent wie das Giessen im Haushalt) -
+   nur die einmalige Kurs-Deadline (siehe unten) wird gespiegelt, da sie
+   ein einzelnes sinnvolles Fristdatum ist, kein wiederkehrendes Ereignis.
    ========================================================= */
-// Skill: { id, name, category, note, targetMinutesPerWeek (optional), createdAt }
+// Skill: { id, name, category, type ('generic'|'book'|'course'), note,
+//          targetMinutesPerWeek (optional),
+//          totalPages (optional, nur type 'book'),
+//          progressPercent (optional, nur type 'course'),
+//          deadlineDate (YYYY-MM-DD|null, nur type 'course'), createdAt }
 
 export function getSkills() {
   return read(KEYS.skills, []).sort((a, b) => a.name.localeCompare(b.name, 'de'));
@@ -55,13 +84,18 @@ export function saveSkill(skill) {
   const idx = list.findIndex((s) => s.id === skill.id);
   if (idx >= 0) list[idx] = skill; else list.push(skill);
   write(KEYS.skills, list);
+  refreshSharedCalendarMirror();
   return skill;
 }
 
 export function createSkill(fields) {
   return saveSkill({
-    id: uid(), name: fields.name, category: fields.category || 'sonstiges',
+    id: uid(), name: fields.name, category: fields.category || 'Sonstiges',
+    type: fields.type || 'generic',
     note: fields.note || '', targetMinutesPerWeek: fields.targetMinutesPerWeek || null,
+    totalPages: fields.totalPages || null,
+    progressPercent: fields.progressPercent ?? null,
+    deadlineDate: fields.deadlineDate || null,
     createdAt: nowIso(),
   });
 }
@@ -69,12 +103,42 @@ export function createSkill(fields) {
 export function deleteSkill(id) {
   write(KEYS.skills, read(KEYS.skills, []).filter((s) => s.id !== id));
   write(KEYS.sessions, read(KEYS.sessions, []).filter((s) => s.skillId !== id));
+  refreshSharedCalendarMirror();
+}
+
+/** Spiegelt NUR Kurs-Deadlines in den geteilten Kalender-Event-Store (kein
+ *  einziges anderes Learning-Ereignis - Sessions bleiben bewusst aussen vor). */
+export async function refreshSharedCalendarMirror() {
+  try {
+    const events = read(KEYS.skills, [])
+      .filter((s) => s.type === 'course' && s.deadlineDate)
+      .map((s) => createCalendarEvent({
+        id: `learning-${s.id}`, title: `Kurs-Deadline: ${s.name}`, start: s.deadlineDate, source: 'learning',
+      }));
+    await replaceSourceEvents('learning', events);
+  } catch {
+    // Shared Storage ist ein optionales Extra, kein Kernfeature.
+  }
+}
+
+/** Leseforschritt eines Buch-Skills (0-1), aus der zuletzt geloggten Seite
+ *  gegen die Gesamtseitenzahl - null wenn nicht berechenbar. */
+export function bookProgress(skill) {
+  if (skill.type !== 'book' || !skill.totalPages) return null;
+  const latest = getSessions(skill.id).find((s) => s.pageAt != null);
+  if (!latest) return null;
+  return Math.min(1, latest.pageAt / skill.totalPages);
+}
+
+export function bookCurrentPage(skill) {
+  const latest = getSessions(skill.id).find((s) => s.pageAt != null);
+  return latest ? latest.pageAt : null;
 }
 
 /* =========================================================
    Sessions – geloggte Uebungszeit pro Skill.
    ========================================================= */
-// Session: { id, skillId, date (YYYY-MM-DD), durationMinutes, note, createdAt }
+// Session: { id, skillId, date (YYYY-MM-DD), durationMinutes, pageAt (optional, nur Buecher), note, createdAt }
 
 export function getSessions(skillId = null) {
   const all = read(KEYS.sessions, []);
@@ -86,7 +150,8 @@ export function logSession(fields) {
   const list = read(KEYS.sessions, []);
   list.push({
     id: uid(), skillId: fields.skillId, date: fields.date || todayKey(),
-    durationMinutes: fields.durationMinutes || 0, note: fields.note || '', createdAt: nowIso(),
+    durationMinutes: fields.durationMinutes || 0, pageAt: fields.pageAt ?? null,
+    note: fields.note || '', createdAt: nowIso(),
   });
   write(KEYS.sessions, list);
 }
@@ -154,10 +219,12 @@ export function importAllData(data) {
   if (data.skills) write(KEYS.skills, data.skills);
   if (data.sessions) write(KEYS.sessions, data.sessions);
   if (data.settings) write(KEYS.settings, data.settings);
+  refreshSharedCalendarMirror();
 }
 
 export function resetAllData() {
   localStorage.removeItem(KEYS.skills);
   localStorage.removeItem(KEYS.sessions);
   localStorage.removeItem(KEYS.settings);
+  refreshSharedCalendarMirror();
 }
