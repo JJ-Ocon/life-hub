@@ -3,6 +3,7 @@
 import { uid, nowIso, todayKey, addDaysToDateKey, addMonthsToDateKey } from './utils.js';
 import { createCalendarEvent } from '../../shared/calendar-schema.js';
 import { replaceSourceEvents } from '../../shared/event-store.js';
+import { publishExternalSubscriptions } from '../../shared/subscriptions.js';
 
 const KEYS = {
   maintenance: 'hh_maintenance_v1',
@@ -71,10 +72,11 @@ export function maintenanceNextDue(task) {
 }
 
 /* =========================================================
-   Vertraege – Anbieter, Kosten, Kuendigungsfrist.
-   (Noch keine direkte Anbindung an das "Abo-Radar" der Budget-App -
-   das braeuchte ein eigenes geteiltes Modul, siehe Notiz in memory/Doku;
-   bewusst fuer eine spaetere Etappe zurueckgestellt.)
+   Vertraege – Anbieter, Kosten, Kuendigungsfrist. Vertraege mit
+   monatlichen Kosten werden in shared/subscriptions.js veroeffentlicht,
+   damit Budgets Abo-Radar sie zusammen mit den eigenen wiederkehrenden
+   Ausgaben anzeigt (Anbindung "Vertraege <-> Abo-Radar" aus dem
+   Oekosystem-Dokument, nachgezogen sobald Abo-Radar existierte).
    ========================================================= */
 // Contract: { id, provider, monthlyCost, cancellationNoticeWeeks, renewalDate (YYYY-MM-DD), note, createdAt }
 
@@ -92,6 +94,7 @@ export function saveContract(contract) {
   if (idx >= 0) list[idx] = contract; else list.push(contract);
   write(KEYS.contracts, list);
   refreshSharedCalendarMirror();
+  refreshSharedSubscriptions();
   return contract;
 }
 
@@ -106,11 +109,20 @@ export function createContract(fields) {
 export function deleteContract(id) {
   write(KEYS.contracts, getContracts().filter((c) => c.id !== id));
   refreshSharedCalendarMirror();
+  refreshSharedSubscriptions();
 }
 
 /** Datum, ab dem spaetestens gekuendigt werden muss. */
 export function contractReminderDate(contract) {
   return addDaysToDateKey(contract.renewalDate, -(contract.cancellationNoticeWeeks || 0) * 7);
+}
+
+/** Veroeffentlicht alle Vertraege mit Kosten > 0 als externe Abo-Eintraege. */
+function refreshSharedSubscriptions() {
+  const items = getContracts()
+    .filter((c) => c.monthlyCost > 0)
+    .map((c) => ({ id: c.id, label: c.provider, monthlyEquivalent: c.monthlyCost, note: 'Vertrag' }));
+  publishExternalSubscriptions('household', items);
 }
 
 /* =========================================================
@@ -342,6 +354,7 @@ export function importAllData(data) {
   if (data.invoices) write(KEYS.invoices, data.invoices);
   if (data.settings) write(KEYS.settings, data.settings);
   refreshSharedCalendarMirror();
+  refreshSharedSubscriptions();
 }
 
 export function resetAllData() {
@@ -352,4 +365,5 @@ export function resetAllData() {
   localStorage.removeItem(KEYS.invoices);
   localStorage.removeItem(KEYS.settings);
   refreshSharedCalendarMirror();
+  refreshSharedSubscriptions();
 }

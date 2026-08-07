@@ -1,9 +1,11 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
-  getDocuments, getDocumentById, createDocument, saveDocument, deleteDocument, categoryLabel, CATEGORIES,
+  getDocuments, getDocumentById, createDocument, saveDocument, deleteDocument, categoryLabel, getFolders,
 } from '../db.js';
-import { openModal, confirmDialog, toast } from '../ui.js';
+import { openModal, confirmDialog, promptDialog, toast } from '../ui.js';
 import { formatDateKey, escapeHtml, compressImageFile } from '../utils.js';
+
+let activeFolder = null;
 
 export function render() {
   setTitle('Dokumente');
@@ -21,11 +23,19 @@ export function render() {
 
 function draw() {
   const view = document.getElementById('view');
-  const docs = getDocuments();
+  const allDocs = getDocuments();
+  const folders = getFolders();
+  const docs = activeFolder ? allDocs.filter((d) => categoryLabel(d.category) === activeFolder) : allDocs;
   view.innerHTML = `
+    ${folders.length ? `
+      <div class="filter-row" style="margin-bottom:14px">
+        <button class="chip ${!activeFolder ? 'active' : ''}" data-folder="">Alle</button>
+        ${folders.map((f) => `<button class="chip ${activeFolder === f ? 'active' : ''}" data-folder="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join('')}
+      </div>
+    ` : ''}
     ${docs.length === 0 ? `
       <div class="empty">
-        <h3>Noch keine Dokumente</h3>
+        <h3>${activeFolder ? 'Keine Dokumente in diesem Ordner' : 'Noch keine Dokumente'}</h3>
         <p class="faint">Lege Ausweise, Verträge, Versicherungen oder Zertifikate mit Ablaufdatum an.</p>
       </div>
     ` : `
@@ -43,6 +53,9 @@ function draw() {
     `}
     <button class="btn btn-primary" id="doc-add" style="margin-top:16px">+ Dokument</button>
   `;
+  view.querySelectorAll('[data-folder]').forEach((el) => {
+    el.addEventListener('click', () => { activeFolder = el.dataset.folder || null; draw(); });
+  });
   view.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => openDocModal(getDocumentById(el.dataset.open), draw));
   });
@@ -52,6 +65,9 @@ function draw() {
 function openDocModal(existing, onSaved) {
   const isNew = !existing;
   let photoData = existing?.photo || null;
+  let folder = existing ? categoryLabel(existing.category) : (activeFolder || '');
+  const folders = getFolders();
+  if (folder && !folders.includes(folder)) folders.push(folder);
 
   const handle = openModal(`
     <h3 class="modal-title">${isNew ? 'Dokument anlegen' : 'Dokument bearbeiten'}</h3>
@@ -60,10 +76,11 @@ function openDocModal(existing, onSaved) {
       <input class="input" id="d-title" value="${escapeHtml(existing?.title || '')}" placeholder="z.B. Reisepass">
     </div>
     <div class="field">
-      <label>Kategorie</label>
-      <select class="input" id="d-category">
-        ${CATEGORIES.map((c) => `<option value="${c.key}" ${existing?.category === c.key ? 'selected' : ''}>${c.label}</option>`).join('')}
-      </select>
+      <label>Ordner</label>
+      <div class="chip-row" id="folder-row">
+        ${folders.map((f) => `<button type="button" class="chip ${folder === f ? 'active' : ''}" data-folder="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join('')}
+        <button type="button" class="chip" id="folder-new">+ Neu</button>
+      </div>
     </div>
     <div class="field">
       <label>Ablaufdatum (optional)</label>
@@ -88,6 +105,25 @@ function openDocModal(existing, onSaved) {
     </div>
   `, { center: true });
 
+  function wireFolderChips() {
+    handle.sheet.querySelectorAll('[data-folder]').forEach((b) => b.addEventListener('click', () => {
+      folder = b.dataset.folder;
+      handle.sheet.querySelectorAll('[data-folder]').forEach((x) => x.classList.toggle('active', x.dataset.folder === folder));
+    }));
+    handle.sheet.querySelector('#folder-new').addEventListener('click', async () => {
+      const name = await promptDialog('Neuer Ordner', { placeholder: 'z.B. Verträge' });
+      if (!name) return;
+      folder = name;
+      if (!folders.includes(name)) folders.push(name);
+      handle.sheet.querySelector('#folder-row').innerHTML = `
+        ${folders.map((f) => `<button type="button" class="chip ${folder === f ? 'active' : ''}" data-folder="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join('')}
+        <button type="button" class="chip" id="folder-new">+ Neu</button>
+      `;
+      wireFolderChips();
+    });
+  }
+  wireFolderChips();
+
   handle.sheet.querySelector('#d-photo').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -98,7 +134,7 @@ function openDocModal(existing, onSaved) {
   handle.sheet.querySelector('#d-save').addEventListener('click', async () => {
     const title = handle.sheet.querySelector('#d-title').value.trim();
     if (!title) { toast('Bitte einen Titel eingeben'); return; }
-    const category = handle.sheet.querySelector('#d-category').value;
+    const category = folder || 'Sonstiges';
     const expiryDate = handle.sheet.querySelector('#d-expiry').value || null;
     const reminderLeadDays = Number(handle.sheet.querySelector('#d-lead').value) || 0;
     const note = handle.sheet.querySelector('#d-note').value.trim();

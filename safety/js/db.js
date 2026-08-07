@@ -6,6 +6,11 @@ const KEYS = {
   settings: 'ds_settings_v1',
 };
 
+// Frueher eine feste Kategorie-Liste (nur diese sechs Werte waren waehlbar).
+// Jetzt sind Ordner frei benennbar - diese Keys/Labels bleiben nur als
+// Uebersetzungstabelle fuer bereits vor der Umstellung angelegte Dokumente
+// (deren `category`-Feld noch einen dieser Keys enthaelt) sowie als
+// Vorschlagsliste im Ordner-Picker.
 export const CATEGORIES = [
   { key: 'ausweis', label: 'Ausweis/Reisepass' },
   { key: 'fuehrerschein', label: 'Führerschein' },
@@ -166,8 +171,18 @@ export function getDueItems() {
     .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
 }
 
-export function categoryLabel(key) {
-  return CATEGORIES.find((c) => c.key === key)?.label || 'Sonstiges';
+/** Uebersetzt einen alten festen Kategorie-Key in sein Label, oder gibt den
+ *  Wert unveraendert zurueck, wenn er bereits ein frei getippter Ordnername ist. */
+export function categoryLabel(category) {
+  return CATEGORIES.find((c) => c.key === category)?.label || category || 'Sonstiges';
+}
+
+/** Alle aktuell genutzten Ordnernamen (aus bestehenden Dokumenten abgeleitet,
+ *  Altbestand mit festen Keys wird dabei uebersetzt) - gleiches Muster wie
+ *  Notes' getFolders() aus E22. */
+export function getFolders() {
+  const set = new Set(_documents.map((d) => categoryLabel(d.category)));
+  return [...set].sort((a, b) => a.localeCompare(b, 'de'));
 }
 
 // ---------- Backup (bleibt verschluesselt — Export ist sicher weitergebbar) ----------

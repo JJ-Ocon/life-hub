@@ -4,6 +4,7 @@ import {
   depositToEnvelope, withdrawFromEnvelope, totalEnvelopeBalance,
   subscriptionSummary, getSettings,
 } from '../db.js';
+import { getExternalSubscriptions } from '../../../shared/subscriptions.js';
 import { openModal, confirmDialog, toast, promptDialog } from '../ui.js';
 import { formatMoney, formatDateKey, escapeHtml, clamp } from '../utils.js';
 
@@ -153,19 +154,23 @@ function openEnvelopeModal(existing, onSaved) {
   });
 }
 
+const EXTERNAL_SOURCE_LABELS = { household: 'Haushalt' };
+
 function drawSubscriptions() {
   const settings = getSettings();
   const { items, totalMonthly } = subscriptionSummary();
+  const external = getExternalSubscriptions();
+  const combinedTotal = totalMonthly + external.reduce((sum, e) => sum + e.monthlyEquivalent, 0);
   const content = document.getElementById('savings-content');
   content.innerHTML = `
     <div class="stat-tile" style="margin-bottom:16px">
-      <div class="stat-tile__value">${formatMoney(totalMonthly, settings.currency)}</div>
+      <div class="stat-tile__value">${formatMoney(combinedTotal, settings.currency)}</div>
       <div class="stat-tile__label">Abos gesamt / Monat</div>
     </div>
-    ${items.length === 0 ? `
+    ${items.length === 0 && external.length === 0 ? `
       <div class="empty">
         <h3>Keine Abos erkannt</h3>
-        <p class="faint">Markiere Ausgaben beim Erfassen als "wiederkehrend", damit sie hier auftauchen.</p>
+        <p class="faint">Markiere Ausgaben beim Erfassen als "wiederkehrend", damit sie hier auftauchen. Verträge mit Kosten aus der Haushalt-App erscheinen automatisch mit.</p>
       </div>
     ` : `
       <div class="card">
@@ -178,6 +183,17 @@ function drawSubscriptions() {
             <div class="col" style="text-align:right">
               <p>${formatMoney(i.amount, settings.currency)}</p>
               <p class="faint">≈ ${formatMoney(i.monthlyEquivalent, settings.currency)}/Monat</p>
+            </div>
+          </div>
+        `).join('')}
+        ${external.map((e) => `
+          <div class="list-row">
+            <div class="col grow">
+              <p>${escapeHtml(e.label)}</p>
+              <p class="faint">${escapeHtml(e.note || '')}${e.note ? ' · ' : ''}aus ${EXTERNAL_SOURCE_LABELS[e.source] || e.source}</p>
+            </div>
+            <div class="col" style="text-align:right">
+              <p>${formatMoney(e.monthlyEquivalent, settings.currency)}/Monat</p>
             </div>
           </div>
         `).join('')}
