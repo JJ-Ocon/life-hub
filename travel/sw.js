@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'travel-v1';
+const CACHE_VERSION = 'travel-v2';
 
 const ASSETS = [
   './',
@@ -20,6 +20,7 @@ const ASSETS = [
   './icons/icon.svg',
   '../shared/calendar-schema.js',
   '../shared/event-store.js',
+  '../shared/receipt-ocr.js',
 ];
 
 self.addEventListener('install', (event) => {

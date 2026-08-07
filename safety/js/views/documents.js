@@ -19,6 +19,11 @@ export function render() {
     const doc = getDocumentById(openId);
     if (doc) openDocModal(doc, draw);
   }
+  const quickAddFolder = q.get('docQuickAdd');
+  if (quickAddFolder) {
+    history.replaceState(null, '', location.pathname + '#/documents');
+    openDocModal({ category: quickAddFolder }, draw);
+  }
 }
 
 function draw() {
@@ -63,7 +68,7 @@ function draw() {
 }
 
 function openDocModal(existing, onSaved) {
-  const isNew = !existing;
+  const isNew = !existing?.id;
   let photoData = existing?.photo || null;
   let folder = existing ? categoryLabel(existing.category) : (activeFolder || '');
   const folders = getFolders();

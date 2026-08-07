@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
-import { getTrips, createTrip, saveTrip, tripDaysUntilStart } from '../db.js';
+import { getTrips, createTrip, saveTrip, tripDaysUntilStart, TRIP_TYPES, tripTypeLabel } from '../db.js';
 import { openModal, toast } from '../ui.js';
 import { todayKey, formatDateKey, escapeHtml } from '../utils.js';
 
@@ -48,7 +48,7 @@ function draw() {
       <div class="due-row" data-open="${t.id}" style="cursor:pointer">
         <div class="col grow" style="min-width:0">
           <p class="due-row__title truncate">${escapeHtml(t.name)}</p>
-          <p class="due-row__meta">${escapeHtml(t.destination)}${t.destination ? ' · ' : ''}${formatDateKey(t.startDate)} – ${formatDateKey(t.endDate)}</p>
+          <p class="due-row__meta">${escapeHtml(t.destination)}${t.destination ? ' · ' : ''}${formatDateKey(t.startDate)} – ${formatDateKey(t.endDate)} · ${tripTypeLabel(t.type)}</p>
         </div>
         <span class="due-row__date">${countdown}</span>
       </div>
@@ -57,7 +57,8 @@ function draw() {
 }
 
 export function openTripModal(existing, onSaved) {
-  const isNew = !existing;
+  const isNew = !existing?.id;
+  let type = existing?.type || 'sonstiges';
   const handle = openModal(`
     <h3 class="modal-title">${isNew ? 'Reise anlegen' : 'Reise bearbeiten'}</h3>
     <div class="field">
@@ -67,6 +68,12 @@ export function openTripModal(existing, onSaved) {
     <div class="field">
       <label>Ziel (optional)</label>
       <input class="input" id="t-destination" value="${escapeHtml(existing?.destination || '')}" placeholder="z.B. Rom">
+    </div>
+    <div class="field">
+      <label>Reisetyp</label>
+      <div class="chip-row" id="type-row">
+        ${TRIP_TYPES.map((t) => `<button type="button" class="chip ${type === t.key ? 'active' : ''}" data-type="${t.key}">${t.label}</button>`).join('')}
+      </div>
     </div>
     <div class="grid-2">
       <div class="field">
@@ -89,13 +96,18 @@ export function openTripModal(existing, onSaved) {
     <button class="btn btn-primary" id="t-save">Speichern</button>
   `, { center: true });
 
+  handle.sheet.querySelectorAll('[data-type]').forEach((b) => b.addEventListener('click', () => {
+    type = b.dataset.type;
+    handle.sheet.querySelectorAll('[data-type]').forEach((x) => x.classList.toggle('active', x.dataset.type === type));
+  }));
+
   handle.sheet.querySelector('#t-save').addEventListener('click', () => {
     const name = handle.sheet.querySelector('#t-name').value.trim();
     if (!name) { toast('Bitte einen Namen eingeben'); return; }
     const startDate = handle.sheet.querySelector('#t-start').value || todayKey();
     const endDate = handle.sheet.querySelector('#t-end').value || startDate;
     const fields = {
-      name,
+      name, type,
       destination: handle.sheet.querySelector('#t-destination').value.trim(),
       startDate, endDate: endDate < startDate ? startDate : endDate,
       budgetTotal: handle.sheet.querySelector('#t-budget').value ? Number(handle.sheet.querySelector('#t-budget').value) : null,
