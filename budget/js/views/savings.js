@@ -15,6 +15,20 @@ export function render() {
   setBack(null);
   setActions('');
   draw();
+  handleQuickAddParam();
+}
+
+/** Deep-Link von anderen Apps (aktuell Inventar's Ersatz-Ruecklage) zum
+ *  Anlegen eines vorausgefuellten Sparumschlags - gleiches Muster wie
+ *  Notes' "Als Todo anlegen" -> Goals' quickAdd aus E7. */
+function handleQuickAddParam() {
+  const query = new URLSearchParams(location.hash.split('?')[1] || '');
+  const name = query.get('envName');
+  if (!name) return;
+  const amount = Number(query.get('envAmount')) || 0;
+  history.replaceState(null, '', location.pathname + '#/savings');
+  section = 'envelopes';
+  openEnvelopeModal({ name, icon: '📦', monthlyAmount: amount, targetAmount: null }, draw);
 }
 
 function draw() {
@@ -100,7 +114,7 @@ function drawEnvelopes() {
 }
 
 function openEnvelopeModal(existing, onSaved) {
-  const isNew = !existing;
+  const isNew = !existing?.id;
   const handle = openModal(`
     <h3 class="modal-title">${isNew ? 'Sparumschlag anlegen' : 'Sparumschlag bearbeiten'}</h3>
     <div class="row" style="gap:12px">

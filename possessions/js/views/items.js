@@ -1,6 +1,7 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
   getItems, getItemById, createItem, saveItem, deleteItem, categoryLabel, CATEGORIES, totalValue,
+  suggestLifespanMonths, estimatedCurrentValue, suggestedMonthlyReserve, totalSuggestedMonthlyReserve,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { todayKey, formatDateKey, formatMoney, escapeHtml, compressImageFile } from '../utils.js';
@@ -23,11 +24,23 @@ export function render() {
 function draw() {
   const view = document.getElementById('view');
   const items = getItems();
+  const reserve = totalSuggestedMonthlyReserve();
   view.innerHTML = `
     ${items.length > 0 ? `
       <div class="stat-tile" style="margin-bottom:14px">
         <div class="stat-tile__value">${formatMoney(totalValue())}</div>
-        <div class="stat-tile__label">Gesamtwert (aktueller Wert bzw. Kaufpreis)</div>
+        <div class="stat-tile__label">Gesamtwert (aktueller bzw. geschätzter Wert)</div>
+      </div>
+    ` : ''}
+    ${reserve > 0 ? `
+      <div class="card" style="margin-bottom:14px">
+        <div class="row row--between">
+          <div class="col">
+            <p>Empfohlene Ersatz-Rücklage</p>
+            <p class="faint">${formatMoney(reserve)}/Monat, aus Nutzungsdauer &amp; Restwert aller Gegenstände</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="item-reserve-link">Sparumschlag anlegen</button>
+        </div>
       </div>
     ` : ''}
     ${items.length === 0 ? `
@@ -37,15 +50,19 @@ function draw() {
       </div>
     ` : `
       <div class="card">
-        ${items.map((i) => `
+        ${items.map((i) => {
+          const value = i.currentValue ?? estimatedCurrentValue(i);
+          const estimated = i.currentValue == null && value !== null;
+          return `
           <div class="due-row" data-open="${i.id}" style="cursor:pointer">
             <div class="col grow" style="min-width:0">
               <p class="due-row__title truncate">${escapeHtml(i.name)}</p>
               <p class="due-row__meta">${escapeHtml(categoryLabel(i.category))}${i.serialNumber ? ' · ' + escapeHtml(i.serialNumber) : ''}</p>
             </div>
-            ${i.currentValue ?? i.purchasePrice ? `<span class="due-row__date">${formatMoney(i.currentValue ?? i.purchasePrice)}</span>` : ''}
+            ${value != null || i.purchasePrice ? `<span class="due-row__date">${estimated ? '≈ ' : ''}${formatMoney(value ?? i.purchasePrice)}</span>` : ''}
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
     `}
     <button class="btn btn-primary" id="item-add" style="margin-top:16px">+ Gegenstand</button>
@@ -54,6 +71,10 @@ function draw() {
     el.addEventListener('click', () => openItemModal(getItemById(el.dataset.open), draw));
   });
   document.getElementById('item-add').addEventListener('click', () => openItemModal(null, draw));
+  document.getElementById('item-reserve-link')?.addEventListener('click', () => {
+    const params = new URLSearchParams({ envName: 'Ersatzbeschaffung', envAmount: reserve.toFixed(2) });
+    location.href = `../budget/#/savings?${params.toString()}`;
+  });
 }
 
 function openItemModal(existing, onSaved) {
@@ -100,6 +121,11 @@ function openItemModal(existing, onSaved) {
       </div>
     </div>
     <div class="field">
+      <label>Nutzungsdauer (Monate, optional)</label>
+      <input class="input" type="number" min="0" id="i-lifespan" value="${existing?.lifespanMonths ?? ''}" placeholder="für Wert-Schätzung &amp; Ersatz-Rücklage">
+    </div>
+    <p class="faint" id="i-estimate-hint" style="margin:-8px 0 12px"></p>
+    <div class="field">
       <label>Garantie läuft ab (optional)</label>
       <input class="input" type="date" id="i-warranty" value="${existing?.warrantyExpiryDate || ''}">
     </div>
@@ -121,6 +147,29 @@ function openItemModal(existing, onSaved) {
       ${!isNew ? '<button class="btn btn-danger" id="i-delete">Löschen</button>' : ''}
     </div>
   `, { center: true });
+
+  function updateEstimateHint() {
+    const category = handle.sheet.querySelector('#i-category').value;
+    const lifespanRaw = handle.sheet.querySelector('#i-lifespan').value;
+    const lifespanMonths = lifespanRaw ? Number(lifespanRaw) : null;
+    const purchasePrice = Number(handle.sheet.querySelector('#i-purchase-price').value) || null;
+    const purchaseDate = handle.sheet.querySelector('#i-purchase-date').value || null;
+    const hint = handle.sheet.querySelector('#i-estimate-hint');
+    if (!lifespanMonths) {
+      const suggestion = suggestLifespanMonths(category);
+      hint.textContent = suggestion ? `Vorschlag für diese Kategorie: ${suggestion} Monate` : '';
+      return;
+    }
+    const est = estimatedCurrentValue({ purchaseDate, purchasePrice, lifespanMonths });
+    if (est === null) { hint.textContent = ''; return; }
+    const reserve = suggestedMonthlyReserve({ purchaseDate, purchasePrice, lifespanMonths });
+    hint.textContent = `≈ geschätzter Wert heute: ${formatMoney(est)} · empfohlene Rücklage: ${formatMoney(reserve)}/Monat`;
+  }
+  handle.sheet.querySelector('#i-category').addEventListener('change', updateEstimateHint);
+  handle.sheet.querySelector('#i-lifespan').addEventListener('input', updateEstimateHint);
+  handle.sheet.querySelector('#i-purchase-price').addEventListener('input', updateEstimateHint);
+  handle.sheet.querySelector('#i-purchase-date').addEventListener('input', updateEstimateHint);
+  updateEstimateHint();
 
   handle.sheet.querySelector('#i-scan').addEventListener('click', () => handle.sheet.querySelector('#i-scan-input').click());
   handle.sheet.querySelector('#i-scan-input').addEventListener('change', async (e) => {
@@ -160,6 +209,7 @@ function openItemModal(existing, onSaved) {
       purchaseDate: handle.sheet.querySelector('#i-purchase-date').value || null,
       purchasePrice: handle.sheet.querySelector('#i-purchase-price').value ? Number(handle.sheet.querySelector('#i-purchase-price').value) : null,
       currentValue: handle.sheet.querySelector('#i-current-value').value ? Number(handle.sheet.querySelector('#i-current-value').value) : null,
+      lifespanMonths: handle.sheet.querySelector('#i-lifespan').value ? Number(handle.sheet.querySelector('#i-lifespan').value) : null,
       retailer: handle.sheet.querySelector('#i-retailer').value.trim(),
       warrantyExpiryDate: handle.sheet.querySelector('#i-warranty').value || null,
       warrantyReminderLeadDays: Number(handle.sheet.querySelector('#i-lead').value) || 0,

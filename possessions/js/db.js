@@ -1,6 +1,6 @@
 // Persistenz-Schicht: alles in localStorage, bleibt lokal auf dem Geraet.
 
-import { uid, nowIso, todayKey, addDaysToDateKey } from './utils.js';
+import { uid, nowIso, todayKey, addDaysToDateKey, daysBetweenDateKeys } from './utils.js';
 import { createCalendarEvent } from '../../shared/calendar-schema.js';
 import { replaceSourceEvents } from '../../shared/event-store.js';
 
@@ -35,6 +35,17 @@ export function categoryLabel(key) {
   return CATEGORIES.find((c) => c.key === key)?.label || 'Sonstiges';
 }
 
+/** Grobe Standard-Nutzungsdauern je Kategorie (Monate) - kein externer
+ *  Datensatz, nur eine kleine eingebaute Faustregel-Tabelle als Vorschlag,
+ *  gleiches Muster wie Household's PLANT_INTERVAL_SUGGESTIONS. */
+export const LIFESPAN_SUGGESTIONS = {
+  elektronik: 48, moebel: 120, werkzeug: 96, wertsachen: 0, sport: 60, sonstiges: 60,
+};
+
+export function suggestLifespanMonths(category) {
+  return LIFESPAN_SUGGESTIONS[category] || null;
+}
+
 /* =========================================================
    Gegenstaende – Inventar mit Seriennummer, Kaufdaten, Garantie
    und optionalem Foto. Garantie-Ablauf spiegelt sich (unkritisch,
@@ -42,7 +53,8 @@ export function categoryLabel(key) {
    Digitale Safe braucht dieses Inventar keine Verschluesselung.
    ========================================================= */
 // Item: { id, name, category, serialNumber, purchaseDate (YYYY-MM-DD|null),
-//         purchasePrice, currentValue, retailer, warrantyExpiryDate (YYYY-MM-DD|null),
+//         purchasePrice, currentValue, lifespanMonths (fuer Abschreibung/Ruecklage, optional),
+//         retailer, warrantyExpiryDate (YYYY-MM-DD|null),
 //         warrantyReminderLeadDays, note, photo (dataURL|null), createdAt, updatedAt }
 
 export function getItems() {
@@ -68,10 +80,38 @@ export function createItem(fields) {
     id: uid(), name: fields.name, category: fields.category || 'sonstiges',
     serialNumber: fields.serialNumber || '', purchaseDate: fields.purchaseDate || null,
     purchasePrice: fields.purchasePrice ?? null, currentValue: fields.currentValue ?? null,
+    lifespanMonths: fields.lifespanMonths ?? null,
     retailer: fields.retailer || '', warrantyExpiryDate: fields.warrantyExpiryDate || null,
     warrantyReminderLeadDays: fields.warrantyReminderLeadDays ?? 30,
     note: fields.note || '', photo: fields.photo || null, createdAt: nowIso(),
   });
+}
+
+/** Linear abgeschriebener Schaetzwert (Kaufpreis * (1 - vergangene Monate /
+ *  Nutzungsdauer), nie unter 0) - nur berechenbar wenn Kaufdatum, Kaufpreis
+ *  und Nutzungsdauer gepflegt sind. Rein informativ, ueberschreibt nie den
+ *  manuell gepflegten `currentValue`. */
+export function estimatedCurrentValue(item) {
+  if (!item.purchaseDate || item.purchasePrice == null || !item.lifespanMonths) return null;
+  const monthsElapsed = daysBetweenDateKeys(item.purchaseDate, todayKey()) / 30.44;
+  const fraction = Math.max(0, 1 - monthsElapsed / item.lifespanMonths);
+  return Math.round(item.purchasePrice * fraction * 100) / 100;
+}
+
+/** Empfohlene monatliche Ersatz-Ruecklage: geschaetzter Restwert geteilt
+ *  durch die verbleibende Nutzungsdauer - "was muesste ich monatlich
+ *  zurueckelegen, um am Ende der Nutzungsdauer einen Ersatz finanzieren zu
+ *  koennen". null wenn kein Schaetzwert berechenbar ist. */
+export function suggestedMonthlyReserve(item) {
+  const value = estimatedCurrentValue(item);
+  if (value === null) return null;
+  const monthsElapsed = daysBetweenDateKeys(item.purchaseDate, todayKey()) / 30.44;
+  const remaining = Math.max(1, item.lifespanMonths - monthsElapsed);
+  return Math.round((value / remaining) * 100) / 100;
+}
+
+export function totalSuggestedMonthlyReserve() {
+  return read(KEYS.items, []).reduce((sum, i) => sum + (suggestedMonthlyReserve(i) || 0), 0);
 }
 
 export function deleteItem(id) {
@@ -84,9 +124,11 @@ export function warrantyReminderDate(item) {
   return addDaysToDateKey(item.warrantyExpiryDate, -(item.warrantyReminderLeadDays ?? 30));
 }
 
-/** Summe aus aktuellem Wert (falls gepflegt) sonst Kaufpreis - grobe Orientierung, z.B. fuer die Hausratversicherung. */
+/** Summe aus aktuellem Wert (falls gepflegt), sonst linear geschaetzter Wert
+ *  (falls berechenbar), sonst Kaufpreis - grobe Orientierung, z.B. fuer die
+ *  Hausratversicherung. */
 export function totalValue() {
-  return read(KEYS.items, []).reduce((sum, i) => sum + (i.currentValue ?? i.purchasePrice ?? 0), 0);
+  return read(KEYS.items, []).reduce((sum, i) => sum + (i.currentValue ?? estimatedCurrentValue(i) ?? i.purchasePrice ?? 0), 0);
 }
 
 /** Gegenstaende, deren Garantie-Erinnerungsfenster erreicht ist. */
