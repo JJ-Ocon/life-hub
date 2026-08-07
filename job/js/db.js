@@ -5,7 +5,7 @@
 import { createCalendarEvent } from '../../shared/calendar-schema.js';
 import { replaceSourceEvents } from '../../shared/event-store.js';
 import { clearJobProfiles } from '../../shared/contacts.js';
-import { uid, nowIso } from './utils.js';
+import { uid, nowIso, addDaysToDateKey, addMonthsToDateKey, addYearsToDateKey } from './utils.js';
 
 const KEYS = {
   appointments: 'jb_appointments_v1',
@@ -29,7 +29,36 @@ function write(key, value) {
    Termine/Deadlines – App-eigen (nicht Teil des geteilten
    Kontaktmodells), optional mit einer Person verknuepft.
    ========================================================= */
-// Appointment: { id, title, date (YYYY-MM-DD), note, personId (optional), createdAt }
+// Appointment: { id, title, date (YYYY-MM-DD), time (HH:MM|null), location,
+//                note, personId (optional), done, repeat (siehe unten|null), createdAt }
+
+export const REPEAT_FREQUENCIES = [
+  { key: 'daily', label: 'Täglich' },
+  { key: 'weekly', label: 'Wöchentlich' },
+  { key: 'monthly', label: 'Monatlich' },
+  { key: 'yearly', label: 'Jährlich' },
+  { key: 'custom', label: 'Benutzerdefiniert' },
+];
+
+export function repeatLabel(repeat) {
+  if (!repeat) return null;
+  if (repeat.freq === 'custom') return `Alle ${repeat.intervalDays || 1} Tage`;
+  return REPEAT_FREQUENCIES.find((f) => f.key === repeat.freq)?.label || null;
+}
+
+/** Naechstes Datum ausgehend vom aktuellen, nach Wiederholungsregel - gleiches
+ *  Muster wie goals/js/db.js's nextRepeatDate(). */
+export function nextRepeatDate(dateKey, repeat) {
+  if (!repeat || !dateKey) return null;
+  switch (repeat.freq) {
+    case 'daily': return addDaysToDateKey(dateKey, 1);
+    case 'weekly': return addDaysToDateKey(dateKey, 7);
+    case 'monthly': return addMonthsToDateKey(dateKey, 1);
+    case 'yearly': return addYearsToDateKey(dateKey, 1);
+    case 'custom': return addDaysToDateKey(dateKey, Math.max(1, Number(repeat.intervalDays) || 1));
+    default: return null;
+  }
+}
 
 export function getAppointments() {
   return read(KEYS.appointments, []);
@@ -41,6 +70,10 @@ export function getAppointmentById(id) {
 
 export function getAppointmentsForPerson(personId) {
   return getAppointments().filter((a) => a.personId === personId);
+}
+
+export function getAppointmentsForDate(dateKey) {
+  return getAppointments().filter((a) => a.date === dateKey);
 }
 
 export function saveAppointment(appt) {
@@ -57,8 +90,12 @@ export function createAppointment(fields) {
     id: uid(),
     title: fields.title,
     date: fields.date,
+    time: fields.time || null,
+    location: fields.location || '',
     note: fields.note || '',
     personId: fields.personId || null,
+    done: false,
+    repeat: fields.repeat || null,
     createdAt: nowIso(),
   });
 }
@@ -68,8 +105,27 @@ export function deleteAppointment(id) {
   refreshSharedCalendarMirror();
 }
 
+/** Beim Erledigen eines wiederkehrenden Termins (nicht-erledigt -> erledigt)
+ *  wird direkt die naechste Instanz angelegt, ausgehend vom bisherigen Datum
+ *  - gleiches Muster wie goals/js/db.js's toggleTodo(). */
+export function toggleAppointmentDone(id) {
+  const a = getAppointments().find((x) => x.id === id);
+  if (!a) return;
+  const wasDone = a.done;
+  saveAppointment({ ...a, done: !wasDone });
+  if (!wasDone && a.repeat) {
+    const nextDate = nextRepeatDate(a.date, a.repeat);
+    if (nextDate) {
+      createAppointment({
+        title: a.title, date: nextDate, time: a.time, location: a.location,
+        personId: a.personId, repeat: a.repeat,
+      });
+    }
+  }
+}
+
 export function getAppointmentsSorted() {
-  return getAppointments().slice().sort((a, b) => a.date.localeCompare(b.date));
+  return getAppointments().slice().sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
 }
 
 /** Spiegelt Termine in den geteilten Kalender-Event-Store (viertes Beispiel
@@ -79,7 +135,7 @@ export async function refreshSharedCalendarMirror() {
   try {
     const events = getAppointments().map((a) => createCalendarEvent({
       id: `job-appt-${a.id}`,
-      title: a.title,
+      title: a.done ? `✓ ${a.title}` : a.title,
       start: a.date,
       source: 'job',
     }));

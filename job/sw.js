@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'job-v1';
+const CACHE_VERSION = 'job-v2';
 
 const ASSETS = [
   './',
@@ -17,6 +17,8 @@ const ASSETS = [
   './js/views/home.js',
   './js/views/person.js',
   './js/views/appointments.js',
+  './js/views/calendar.js',
+  './js/views/network.js',
   './js/views/more.js',
   './icons/icon.svg',
   '../shared/contacts.js',

@@ -5,6 +5,8 @@ import { applyTheme } from './theme.js';
 import * as home from './views/home.js';
 import * as person from './views/person.js';
 import * as appointments from './views/appointments.js';
+import * as calendar from './views/calendar.js';
+import * as network from './views/network.js';
 import * as more from './views/more.js';
 
 applyTheme(getSettings());
@@ -12,6 +14,8 @@ applyTheme(getSettings());
 addRoute('/', 'home', () => home.render());
 addRoute('/person/:id', 'home', (p) => person.render(p));
 addRoute('/appointments', 'appointments', () => appointments.render());
+addRoute('/calendar', 'calendar', () => calendar.render());
+addRoute('/network', 'network', () => network.render());
 addRoute('/more', 'more', () => more.render());
 
 startRouter();

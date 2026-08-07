@@ -214,9 +214,37 @@ textarea.input { resize: vertical; min-height: 60px; }
 /* ---------- Termine ---------- */
 .appt-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .appt-row:last-child { border-bottom: none; }
+.appt-row.done .appt-row__title { text-decoration: line-through; color: var(--text-faint); }
 .appt-row__title { flex: 1; font-size: .9rem; }
 .appt-row__meta { font-size: .76rem; color: var(--text-faint); margin-top: 2px; }
 .appt-row__due { font-size: .76rem; color: var(--text-faint); flex-shrink: 0; }
 .appt-row__due--overdue { color: var(--danger); font-weight: 700; }
 .relation-badge--colleague { background: color-mix(in srgb, var(--accent) 20%, var(--bg-input)); color: var(--accent); }
 .relation-badge--client { background: color-mix(in srgb, var(--warn) 20%, var(--bg-input)); color: var(--warn); }
+
+.set-check {
+  width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--bg-input);
+  color: var(--text-faint); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.set-check.done { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.set-check svg { width: 18px; height: 18px; }
+
+/* ---------- Kalender (eigene Monatsansicht) ---------- */
+.cal-nav { margin-bottom: 14px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-weekday { text-align: center; font-size: .7rem; color: var(--text-faint); font-weight: 700; padding-bottom: 4px; }
+.cal-cell {
+  aspect-ratio: 1; border-radius: var(--radius-s); border: 1px solid transparent; background: var(--bg-card);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: .82rem; cursor: pointer;
+}
+.cal-cell--muted { opacity: .35; }
+.cal-cell--today { border-color: var(--accent); font-weight: 700; }
+.cal-cell__dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.cal-day-appt { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.cal-day-appt:last-child { border-bottom: none; }
+
+/* ---------- Netzwerk-Graph ---------- */
+.network-svg { width: 100%; height: auto; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-m); }
+.network-svg text { font-size: 11px; fill: var(--text); font-weight: 600; }
+.network-link { stroke: var(--border); stroke-width: 1.5; }
+.network-node { fill: var(--accent); stroke: var(--bg-card); stroke-width: 2; cursor: pointer; }

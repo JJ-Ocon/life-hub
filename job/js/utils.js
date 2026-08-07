@@ -47,6 +47,31 @@ export function daysBetweenDateKeys(a, b) {
   return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
 }
 
+export function addMonthsToDateKey(dateKey, n) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1 + n, d));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
+export function addYearsToDateKey(dateKey, n) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const dt = new Date(Date.UTC(y + n, m - 1, d));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
+export function weekdayOfDateKey(dateKey) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sonntag
+}
+
+export function daysInMonth(year, month) {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+}
+
+export function monthLabel(year, month) {
+  return `${MONTHS[month]} ${year}`;
+}
+
 export function weekdayLabel(dayIndex) {
   return WEEKDAYS[dayIndex];
 }
