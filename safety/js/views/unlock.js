@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack, render } from '../router.js';
-import { hasVault, setupVault, unlockVault } from '../db.js';
+import { hasVault, setupVault, unlockVault, lockoutStatus, registerFailedUnlockAttempt, clearLockout, MAX_ATTEMPTS } from '../db.js';
 import { toast } from '../ui.js';
 
 function lockIcon() {
@@ -53,30 +53,60 @@ function drawSetup(onSuccess) {
 
 function drawUnlock(onSuccess) {
   setTitle('Entsperren');
+  const status = lockoutStatus();
   render(`
     <div class="unlock-screen">
       ${lockIcon()}
       <h2>Digitaler Safe</h2>
       <div class="field">
         <label>Passphrase</label>
-        <input class="input" type="password" id="pass" autocomplete="current-password">
+        <input class="input" type="password" id="pass" autocomplete="current-password" ${status.locked ? 'disabled' : ''}>
       </div>
       <p class="faint" id="unlock-error" style="color:var(--danger);min-height:1.2em"></p>
-      <button class="btn btn-primary" id="unlock-go">Entsperren</button>
+      <button class="btn btn-primary" id="unlock-go" ${status.locked ? 'disabled' : ''}>Entsperren</button>
     </div>
   `);
   const input = document.getElementById('pass');
+  const errorEl = document.getElementById('unlock-error');
+  const button = document.getElementById('unlock-go');
+
+  if (status.locked) {
+    startLockoutCountdown(status.remainingMs, () => drawUnlock(onSuccess));
+    return;
+  }
+
   input.focus();
   const submit = async () => {
     if (!input.value) return;
     try {
       await unlockVault(input.value);
+      clearLockout();
       onSuccess();
     } catch {
-      document.getElementById('unlock-error').textContent = 'Falsche Passphrase.';
-      input.select();
+      const after = registerFailedUnlockAttempt();
+      input.value = '';
+      if (after.locked) {
+        drawUnlock(onSuccess);
+        return;
+      }
+      const left = MAX_ATTEMPTS - after.attempts;
+      errorEl.textContent = `Falsche Passphrase. Noch ${left} Versuch${left === 1 ? '' : 'e'}, bevor kurz gesperrt wird.`;
+      input.focus();
     }
   };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-  document.getElementById('unlock-go').addEventListener('click', submit);
+  button.addEventListener('click', submit);
+}
+
+function startLockoutCountdown(remainingMs, onExpired) {
+  const errorEl = document.getElementById('unlock-error');
+  let msLeft = remainingMs;
+  const tick = () => {
+    const secs = Math.ceil(msLeft / 1000);
+    errorEl.textContent = `Zu viele Fehlversuche. Bitte in ${secs}s erneut versuchen.`;
+    if (msLeft <= 0) { clearInterval(timer); onExpired(); return; }
+    msLeft -= 1000;
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
 }

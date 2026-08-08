@@ -6,6 +6,16 @@ import { openModal, confirmDialog, promptDialog, toast } from '../ui.js';
 import { formatDateKey, escapeHtml, compressImageFile } from '../utils.js';
 
 let activeFolder = null;
+let docSection = 'list'; // 'list' | 'gallery'
+
+/** Rueckgabe-Adresse fuer den Cross-App-Anlege-Flow (siehe openDocModal
+ *  unten): eine rufende App haengt beim Deep-Link zusaetzlich `returnTo`
+ *  (volle URL inkl. Hash, wohin nach dem Speichern zurueckgesprungen wird)
+ *  und `returnParam` (Name des Query-Parameters, unter dem die neue
+ *  Dokument-ID an `returnTo` angehaengt wird) an - z.B. Travel's
+ *  trip-detail.js. Ohne diese beiden Parameter verhaelt sich das Anlegen
+ *  wie gewohnt (Modal schliessen, Liste bleibt in Safety). */
+let pendingReturn = null;
 
 export function render() {
   setTitle('Dokumente');
@@ -21,6 +31,9 @@ export function render() {
   }
   const quickAddFolder = q.get('docQuickAdd');
   if (quickAddFolder) {
+    const returnTo = q.get('returnTo');
+    const returnParam = q.get('returnParam');
+    pendingReturn = returnTo && returnParam ? { returnTo, returnParam } : null;
     history.replaceState(null, '', location.pathname + '#/documents');
     openDocModal({ category: quickAddFolder }, draw);
   }
@@ -31,33 +44,59 @@ function draw() {
   const allDocs = getDocuments();
   const folders = getFolders();
   const docs = activeFolder ? allDocs.filter((d) => categoryLabel(d.category) === activeFolder) : allDocs;
+  const photoDocs = docs.filter((d) => d.photo);
   view.innerHTML = `
+    <div class="section-tabs">
+      <button class="chip ${docSection === 'list' ? 'active' : ''}" data-section="list">📋 Liste</button>
+      <button class="chip ${docSection === 'gallery' ? 'active' : ''}" data-section="gallery">🖼️ Galerie</button>
+    </div>
     ${folders.length ? `
       <div class="filter-row" style="margin-bottom:14px">
         <button class="chip ${!activeFolder ? 'active' : ''}" data-folder="">Alle</button>
         ${folders.map((f) => `<button class="chip ${activeFolder === f ? 'active' : ''}" data-folder="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join('')}
       </div>
     ` : ''}
-    ${docs.length === 0 ? `
-      <div class="empty">
-        <h3>${activeFolder ? 'Keine Dokumente in diesem Ordner' : 'Noch keine Dokumente'}</h3>
-        <p class="faint">Lege Ausweise, Verträge, Versicherungen oder Zertifikate mit Ablaufdatum an.</p>
-      </div>
-    ` : `
-      <div class="card">
-        ${docs.map((d) => `
-          <div class="due-row" data-open="${d.id}" style="cursor:pointer">
-            <div class="col grow" style="min-width:0">
-              <p class="due-row__title truncate">${escapeHtml(d.title)}</p>
-              <p class="due-row__meta">${escapeHtml(categoryLabel(d.category))}</p>
+    ${docSection === 'gallery' ? `
+      ${photoDocs.length === 0 ? `
+        <div class="empty">
+          <h3>Noch keine Fotos</h3>
+          <p class="faint">Dokumente mit hinterlegtem Foto tauchen hier als Galerie auf.</p>
+        </div>
+      ` : `
+        <div class="photo-grid">
+          ${photoDocs.map((d) => `
+            <div class="photo-grid__item" data-open="${d.id}" style="cursor:pointer">
+              <img src="${d.photo}" alt="${escapeHtml(d.title)}">
+              <p class="photo-grid__caption truncate">${escapeHtml(d.title)}</p>
             </div>
-            ${d.expiryDate ? `<span class="due-row__date">${formatDateKey(d.expiryDate)}</span>` : '<span class="faint">–</span>'}
-          </div>
-        `).join('')}
-      </div>
+          `).join('')}
+        </div>
+      `}
+    ` : `
+      ${docs.length === 0 ? `
+        <div class="empty">
+          <h3>${activeFolder ? 'Keine Dokumente in diesem Ordner' : 'Noch keine Dokumente'}</h3>
+          <p class="faint">Lege Ausweise, Verträge, Versicherungen oder Zertifikate mit Ablaufdatum an.</p>
+        </div>
+      ` : `
+        <div class="card">
+          ${docs.map((d) => `
+            <div class="due-row" data-open="${d.id}" style="cursor:pointer">
+              <div class="col grow" style="min-width:0">
+                <p class="due-row__title truncate">${escapeHtml(d.title)}</p>
+                <p class="due-row__meta">${escapeHtml(categoryLabel(d.category))}</p>
+              </div>
+              ${d.expiryDate ? `<span class="due-row__date">${formatDateKey(d.expiryDate)}</span>` : '<span class="faint">–</span>'}
+            </div>
+          `).join('')}
+        </div>
+      `}
     `}
     <button class="btn btn-primary" id="doc-add" style="margin-top:16px">+ Dokument</button>
   `;
+  view.querySelectorAll('[data-section]').forEach((el) => {
+    el.addEventListener('click', () => { docSection = el.dataset.section; draw(); });
+  });
   view.querySelectorAll('[data-folder]').forEach((el) => {
     el.addEventListener('click', () => { activeFolder = el.dataset.folder || null; draw(); });
   });
@@ -69,6 +108,8 @@ function draw() {
 
 function openDocModal(existing, onSaved) {
   const isNew = !existing?.id;
+  const returnCtx = isNew ? pendingReturn : null;
+  pendingReturn = null;
   let photoData = existing?.photo || null;
   let folder = existing ? categoryLabel(existing.category) : (activeFolder || '');
   const folders = getFolders();
@@ -143,8 +184,22 @@ function openDocModal(existing, onSaved) {
     const expiryDate = handle.sheet.querySelector('#d-expiry').value || null;
     const reminderLeadDays = Number(handle.sheet.querySelector('#d-lead').value) || 0;
     const note = handle.sheet.querySelector('#d-note').value.trim();
-    if (isNew) await createDocument({ title, category, expiryDate, reminderLeadDays, note, photo: photoData });
-    else await saveDocument({ ...existing, title, category, expiryDate, reminderLeadDays, note, photo: photoData });
+    if (isNew) {
+      const created = await createDocument({ title, category, expiryDate, reminderLeadDays, note, photo: photoData });
+      if (returnCtx) {
+        // returnTo ist eine Hash-Route der rufenden App (z.B. ".../travel/#/trip/123") -
+        // die Rueckgabe-Parameter gehoeren also in die Query HINTER dem Hash, nicht in
+        // die echte URL-Query (die vor dem Hash liegt und vom Hash-Router nicht gelesen wird).
+        const [base, existingQuery] = returnCtx.returnTo.split('?');
+        const params = new URLSearchParams(existingQuery || '');
+        params.set(returnCtx.returnParam, created.id);
+        params.set(`${returnCtx.returnParam}Title`, created.title);
+        location.href = `${base}?${params.toString()}`;
+        return;
+      }
+    } else {
+      await saveDocument({ ...existing, title, category, expiryDate, reminderLeadDays, note, photo: photoData });
+    }
     toast('Gespeichert');
     handle.close();
     onSaved?.();

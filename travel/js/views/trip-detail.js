@@ -5,6 +5,7 @@ import {
   getItineraryEntries, createItineraryEntry, deleteItineraryEntry,
   getExpenses, createExpense, deleteExpense,
   getDocuments, createDocument, deleteDocument,
+  getSafeRefs, createSafeRef, deleteSafeRef,
   getPhotos, createPhoto, deletePhoto,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
@@ -29,6 +30,17 @@ export function render(id) {
   setTitle(trip.name);
   setBack(() => navigate('#/'));
   setActions('');
+
+  const query = new URLSearchParams(location.hash.split('?')[1] || '');
+  const safeDocId = query.get('safeDocId');
+  if (safeDocId) {
+    const title = query.get('safeDocIdTitle') || 'Dokument';
+    history.replaceState(null, '', `${location.pathname}#/trip/${id}`);
+    createSafeRef(id, safeDocId, title);
+    section = 'documents';
+    toast('Im Digitalen Safe angelegt und verknüpft');
+  }
+
   draw();
 }
 
@@ -151,9 +163,24 @@ function drawSection(trip) {
     body.querySelector('#i-add').addEventListener('click', () => openItineraryModal(trip));
   } else if (section === 'documents') {
     const docs = getDocuments(trip.id);
+    const safeRefs = getSafeRefs(trip.id);
     body.innerHTML = `
       <p class="faint" style="margin-bottom:12px">Tickets, Buchungsbestätigungen und andere Reisedokumente. Für sensible Dokumente wie Reisepass-Kopien empfiehlt sich stattdessen der verschlüsselte Digitale Safe.</p>
       <button class="btn btn-ghost" id="d-safe-link" style="margin-bottom:14px">🔒 Sensibles Dokument im Digitalen Safe anlegen</button>
+      ${safeRefs.length ? `
+        <div class="card">
+          ${safeRefs.map((r) => `
+            <div class="due-row">
+              <div class="col grow" style="min-width:0">
+                <p class="due-row__title truncate">🔒 ${escapeHtml(r.title)}</p>
+                <p class="due-row__meta">Im Digitalen Safe · ${formatDateKey(r.createdAt.slice(0, 10))}</p>
+              </div>
+              <a class="btn btn-ghost btn-sm" href="../safety/#/documents?open=${encodeURIComponent(r.safeDocId)}">Öffnen</a>
+              <button class="icon-btn" data-del-ref="${r.id}" aria-label="Verknüpfung entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
       ${docs.length === 0 ? '<div class="empty"><p class="faint">Noch keine Dokumente hinterlegt.</p></div>' : `
         <div class="card">
           ${docs.map((d) => `
@@ -171,9 +198,20 @@ function drawSection(trip) {
       <button class="btn btn-primary" id="d-add" style="margin-top:14px">+ Dokument</button>
     `;
     body.querySelector('#d-safe-link').addEventListener('click', () => {
-      const params = new URLSearchParams({ docQuickAdd: `Reise: ${trip.name}` });
+      const returnTo = `${location.origin}${location.pathname}#/trip/${trip.id}`;
+      const params = new URLSearchParams({
+        docQuickAdd: `Reise: ${trip.name}`,
+        returnTo,
+        returnParam: 'safeDocId',
+      });
       location.href = `../safety/#/documents?${params.toString()}`;
     });
+    body.querySelectorAll('[data-del-ref]').forEach((el) => el.addEventListener('click', async () => {
+      const ok = await confirmDialog('Verknüpfung entfernen?', 'Das Dokument selbst bleibt im Digitalen Safe erhalten - nur der Verweis hier wird entfernt.');
+      if (!ok) return;
+      deleteSafeRef(el.dataset.delRef);
+      drawSection(trip);
+    }));
     body.querySelectorAll('[data-del]').forEach((el) => el.addEventListener('click', async () => {
       const ok = await confirmDialog('Dokument löschen?', 'Wird unwiderruflich gelöscht.');
       if (!ok) return;

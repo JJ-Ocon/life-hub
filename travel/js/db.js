@@ -10,6 +10,7 @@ const KEYS = {
   itinerary: 'tr_itinerary_v1',
   expenses: 'tr_expenses_v1',
   documents: 'tr_documents_v1',
+  safeRefs: 'tr_safe_refs_v1',
   photos: 'tr_photos_v1',
   settings: 'tr_settings_v1',
 };
@@ -95,6 +96,7 @@ export function deleteTrip(id) {
   write(KEYS.itinerary, read(KEYS.itinerary, []).filter((i) => i.tripId !== id));
   write(KEYS.expenses, read(KEYS.expenses, []).filter((e) => e.tripId !== id));
   write(KEYS.documents, read(KEYS.documents, []).filter((d) => d.tripId !== id));
+  write(KEYS.safeRefs, read(KEYS.safeRefs, []).filter((r) => r.tripId !== id));
   write(KEYS.photos, read(KEYS.photos, []).filter((p) => p.tripId !== id));
   refreshSharedCalendarMirror();
 }
@@ -227,6 +229,28 @@ export function deleteDocument(id) {
 }
 
 /* =========================================================
+   Safe-Referenzen – nur ein Verweis (Titel + Safe-eigene Dokument-ID) auf
+   ein Dokument, das tatsaechlich im verschluesselten Digitalen Safe liegt.
+   Travel selbst sieht/speichert nie den Inhalt, nur den Titel; Anklicken
+   springt mit Passworteingabe zum Safe (Deep-Link ".../safety/#/documents?open=<id>").
+   ========================================================= */
+// TripSafeRef: { id, tripId, safeDocId, title, createdAt }
+
+export function getSafeRefs(tripId) {
+  return read(KEYS.safeRefs, []).filter((r) => r.tripId === tripId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function createSafeRef(tripId, safeDocId, title) {
+  const list = read(KEYS.safeRefs, []);
+  list.push({ id: uid(), tripId, safeDocId, title, createdAt: nowIso() });
+  write(KEYS.safeRefs, list);
+}
+
+export function deleteSafeRef(id) {
+  write(KEYS.safeRefs, read(KEYS.safeRefs, []).filter((r) => r.id !== id));
+}
+
+/* =========================================================
    Fotos – eigener Fotobereich pro Reise.
    ========================================================= */
 // TripPhoto: { id, tripId, photoData (dataURL, komprimiert), caption, createdAt }
@@ -287,6 +311,7 @@ export function exportAllData() {
     itinerary: read(KEYS.itinerary, []),
     expenses: read(KEYS.expenses, []),
     documents: read(KEYS.documents, []),
+    safeRefs: read(KEYS.safeRefs, []),
     photos: read(KEYS.photos, []),
     settings: getSettings(),
   };
@@ -298,6 +323,7 @@ export function importAllData(data) {
   if (data.itinerary) write(KEYS.itinerary, data.itinerary);
   if (data.expenses) write(KEYS.expenses, data.expenses);
   if (data.documents) write(KEYS.documents, data.documents);
+  if (data.safeRefs) write(KEYS.safeRefs, data.safeRefs);
   if (data.photos) write(KEYS.photos, data.photos);
   if (data.settings) write(KEYS.settings, data.settings);
   refreshSharedCalendarMirror();
@@ -309,6 +335,7 @@ export function resetAllData() {
   localStorage.removeItem(KEYS.itinerary);
   localStorage.removeItem(KEYS.expenses);
   localStorage.removeItem(KEYS.documents);
+  localStorage.removeItem(KEYS.safeRefs);
   localStorage.removeItem(KEYS.photos);
   localStorage.removeItem(KEYS.settings);
   refreshSharedCalendarMirror();
