@@ -210,7 +210,7 @@ function openInvoiceModal(onSaved) {
   const handle = openModal(`
     <h3 class="modal-title">Rechnung ablegen</h3>
     <button class="btn btn-ghost" id="inv-scan" type="button" style="margin-bottom:14px">📷 Beleg scannen</button>
-    <input type="file" accept="image/*" capture="environment" id="inv-scan-input" hidden>
+    <input type="file" accept="image/*" id="inv-scan-input" hidden>
     <p class="faint" id="inv-scan-status" hidden style="margin:-6px 0 14px"></p>
     <div class="field">
       <label>Datum</label>

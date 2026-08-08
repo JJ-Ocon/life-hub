@@ -84,7 +84,7 @@ function openItemModal(existing, onSaved) {
   const handle = openModal(`
     <h3 class="modal-title">${isNew ? 'Gegenstand anlegen' : 'Gegenstand bearbeiten'}</h3>
     <button class="btn btn-ghost" id="i-scan" type="button" style="margin-bottom:14px">📷 Kaufbeleg scannen</button>
-    <input type="file" accept="image/*" capture="environment" id="i-scan-input" hidden>
+    <input type="file" accept="image/*" id="i-scan-input" hidden>
     <p class="faint" id="i-scan-status" hidden style="margin:-6px 0 14px"></p>
     <div class="field">
       <label>Name</label>

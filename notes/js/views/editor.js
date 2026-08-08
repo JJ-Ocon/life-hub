@@ -5,15 +5,27 @@ import { escapeHtml, uid, compressImageFile } from '../utils.js';
 
 let draft = null; // Arbeitskopie waehrend des Bearbeitens
 let editingId = null; // null = neue Notiz
+let draftKey = null;
+
+// Unfertige Entwuerfe bleiben in-memory erhalten, wenn man innerhalb der App
+// zu einer anderen Ansicht wechselt (z.B. Ordner-Chip, Startseite) und zum
+// Editor zurueckkommt - erst Speichern/Loeschen wirft den Entwurf weg.
+const pendingDrafts = {};
 
 export function render(params) {
   editingId = params.id === 'new' ? null : params.id;
   const existing = editingId ? getNoteById(editingId) : null;
   if (editingId && !existing) { navigate('#/'); return; }
 
-  draft = existing
-    ? { ...existing, items: (existing.items || []).map((i) => ({ ...i })) }
-    : { type: 'text', text: '', items: [], folder: null, photo: null, remindAt: null };
+  draftKey = editingId || 'new';
+  if (pendingDrafts[draftKey]) {
+    draft = pendingDrafts[draftKey];
+  } else {
+    draft = existing
+      ? { ...existing, items: (existing.items || []).map((i) => ({ ...i })) }
+      : { type: 'text', text: '', items: [], folder: null, photo: null, remindAt: null };
+    pendingDrafts[draftKey] = draft;
+  }
 
   setTitle(editingId ? 'Notiz bearbeiten' : 'Neue Notiz');
   setBack(() => navigate('#/'));
@@ -24,6 +36,10 @@ export function render(params) {
   ` : '');
 
   draw();
+
+  return function cleanup() {
+    syncDraftFromDom();
+  };
 }
 
 function draw() {
@@ -70,7 +86,7 @@ function draw() {
       ${draft.photo ? `<img src="${draft.photo}" alt="" style="max-width:100%;border-radius:10px;margin-bottom:10px;display:block">` : ''}
       <div class="row" style="gap:10px">
         <label class="btn btn-ghost grow" for="note-photo-input">${draft.photo ? 'Bild ändern' : '📷 Bild hinzufügen'}</label>
-        <input type="file" accept="image/*" capture="environment" id="note-photo-input" hidden>
+        <input type="file" accept="image/*" id="note-photo-input" hidden>
         ${draft.photo ? '<button type="button" class="btn btn-ghost" id="note-photo-remove">Entfernen</button>' : ''}
       </div>
     </div>
@@ -163,6 +179,7 @@ function wire() {
     if (empty) { toast(draft.type === 'text' ? 'Notiz ist leer' : 'Mindestens einen Punkt eintragen'); return; }
     if (editingId) saveNote({ ...draft, id: editingId });
     else createNote(draft);
+    delete pendingDrafts[draftKey];
     toast('Gespeichert');
     navigate('#/');
   });
@@ -178,6 +195,7 @@ function wire() {
     const ok = await confirmDialog('Notiz löschen?', 'Wird unwiderruflich gelöscht.');
     if (!ok) return;
     deleteNote(editingId);
+    delete pendingDrafts[draftKey];
     toast('Gelöscht');
     navigate('#/');
   });

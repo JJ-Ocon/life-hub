@@ -68,7 +68,7 @@ function openProductModal(existing, onSaved) {
   const handle = openModal(`
     <h3 class="modal-title">${isNew ? 'Produkt anlegen' : 'Produkt bearbeiten'}</h3>
     <button class="btn btn-ghost" id="p-scan" type="button" style="margin-bottom:14px">📷 Kaufbeleg scannen</button>
-    <input type="file" accept="image/*" capture="environment" id="p-scan-input" hidden>
+    <input type="file" accept="image/*" id="p-scan-input" hidden>
     <p class="faint" id="p-scan-status" hidden style="margin:-6px 0 14px"></p>
     <div class="field">
       <label>Name</label>

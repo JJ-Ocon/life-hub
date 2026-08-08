@@ -86,7 +86,7 @@ export async function render() {
       <span>Fortschrittsfotos</span>
       <label class="btn btn-ghost btn-sm" style="width:auto" for="photo-input">+ Foto</label>
     </div>
-    <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+    <input type="file" id="photo-input" accept="image/*" hidden>
     ${photos.length === 0 ? `<p class="faint" style="padding:0 2px">Noch keine Fotos. Fotos werden nur lokal auf deinem Gerät gespeichert.</p>` : `
       <div class="photo-grid">
         ${photos.slice().reverse().map((p) => `

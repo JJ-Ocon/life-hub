@@ -82,7 +82,7 @@ export function openExpenseModal(existing, onSaved) {
     return `
       <h3 class="modal-title">${existing ? 'Ausgabe bearbeiten' : 'Ausgabe erfassen'}</h3>
       <button class="btn btn-ghost" id="exp-scan" type="button" style="margin-bottom:14px">📷 Beleg scannen</button>
-      <input type="file" accept="image/*" capture="environment" id="exp-scan-input" hidden>
+      <input type="file" accept="image/*" id="exp-scan-input" hidden>
       <p class="faint" id="exp-scan-status" hidden style="margin:-6px 0 14px"></p>
       <div class="field">
         <label>Betrag</label>

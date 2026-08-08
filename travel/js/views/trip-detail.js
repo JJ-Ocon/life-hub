@@ -284,7 +284,7 @@ function openExpenseModal(trip) {
   const handle = openModal(`
     <h3 class="modal-title">Ausgabe erfassen</h3>
     <button class="btn btn-ghost" id="e-scan" type="button" style="margin-bottom:14px">📷 Beleg scannen</button>
-    <input type="file" accept="image/*" capture="environment" id="e-scan-input" hidden>
+    <input type="file" accept="image/*" id="e-scan-input" hidden>
     <p class="faint" id="e-scan-status" hidden style="margin:-6px 0 14px"></p>
     <div class="field">
       <label>Betrag</label>
