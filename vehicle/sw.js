@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'budget-v6';
+const CACHE_VERSION = 'vehicle-v1';
 
 const ASSETS = [
   './',
@@ -15,16 +15,12 @@ const ASSETS = [
   './js/utils.js',
   './js/theme.js',
   './js/views/home.js',
-  './js/views/expenses.js',
-  './js/views/categories.js',
-  './js/views/savings.js',
+  './js/views/vehicles.js',
+  './js/views/compare.js',
   './js/views/more.js',
   './icons/icon.svg',
-  // Kleiner OCR-Wrapper wird vorgeladen; die grossen Tesseract-Vendor-Dateien
-  // (mehrere MB) werden bewusst NICHT vorab gecached, sondern erst beim
-  // tatsaechlichen Scannen per Netzwerk-zuerst-Strategie unten geladen und
-  // dann fuer Offline-Nutzung im Cache behalten.
-  '../shared/receipt-ocr.js',
+  '../shared/calendar-schema.js',
+  '../shared/event-store.js',
   '../shared/subscriptions.js',
 ];
 

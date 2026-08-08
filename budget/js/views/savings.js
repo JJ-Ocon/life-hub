@@ -168,7 +168,7 @@ function openEnvelopeModal(existing, onSaved) {
   });
 }
 
-const EXTERNAL_SOURCE_LABELS = { household: 'Haushalt' };
+const EXTERNAL_SOURCE_LABELS = { household: 'Haushalt', vehicle: 'Fahrzeug' };
 
 function drawSubscriptions() {
   const settings = getSettings();

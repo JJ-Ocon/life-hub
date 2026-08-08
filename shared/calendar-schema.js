@@ -46,6 +46,7 @@ const SOURCE_META = {
   travel: { label: 'Reisen', color: '#2fb0c9' },
   cosmetics: { label: 'Kosmetik', color: '#e0629a' },
   learning: { label: 'Lernen', color: '#7c5cff' },
+  vehicle: { label: 'Fahrzeug', color: '#c9524a' },
 };
 const COLOR_OVERRIDES_KEY = 'hub_source_colors_v1';
 

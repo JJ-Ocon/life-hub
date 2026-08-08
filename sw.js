@@ -2,7 +2,7 @@
 // CACHE_VERSION erhoehen. Cached bewusst nicht die Unterordner der
 // Einzel-Apps (fitness/, ...) - die haben ihren eigenen Service Worker
 // mit eigenem Scope.
-const CACHE_VERSION = 'life-hub-v2';
+const CACHE_VERSION = 'life-hub-v3';
 const ASSETS = [
   './', './index.html', './calendar.html', './manifest.webmanifest', './styles.css', './calendar.js',
   './shared/calendar-schema.js', './shared/event-store.js', './icons/icon.svg',
