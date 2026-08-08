@@ -2,10 +2,10 @@
 // CACHE_VERSION erhoehen. Cached bewusst nicht die Unterordner der
 // Einzel-Apps (fitness/, ...) - die haben ihren eigenen Service Worker
 // mit eigenem Scope.
-const CACHE_VERSION = 'life-hub-v3';
+const CACHE_VERSION = 'life-hub-v4';
 const ASSETS = [
-  './', './index.html', './calendar.html', './manifest.webmanifest', './styles.css', './calendar.js',
-  './shared/calendar-schema.js', './shared/event-store.js', './icons/icon.svg',
+  './', './index.html', './calendar.html', './backup.html', './manifest.webmanifest', './styles.css',
+  './calendar.js', './backup.js', './shared/calendar-schema.js', './shared/event-store.js', './icons/icon.svg',
 ];
 
 self.addEventListener('install', (event) => {

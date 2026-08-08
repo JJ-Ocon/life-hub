@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Backup – Life Hub</title>
+<meta name="theme-color" content="#0d1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Backup</h1>
+      <p class="subtitle">Alle Apps auf einmal sichern oder wiederherstellen</p>
+    </div>
+    <a class="header-link" href="./" aria-label="Zurück">
+      <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+    </a>
+  </header>
+
+  <div class="backup-card">
+    <p>Buendelt die Daten aller 16 Apps in einer einzigen Datei - praktisch beim Geraetewechsel. Jede App bleibt ausserdem einzeln in ihrem eigenen "Mehr"-Bereich sicherbar.</p>
+    <button class="btn btn-primary" id="export-all">⬇ Alles exportieren</button>
+    <label class="btn btn-ghost" for="import-all-input">⬆ Alles importieren</label>
+    <input type="file" id="import-all-input" accept="application/json" hidden>
+    <p class="backup-hint">Digitaler Safe bleibt beim Export verschluesselt - die Passphrase wird nicht mitgesichert und muss nach einem Import weiterhin separat eingegeben werden. Musik sichert nur Einstellungen (keine Downloads, keine Zugangsdaten) und hat aktuell keinen automatischen Wiederherstellen-Weg.</p>
+  </div>
+
+  <div class="backup-card" id="backup-log-card" hidden>
+    <div class="backup-log" id="backup-log"></div>
+  </div>
+
+  <script type="module" src="backup.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
