@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'budget-v7';
+const CACHE_VERSION = 'budget-v8';
 
 const ASSETS = [
   './',
@@ -28,6 +28,7 @@ const ASSETS = [
   // dann fuer Offline-Nutzung im Cache behalten.
   '../shared/receipt-ocr.js',
   '../shared/subscriptions.js',
+  '../shared/grocery-cost.js',
 ];
 
 self.addEventListener('install', (event) => {

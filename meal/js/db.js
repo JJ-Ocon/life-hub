@@ -3,7 +3,8 @@
 // read-only Referenztabelle und wird separat per fetch geladen, nicht hier
 // gespeichert - siehe tools/build-foods.js.
 
-import { uid, nowIso, todayKey } from './utils.js';
+import { uid, nowIso, todayKey, addDaysToDateKey, mondayOfWeekKey } from './utils.js';
+import { getSharedGrocerySpend } from '../../shared/grocery-cost.js';
 
 const KEYS = {
   recipes: 'ml_recipes_v1',
@@ -11,6 +12,9 @@ const KEYS = {
   settings: 'ml_settings_v1',
   shoppingChecked: 'ml_shopping_checked_v1',
   customFoods: 'ml_custom_foods_v1',
+  ingredientPrices: 'ml_ingredient_prices_v1',
+  diets: 'ml_diets_v1',
+  recurringRules: 'ml_recurring_rules_v1',
 };
 
 function read(key, fallback) {
@@ -132,9 +136,11 @@ export function createRecipe(fields) {
 
 export function deleteRecipe(id) {
   write(KEYS.recipes, getRecipes().filter((r) => r.id !== id));
-  // Geplante Mahlzeiten mit diesem Rezept werden mit-entfernt, damit der
-  // Wochenplan nicht auf nicht mehr existierende Rezepte verweist.
+  // Geplante Mahlzeiten und Wiederkehrend-Regeln mit diesem Rezept werden
+  // mit-entfernt, damit weder Wochenplan noch Auto-Planung auf ein nicht
+  // mehr existierendes Rezept verweisen.
   write(KEYS.mealPlan, getMealPlanEntries().filter((e) => e.recipeId !== id));
+  write(KEYS.recurringRules, getRecurringRules().filter((r) => r.recipeId !== id));
 }
 
 /** Naehrwerte eines Rezepts (Summe + pro Portion) anhand der Zutatenliste. */
@@ -161,6 +167,196 @@ export async function recipeNutrition(recipe) {
     fat: total.fat / servings,
   };
   return { total, perServing };
+}
+
+/* =========================================================
+   Zutatenpreise & echte Kosten (E52) - unabhaengig von der Naehrwert-
+   Zutatenliste (USDA/eigene Zutaten), da Preise personenbezogen/lokal
+   variieren und nicht Teil einer allgemeinen Naehrwert-Referenztabelle
+   sein koennen. Ein Preis pro 100g je Zutatenname, optional - Zutaten
+   ohne hinterlegten Preis fliessen einfach nicht in die Kostenrechnung
+   ein (klar als "unvollstaendig" ausgewiesen statt geraten).
+   ========================================================= */
+// IngredientPrices: { [foodName]: pricePer100g }
+
+export function getIngredientPrices() {
+  return read(KEYS.ingredientPrices, {});
+}
+
+export function getIngredientPrice(foodName) {
+  return getIngredientPrices()[foodName] ?? null;
+}
+
+export function setIngredientPrice(foodName, pricePer100g) {
+  const all = getIngredientPrices();
+  if (pricePer100g == null || pricePer100g === '') delete all[foodName];
+  else all[foodName] = Number(pricePer100g);
+  write(KEYS.ingredientPrices, all);
+}
+
+/** Kosten eines Rezepts (gesamt + pro Portion) anhand hinterlegter
+ *  Zutatenpreise. `missingCount` zaehlt Zutaten ohne Preis - der
+ *  Gesamtbetrag ist dann eine Teilsumme, nie geraten/geschaetzt. */
+export function recipeCost(recipe) {
+  const prices = getIngredientPrices();
+  let total = 0;
+  let missingCount = 0;
+  for (const ing of recipe.ingredients) {
+    const price = prices[ing.foodName];
+    if (price == null) { missingCount++; continue; }
+    total += (ing.grams / 100) * price;
+  }
+  const servings = recipe.servings || 1;
+  return { total, perServing: total / servings, missingCount, ingredientCount: recipe.ingredients.length };
+}
+
+/** Kosten einer geplanten Mahlzeit (Rezept-Kosten pro Portion, skaliert auf
+ *  die tatsaechlich geplante Portionenzahl) - "echte Kosten pro Mahlzeit"
+ *  aus dem Verbrauch (Wochenplan), nicht aus dem reinen Einkauf. */
+export function mealCost(entry) {
+  const recipe = getRecipeById(entry.recipeId);
+  if (!recipe) return { total: 0, missingCount: 0 };
+  const { perServing, missingCount } = recipeCost(recipe);
+  return { total: perServing * (entry.servings || 1), missingCount };
+}
+
+/** Summierte Kosten aller geplanten Mahlzeiten in einem Datumsbereich. */
+export function costForRange(startDate, endDate) {
+  const entries = getMealPlanForRange(startDate, endDate);
+  let total = 0;
+  let missingCount = 0;
+  for (const e of entries) {
+    const c = mealCost(e);
+    total += c.total;
+    missingCount += c.missingCount;
+  }
+  return { total, missingCount };
+}
+
+/** Vergleich mit Budgets tatsaechlichen Lebensmittel-Ausgaben diesen Monat
+ *  (shared/grocery-cost.js, Budget ist alleinige Quelle) - reiner Abgleich
+ *  zur Einordnung, keine automatische Verrechnung/Buchung. */
+export function getSharedGroceryComparison() {
+  return getSharedGrocerySpend();
+}
+
+/* =========================================================
+   Diaet-Planung mit woechentlicher Anpassung (E52) - ein zeitlich
+   begrenztes Kalorienziel, das sich automatisch woechentlich um einen
+   festen Betrag veraendert (z.B. -100 kcal/Woche fuer eine sanfte,
+   schrittweise Diaet statt eines abrupten Sprungs). Ueberschreibt das
+   statische settings.targetKcal nur waehrend der aktiven Diaet.
+   ========================================================= */
+// Diet: { id, name, startDate, durationWeeks, startTargetKcal, weeklyStepKcal, active, createdAt }
+
+export function getDiets() {
+  return read(KEYS.diets, []);
+}
+
+export function getActiveDiet() {
+  return getDiets().find((d) => d.active) || null;
+}
+
+function saveDiet(diet) {
+  const list = getDiets();
+  const idx = list.findIndex((d) => d.id === diet.id);
+  if (idx >= 0) list[idx] = diet; else list.push(diet);
+  write(KEYS.diets, list);
+  return diet;
+}
+
+/** Legt eine neue Diaet an und aktiviert sie (deaktiviert dabei jede
+ *  andere - immer nur eine aktive Diaet gleichzeitig). */
+export function startDiet(fields) {
+  const list = getDiets().map((d) => ({ ...d, active: false }));
+  write(KEYS.diets, list);
+  return saveDiet({
+    id: uid(),
+    name: fields.name || 'Diät',
+    startDate: fields.startDate || todayKey(),
+    durationWeeks: Math.max(1, Number(fields.durationWeeks) || 4),
+    startTargetKcal: Number(fields.startTargetKcal) || 0,
+    weeklyStepKcal: Number(fields.weeklyStepKcal) || 0,
+    active: true,
+    createdAt: nowIso(),
+  });
+}
+
+export function stopDiet(id) {
+  const diet = getDiets().find((d) => d.id === id);
+  if (diet) saveDiet({ ...diet, active: false });
+}
+
+export function deleteDiet(id) {
+  write(KEYS.diets, getDiets().filter((d) => d.id !== id));
+}
+
+/** Aktuelle Woche (1-basiert, geclampt auf durationWeeks) und daraus
+ *  abgeleitetes Kalorienziel fuer ein gegebenes Datum. */
+export function dietStatusForDate(diet, date = todayKey()) {
+  const daysElapsed = Math.max(0, daysBetweenDateKeys(diet.startDate, date));
+  const weekIndex = Math.min(diet.durationWeeks - 1, Math.floor(daysElapsed / 7));
+  const targetKcal = Math.max(0, diet.startTargetKcal + weekIndex * diet.weeklyStepKcal);
+  const finished = daysElapsed >= diet.durationWeeks * 7;
+  return { week: weekIndex + 1, totalWeeks: diet.durationWeeks, targetKcal, finished };
+}
+
+function daysBetweenDateKeys(a, b) {
+  const [ay, am, ad] = a.split('-').map(Number);
+  const [by, bm, bd] = b.split('-').map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
+}
+
+/** Kalorienziel fuer ein Datum - aktive Diaet hat Vorrang vor dem
+ *  statischen Einstellungs-Ziel. */
+export function targetKcalForDate(date = todayKey()) {
+  const diet = getActiveDiet();
+  if (diet) return dietStatusForDate(diet, date).targetKcal;
+  return getSettings().targetKcal;
+}
+
+/* =========================================================
+   Automatisches Planen wiederkehrender Mahlzeiten (E52) - eine Regel
+   "dieses Rezept an diesem Wochentag zu dieser Mahlzeit" fuellt beim
+   Anwenden nur LEERE Slots der Zielwoche, ueberschreibt also nie eine
+   bereits bewusst getroffene Wahl.
+   ========================================================= */
+// RecurringRule: { id, recipeId, weekday (0=Mo..6=So), meal, servings, createdAt }
+
+export function getRecurringRules() {
+  return read(KEYS.recurringRules, []);
+}
+
+export function getRecurringRulesForRecipe(recipeId) {
+  return getRecurringRules().filter((r) => r.recipeId === recipeId);
+}
+
+export function createRecurringRule(fields) {
+  const list = getRecurringRules();
+  list.push({
+    id: uid(), recipeId: fields.recipeId, weekday: Number(fields.weekday),
+    meal: fields.meal, servings: Number(fields.servings) || 1, createdAt: nowIso(),
+  });
+  write(KEYS.recurringRules, list);
+}
+
+export function deleteRecurringRule(id) {
+  write(KEYS.recurringRules, getRecurringRules().filter((r) => r.id !== id));
+}
+
+/** Wendet alle Regeln auf die Woche an, die `weekStartMonday` enthaelt -
+ *  fuellt nur leere Slots, gibt die Anzahl neu befuellter Slots zurueck. */
+export function applyRecurringRules(weekStartMonday) {
+  const rules = getRecurringRules();
+  let filled = 0;
+  for (const rule of rules) {
+    const date = addDaysToDateKey(weekStartMonday, rule.weekday);
+    const existing = getMealPlanForDate(date).find((e) => e.meal === rule.meal);
+    if (existing) continue;
+    setMealSlot(date, rule.meal, rule.recipeId, rule.servings);
+    filled++;
+  }
+  return filled;
 }
 
 /* =========================================================
@@ -283,6 +479,9 @@ export function exportAllData() {
     mealPlan: getMealPlanEntries(),
     customFoods: getCustomFoods(),
     settings: getSettings(),
+    ingredientPrices: getIngredientPrices(),
+    diets: getDiets(),
+    recurringRules: getRecurringRules(),
   };
 }
 
@@ -291,6 +490,9 @@ export function importAllData(data) {
   if (data.mealPlan) write(KEYS.mealPlan, data.mealPlan);
   if (data.customFoods) write(KEYS.customFoods, data.customFoods);
   if (data.settings) write(KEYS.settings, data.settings);
+  if (data.ingredientPrices) write(KEYS.ingredientPrices, data.ingredientPrices);
+  if (data.diets) write(KEYS.diets, data.diets);
+  if (data.recurringRules) write(KEYS.recurringRules, data.recurringRules);
 }
 
 export function resetAllData() {
@@ -299,4 +501,7 @@ export function resetAllData() {
   localStorage.removeItem(KEYS.settings);
   localStorage.removeItem(KEYS.shoppingChecked);
   localStorage.removeItem(KEYS.customFoods);
+  localStorage.removeItem(KEYS.ingredientPrices);
+  localStorage.removeItem(KEYS.diets);
+  localStorage.removeItem(KEYS.recurringRules);
 }

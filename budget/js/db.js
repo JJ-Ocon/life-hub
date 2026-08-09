@@ -1,6 +1,7 @@
 // Persistenz-Schicht: alles in localStorage, bleibt lokal auf dem Geraet.
 
 import { uid, nowIso, todayKey, monthKey, addMonths } from './utils.js';
+import { publishGrocerySpend } from '../../shared/grocery-cost.js';
 
 const KEYS = {
   categories: 'bg_categories_v1',
@@ -103,6 +104,7 @@ export function saveExpense(expense) {
   const idx = list.findIndex((e) => e.id === expense.id);
   if (idx >= 0) list[idx] = expense; else list.push(expense);
   write(KEYS.expenses, list);
+  syncGrocerySpend();
   return expense;
 }
 
@@ -124,6 +126,18 @@ export function createExpense(fields) {
 
 export function deleteExpense(id) {
   write(KEYS.expenses, getExpenses().filter((e) => e.id !== id));
+  syncGrocerySpend();
+}
+
+/** Veroeffentlicht den aktuellen Monatsbetrag der Kategorie "Lebensmittel"
+ *  fuer Meal Plannings Kosten-Abgleich (E52). Kategorie-Id 'groceries' ist
+ *  Teil der Standard-Kategorien und wird nie umbenannt/geloescht (deleteCategory
+ *  verweigert das Loeschen von 'other', 'groceries' selbst kann der Nutzer
+ *  aber theoretisch entfernen - in dem Fall wird einfach 0 veroeffentlicht). */
+function syncGrocerySpend() {
+  const month = monthKey();
+  const amount = monthlySpendByCategory(month).groceries || 0;
+  publishGrocerySpend(month, amount);
 }
 
 /* =========================================================

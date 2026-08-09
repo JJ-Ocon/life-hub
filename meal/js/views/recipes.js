@@ -1,9 +1,11 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
   getRecipes, getRecipeById, saveRecipe, createRecipe, deleteRecipe, recipeNutrition, searchFoods, createCustomFood,
+  getIngredientPrice, setIngredientPrice, recipeCost, MEALS,
+  getRecurringRulesForRecipe, createRecurringRule, deleteRecurringRule,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
-import { escapeHtml, formatNum, uid } from '../utils.js';
+import { escapeHtml, formatNum, formatMoney, uid, weekdayLabel } from '../utils.js';
 
 export async function render() {
   setTitle('Rezepte');
@@ -33,12 +35,13 @@ async function draw() {
 
   const cards = await Promise.all(recipes.map(async (r) => {
     const { perServing } = await recipeNutrition(r);
+    const cost = recipeCost(r);
     return `
       <div class="card card--tap" data-open="${r.id}" style="margin-bottom:0">
         <div class="row row--between">
           <div class="col grow" style="min-width:0">
             <p class="truncate">${escapeHtml(r.name)}</p>
-            <p class="faint">${r.servings} ${r.servings === 1 ? 'Portion' : 'Portionen'} · ${r.ingredients.length} Zutaten</p>
+            <p class="faint">${r.servings} ${r.servings === 1 ? 'Portion' : 'Portionen'} · ${r.ingredients.length} Zutaten${cost.total > 0 ? ` · ${formatMoney(cost.perServing)}/Portion` : ''}</p>
           </div>
           <div class="badge">${formatNum(perServing.kcal)} kcal</div>
         </div>
@@ -81,6 +84,7 @@ function openRecipeModal(existing, onSaved) {
         <textarea class="input" id="recipe-note">${escapeHtml(existing?.note || '')}</textarea>
       </div>
       <p class="faint" id="recipe-summary" style="margin-bottom:14px"></p>
+      ${existing ? `<div class="field" id="recurring-section"></div>` : ''}
       <div class="stack">
         <button class="btn btn-primary" id="recipe-save">Speichern</button>
         ${existing ? '<button class="btn btn-danger" id="recipe-delete">Löschen</button>' : ''}
@@ -88,9 +92,56 @@ function openRecipeModal(existing, onSaved) {
     `;
   }
 
+  let ruleWeekday = 0;
+  let ruleMeal = MEALS[0].key;
+
+  function renderRecurringSection() {
+    const section = handle.sheet.querySelector('#recurring-section');
+    if (!section) return;
+    const rules = getRecurringRulesForRecipe(existing.id);
+    section.innerHTML = `
+      <label>Automatisch wiederkehrend einplanen</label>
+      ${rules.length ? `
+        <div class="stack" style="margin-bottom:10px">
+          ${rules.map((r) => `
+            <div class="row row--between">
+              <span class="faint">${weekdayLabel(r.weekday)} · ${MEALS.find((m) => m.key === r.meal)?.label || r.meal}</span>
+              <button class="icon-btn" data-rule-del="${r.id}" aria-label="Löschen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+            </div>
+          `).join('')}
+        </div>
+      ` : `<p class="faint" style="margin-bottom:10px">Noch keine Regel - füge eine hinzu, damit dieses Rezept automatisch in leere Wochentage einsortiert wird.</p>`}
+      <div class="chip-row" id="rule-weekday-row" style="margin-bottom:8px">
+        ${[0, 1, 2, 3, 4, 5, 6].map((d) => `<button type="button" class="chip ${d === ruleWeekday ? 'active' : ''}" data-weekday="${d}">${weekdayLabel(d)}</button>`).join('')}
+      </div>
+      <div class="chip-row" id="rule-meal-row" style="margin-bottom:10px">
+        ${MEALS.map((m) => `<button type="button" class="chip ${m.key === ruleMeal ? 'active' : ''}" data-meal="${m.key}">${m.label}</button>`).join('')}
+      </div>
+      <button class="btn btn-ghost btn-sm" id="rule-add" type="button">+ Regel hinzufügen</button>
+    `;
+    section.querySelectorAll('[data-weekday]').forEach((b) => b.addEventListener('click', () => {
+      ruleWeekday = Number(b.dataset.weekday);
+      section.querySelectorAll('[data-weekday]').forEach((x) => x.classList.toggle('active', Number(x.dataset.weekday) === ruleWeekday));
+    }));
+    section.querySelectorAll('[data-meal]').forEach((b) => b.addEventListener('click', () => {
+      ruleMeal = b.dataset.meal;
+      section.querySelectorAll('[data-meal]').forEach((x) => x.classList.toggle('active', x.dataset.meal === ruleMeal));
+    }));
+    section.querySelector('#rule-add').addEventListener('click', () => {
+      createRecurringRule({ recipeId: existing.id, weekday: ruleWeekday, meal: ruleMeal, servings: existing.servings || 1 });
+      toast('Regel hinzugefügt');
+      renderRecurringSection();
+    });
+    section.querySelectorAll('[data-rule-del]').forEach((b) => b.addEventListener('click', () => {
+      deleteRecurringRule(b.dataset.ruleDel);
+      renderRecurringSection();
+    }));
+  }
+
   const handle = openModal(content(), { center: true });
   renderIngredients();
   updateSummary();
+  renderRecurringSection();
   wireStatic();
 
   function wireStatic() {
@@ -114,6 +165,10 @@ function openRecipeModal(existing, onSaved) {
         <input class="input input-grams" type="number" min="0" step="1" data-grams value="${ing.grams}" placeholder="g">
         <button class="icon-btn" data-remove aria-label="Entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
       </div>
+      <div class="row" style="margin:-6px 0 10px;padding-left:2px">
+        <span class="faint" style="flex-shrink:0">Preis/100g</span>
+        <input class="input input-grams" type="number" min="0" step="0.01" data-price value="${ing.foodName ? (getIngredientPrice(ing.foodName) ?? '') : ''}" placeholder="optional">
+      </div>
     `).join('');
     list.querySelectorAll('[data-row]').forEach((row) => wireRow(row));
   }
@@ -124,6 +179,12 @@ function openRecipeModal(existing, onSaved) {
     const foodInput = row.querySelector('[data-food-input]');
     const suggestList = row.querySelector('.food-suggest__list');
     const gramsInput = row.querySelector('[data-grams]');
+    const priceInput = row.nextElementSibling?.querySelector('[data-price]');
+    priceInput?.addEventListener('change', () => {
+      if (!ing.foodName) { toast('Bitte zuerst eine Zutat wählen'); priceInput.value = ''; return; }
+      setIngredientPrice(ing.foodName, priceInput.value);
+      updateSummary();
+    });
 
     let debounceTimer;
     foodInput.addEventListener('input', () => {
@@ -172,9 +233,13 @@ function openRecipeModal(existing, onSaved) {
     const servings = Number(handle.sheet.querySelector('#recipe-servings')?.value) || 1;
     const draftRecipe = { ingredients: ingredients.filter((i) => i.foodName && i.grams > 0), servings };
     const { perServing } = await recipeNutrition(draftRecipe);
+    const cost = recipeCost(draftRecipe);
     const summary = handle.sheet.querySelector('#recipe-summary');
     if (summary) {
-      summary.textContent = `Pro Portion: ${formatNum(perServing.kcal)} kcal · P ${formatNum(perServing.protein)} g · KH ${formatNum(perServing.carbs)} g · F ${formatNum(perServing.fat)} g`;
+      const costLine = cost.total > 0
+        ? ` · ${formatMoney(cost.perServing)}/Portion${cost.missingCount ? ` (${cost.missingCount} ohne Preis)` : ''}`
+        : '';
+      summary.textContent = `Pro Portion: ${formatNum(perServing.kcal)} kcal · P ${formatNum(perServing.protein)} g · KH ${formatNum(perServing.carbs)} g · F ${formatNum(perServing.fat)} g${costLine}`;
     }
   }
 

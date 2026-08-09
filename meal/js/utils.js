@@ -51,6 +51,11 @@ export function formatNum(n, digits = 0) {
   return r.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: digits });
 }
 
+export function formatMoney(n, currency = '€') {
+  if (n === null || n === undefined || Number.isNaN(n)) return '–';
+  return `${n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+}
+
 export function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
 }

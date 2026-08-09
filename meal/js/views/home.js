@@ -1,9 +1,10 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
   getRecipes, getRecipeById, getMealPlanForDate, setMealSlot, dayNutrition, MEALS, getSettings,
+  targetKcalForDate, getActiveDiet, dietStatusForDate, costForRange, applyRecurringRules, getSharedGroceryComparison,
 } from '../db.js';
 import { openModal, toast } from '../ui.js';
-import { todayKey, addDaysToDateKey, mondayOfWeekKey, formatDateKey, formatNum, escapeHtml } from '../utils.js';
+import { todayKey, addDaysToDateKey, mondayOfWeekKey, formatDateKey, formatNum, formatMoney, escapeHtml } from '../utils.js';
 
 let cursor = mondayOfWeekKey(todayKey());
 
@@ -16,15 +17,16 @@ export function render() {
 
 async function draw() {
   const view = document.getElementById('view');
-  const settings = getSettings();
   const days = Array.from({ length: 7 }, (_, i) => addDaysToDateKey(cursor, i));
   const today = todayKey();
+  const activeDiet = getActiveDiet();
 
   const dayCards = await Promise.all(days.map(async (date) => {
     const entries = getMealPlanForDate(date);
     const totals = await dayNutrition(date);
-    const targetLine = settings.targetKcal
-      ? ` <span class="faint">/ ${formatNum(settings.targetKcal)} kcal Ziel</span>`
+    const target = targetKcalForDate(date);
+    const targetLine = target
+      ? ` <span class="faint">/ ${formatNum(target)} kcal Ziel</span>`
       : '';
 
     const slots = MEALS.map((m) => {
@@ -51,21 +53,55 @@ async function draw() {
     `;
   }));
 
+  const weekEnd = addDaysToDateKey(cursor, 6);
+  const { total: weekCostTotal, missingCount } = costForRange(cursor, weekEnd);
+  const grocery = getSharedGroceryComparison();
+  const groceryIsThisMonth = grocery && grocery.month === todayKey().slice(0, 7);
+
   view.innerHTML = `
     <div class="row row--between week-nav">
       <button class="icon-btn" id="week-prev" aria-label="Vorige Woche"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
       <button class="chip" id="week-today">Diese Woche</button>
       <button class="icon-btn" id="week-next" aria-label="Nächste Woche"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
     </div>
+    ${activeDiet ? dietBannerHtml(activeDiet) : ''}
+    <div class="card row row--between" style="margin-bottom:14px">
+      <div class="col">
+        <span>Kosten diese Woche</span>
+        <span class="faint">${weekCostTotal > 0 ? formatMoney(weekCostTotal) : '–'}${missingCount ? ` · ${missingCount} Zutat${missingCount === 1 ? '' : 'en'} ohne Preis` : ''}</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="auto-plan">🔁 Automatisch planen</button>
+    </div>
+    ${groceryIsThisMonth ? `
+      <p class="faint" style="margin:-6px 0 14px">Budget Lebensmittel diesen Monat: ${formatMoney(grocery.amount)}</p>
+    ` : ''}
     ${dayCards.join('')}
   `;
 
   document.getElementById('week-prev').addEventListener('click', () => { cursor = addDaysToDateKey(cursor, -7); draw(); });
   document.getElementById('week-next').addEventListener('click', () => { cursor = addDaysToDateKey(cursor, 7); draw(); });
   document.getElementById('week-today').addEventListener('click', () => { cursor = mondayOfWeekKey(todayKey()); draw(); });
+  document.getElementById('auto-plan').addEventListener('click', () => {
+    const filled = applyRecurringRules(cursor);
+    toast(filled > 0 ? `${filled} Slot${filled === 1 ? '' : 's'} automatisch geplant` : 'Keine leeren Slots mit passender Regel gefunden');
+    draw();
+  });
   view.querySelectorAll('[data-day]').forEach((el) => {
     el.addEventListener('click', () => openSlotModal(el.dataset.day, el.dataset.meal));
   });
+}
+
+function dietBannerHtml(diet) {
+  const status = dietStatusForDate(diet, todayKey());
+  return `
+    <div class="card" style="margin-bottom:14px">
+      <div class="row row--between">
+        <span>${escapeHtml(diet.name)}</span>
+        <span class="faint">Woche ${status.week}/${status.totalWeeks}${status.finished ? ' · beendet' : ''}</span>
+      </div>
+      <p class="faint" style="margin-top:4px">Aktuelles Ziel: ${formatNum(status.targetKcal)} kcal/Tag</p>
+    </div>
+  `;
 }
 
 function openSlotModal(date, meal) {
