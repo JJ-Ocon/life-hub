@@ -4,7 +4,7 @@ import { escapeHtml } from '../utils.js';
 
 export async function render({ id }) {
   setActions('');
-  setBack(() => navigate('#/'));
+  setBack(() => navigate('#/library'));
   setTitle('Künstler');
 
   const view = document.getElementById('view');

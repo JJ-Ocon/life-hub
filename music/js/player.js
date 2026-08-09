@@ -2,7 +2,7 @@
 // (eigenes DOM in index.html), damit sie Routenwechsel unbeschadet uebersteht.
 
 import { streamUrl, coverArtUrl, star as apiStar, unstar as apiUnstar, fetchTrackBlob } from './api.js';
-import { isDownloaded, getDownloadedTrackUrl, downloadTrack, downloadsSupported } from './db.js';
+import { isDownloaded, getDownloadedTrackUrl, downloadTrack, downloadsSupported, logPlay, getSettings, saveSettings } from './db.js';
 import { openModal, toast } from './ui.js';
 import { formatDuration, escapeHtml } from './utils.js';
 
@@ -13,6 +13,39 @@ let queue = [];
 let currentIndex = -1;
 let nowPlayingOpen = false;
 let downloadingIds = new Set();
+
+// Reihenfolge der tatsaechlich gespielten Indizes innerhalb der aktuellen
+// Warteschlange (nicht der urspruenglichen Track-Reihenfolge) - noetig,
+// damit "Zurück" bei Shuffle zum wirklich vorherigen Titel zurueckgeht statt
+// zu currentIndex-1, und damit der semi-zufaellige Modus weiss, welche
+// Titel "zuletzt" liefen.
+let playedIndexStack = [];
+let stackPos = -1;
+
+const PLAYBACK_MODES = ['off', 'shuffle', 'shuffle-smart', 'repeat-one', 'repeat-all'];
+const PLAYBACK_MODE_LABELS = {
+  off: 'Normale Wiedergabe',
+  shuffle: 'Zufällig',
+  'shuffle-smart': 'Semi-zufällig',
+  'repeat-one': 'Titel wiederholen',
+  'repeat-all': 'Alles wiederholen',
+};
+let playbackMode = getSettings().playbackMode || 'off';
+
+export function getPlaybackMode() {
+  return playbackMode;
+}
+
+export function playbackModeLabel(mode = playbackMode) {
+  return PLAYBACK_MODE_LABELS[mode] || mode;
+}
+
+export function cyclePlaybackMode() {
+  const idx = PLAYBACK_MODES.indexOf(playbackMode);
+  playbackMode = PLAYBACK_MODES[(idx + 1) % PLAYBACK_MODES.length];
+  saveSettings({ playbackMode });
+  return playbackMode;
+}
 
 let bar, barCover, barTitle, barArtist, toggleIcon;
 
@@ -34,7 +67,10 @@ export function initPlayer() {
 
   audio.addEventListener('play', renderAll);
   audio.addEventListener('pause', renderAll);
-  audio.addEventListener('ended', () => { if (currentIndex < queue.length - 1) next(); else renderAll(); });
+  audio.addEventListener('ended', () => {
+    if (playbackMode === 'repeat-one') { audio.currentTime = 0; audio.play().catch(() => {}); return; }
+    next();
+  });
   audio.addEventListener('timeupdate', renderNowPlayingProgress);
   audio.addEventListener('loadedmetadata', renderNowPlayingProgress);
 }
@@ -51,6 +87,8 @@ export function isCurrentlyPlaying(id) {
 export async function playQueue(tracks, startIndex = 0) {
   queue = tracks;
   currentIndex = startIndex;
+  playedIndexStack = [startIndex];
+  stackPos = 0;
   await loadAndPlay();
 }
 
@@ -66,6 +104,7 @@ async function loadAndPlay() {
   audio.src = src;
   try {
     await audio.play();
+    logPlay(track);
   } catch {
     toast('Wiedergabe konnte nicht automatisch starten');
   }
@@ -77,13 +116,46 @@ export function togglePlayPause() {
   if (audio.paused) audio.play().catch(() => {}); else audio.pause();
 }
 
+/** Naechster Index gemaess aktuellem Wiedergabe-Modus, oder null wenn am
+ *  Ende der Warteschlange nicht weitergemacht werden soll (Modus 'off'). */
+function computeNextIndex() {
+  if (playbackMode === 'shuffle' || playbackMode === 'shuffle-smart') {
+    if (queue.length <= 1) return currentIndex;
+    const exclude = new Set(playbackMode === 'shuffle-smart' ? playedIndexStack.slice(-5) : [currentIndex]);
+    let pool = queue.map((_, i) => i).filter((i) => !exclude.has(i));
+    if (!pool.length) pool = queue.map((_, i) => i).filter((i) => i !== currentIndex);
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+  if (playbackMode === 'repeat-all') {
+    return queue.length ? (currentIndex + 1) % queue.length : null;
+  }
+  // 'off' und 'repeat-one' (repeat-one greift nur beim automatischen
+  // Titelende via 'ended'-Handler oben, nicht beim manuellen Weiter-Tippen)
+  return currentIndex < queue.length - 1 ? currentIndex + 1 : null;
+}
+
 export function next() {
-  if (currentIndex < queue.length - 1) { currentIndex++; loadAndPlay(); }
+  // Frueher per "Zurück" verlassene, aber noch vorhandene Zukunft im Stack
+  // wieder herstellen, statt bei Shuffle einen neuen Zufallswert zu ziehen.
+  if (stackPos < playedIndexStack.length - 1) {
+    stackPos++;
+    currentIndex = playedIndexStack[stackPos];
+    loadAndPlay();
+    return;
+  }
+  const idx = computeNextIndex();
+  if (idx === null) return;
+  currentIndex = idx;
+  playedIndexStack.push(idx);
+  stackPos = playedIndexStack.length - 1;
+  loadAndPlay();
 }
 
 export function prev() {
-  if (audio.currentTime > 3 || currentIndex === 0) { audio.currentTime = 0; return; }
-  if (currentIndex > 0) { currentIndex--; loadAndPlay(); }
+  if (audio.currentTime > 3 || stackPos <= 0) { audio.currentTime = 0; return; }
+  stackPos--;
+  currentIndex = playedIndexStack[stackPos];
+  loadAndPlay();
 }
 
 export function seekTo(sec) {
@@ -109,6 +181,16 @@ function renderBar() {
 
 /* ---------- Now-Playing-Modal ---------- */
 
+function modeIconPath(mode) {
+  if (mode === 'repeat-one' || mode === 'repeat-all') {
+    return '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>';
+  }
+  if (mode === 'shuffle' || mode === 'shuffle-smart') {
+    return '<path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>';
+  }
+  return '<path d="M4 12h16"/>';
+}
+
 export function openNowPlaying() {
   const track = currentTrack();
   if (!track) return;
@@ -133,12 +215,21 @@ export function openNowPlaying() {
         ${downloadingIds.has(track.id) ? '<span class="spinner"></span>' : '<svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-5-5m5 5l5-5"/><path d="M4 19h16"/></svg>'}
       </span>
     </div>
+    <button class="btn btn-ghost btn-sm" id="np-mode" style="margin-top:12px;width:100%">
+      <svg viewBox="0 0 24 24" id="np-mode-icon" style="width:16px;height:16px;margin-right:6px;vertical-align:-3px">${modeIconPath(playbackMode)}</svg>
+      <span id="np-mode-label">${escapeHtml(playbackModeLabel())}</span>
+    </button>
   `, { center: true, onClose: () => { nowPlayingOpen = false; } });
 
   handle.sheet.querySelector('#np-toggle').addEventListener('click', togglePlayPause);
   handle.sheet.querySelector('#np-prev').addEventListener('click', prev);
   handle.sheet.querySelector('#np-next').addEventListener('click', next);
   handle.sheet.querySelector('#np-seek').addEventListener('input', (e) => seekTo(Number(e.target.value)));
+  handle.sheet.querySelector('#np-mode').addEventListener('click', () => {
+    const mode = cyclePlaybackMode();
+    handle.sheet.querySelector('#np-mode-icon').innerHTML = modeIconPath(mode);
+    handle.sheet.querySelector('#np-mode-label').textContent = playbackModeLabel(mode);
+  });
   handle.sheet.querySelector('#np-star').addEventListener('click', async () => {
     try {
       if (track.starred) { await apiUnstar(track.id); track.starred = false; }

@@ -1,9 +1,13 @@
-import { setTitle, setActions, setBack } from '../router.js';
-import { getArtists, search3, getStarred2, normalizeArtist, normalizeAlbum, normalizeSong, coverArtUrl } from '../api.js';
+import { setTitle, setActions, setBack, navigate } from '../router.js';
+import {
+  getArtists, search3, getStarred2, normalizeArtist, normalizeAlbum, normalizeSong, coverArtUrl,
+  getPlaylists, createPlaylist,
+} from '../api.js';
 import { escapeHtml } from '../utils.js';
 import { trackRowHtml, wireTrackRows } from '../track-row.js';
+import { toast, promptDialog } from '../ui.js';
 
-let mode = 'artists'; // 'artists' | 'favorites'
+let mode = 'artists'; // 'artists' | 'favorites' | 'playlists'
 let searchTimer = null;
 let lastQuery = '';
 
@@ -11,6 +15,13 @@ export async function render() {
   setTitle('Bibliothek');
   setActions('');
   setBack(null);
+
+  const query = new URLSearchParams(location.hash.split('?')[1] || '');
+  const requestedMode = query.get('mode');
+  if (requestedMode) {
+    history.replaceState(null, '', location.pathname + '#/library');
+    mode = requestedMode;
+  }
 
   document.getElementById('view').innerHTML = `
     <div class="search-wrap">
@@ -20,6 +31,7 @@ export async function render() {
     <div class="chip-row" style="margin-bottom:16px" id="lib-modes">
       <div class="chip ${mode === 'artists' ? 'active' : ''}" data-mode="artists">Künstler</div>
       <div class="chip ${mode === 'favorites' ? 'active' : ''}" data-mode="favorites">★ Favoriten</div>
+      <div class="chip ${mode === 'playlists' ? 'active' : ''}" data-mode="playlists">🎵 Playlists</div>
     </div>
     <div id="lib-content"><div class="empty"><span class="spinner"></span></div></div>
   `;
@@ -57,6 +69,9 @@ async function runSearchOrMode(query) {
     } else if (mode === 'favorites') {
       const starred = await getStarred2();
       renderFavorites(content, starred);
+    } else if (mode === 'playlists') {
+      const playlists = await getPlaylists();
+      renderPlaylists(content, playlists);
     } else {
       const artists = await getArtists();
       renderArtists(content, artists);
@@ -68,6 +83,35 @@ async function runSearchOrMode(query) {
 
 function emptyState(title, sub) {
   return `<div class="empty"><h3>${escapeHtml(title)}</h3><p class="faint">${escapeHtml(sub || '')}</p></div>`;
+}
+
+function renderPlaylists(content, playlists) {
+  content.innerHTML = `
+    <button class="btn btn-primary" id="playlist-create" style="margin-bottom:14px">+ Neue Playlist</button>
+    ${playlists.length === 0 ? emptyState('Noch keine Playlists', 'Lege eine an oder füge Titel aus einer bestehenden Playlist auf dem Server hinzu.') : `
+      <div class="card" style="padding:4px 14px">
+        ${playlists.map((p) => `
+          <a class="artist-list-row" href="#/playlist/${p.id}">
+            <div class="artist-list-row__avatar">🎵</div>
+            <div class="grow">
+              <div class="artist-list-row__name truncate">${escapeHtml(p.name)}</div>
+              <div class="artist-list-row__meta">${p.songCount || 0} Titel</div>
+            </div>
+          </a>
+        `).join('')}
+      </div>
+    `}
+  `;
+  content.querySelector('#playlist-create').addEventListener('click', async () => {
+    const name = await promptDialog('Neue Playlist', { placeholder: 'z.B. Roadtrip' });
+    if (!name) return;
+    try {
+      const playlist = await createPlaylist(name);
+      navigate(`#/playlist/${playlist.id}`);
+    } catch {
+      toast('Playlist konnte nicht angelegt werden');
+    }
+  });
 }
 
 function renderArtists(content, artistsRaw) {

@@ -151,6 +151,41 @@ export async function unstar(id) {
   await call('unstar.view', { id });
 }
 
+/* ---------- Playlists (leben serverseitig auf Navidrome, wie alles andere
+   in dieser App - kein eigenes Playlist-Modell lokal, damit Playlists auch
+   in jedem anderen Subsonic-Client sichtbar/nutzbar bleiben). ---------- */
+
+export async function getPlaylists() {
+  const body = await call('getPlaylists.view');
+  return body.playlists?.playlist || [];
+}
+
+export async function getPlaylist(id) {
+  const body = await call('getPlaylist.view', { id });
+  return body.playlist;
+}
+
+export async function createPlaylist(name) {
+  const body = await call('createPlaylist.view', { name });
+  return body.playlist;
+}
+
+export async function renamePlaylist(id, name) {
+  await call('updatePlaylist.view', { playlistId: id, name });
+}
+
+export async function addToPlaylist(id, songId) {
+  await call('updatePlaylist.view', { playlistId: id, songIdToAdd: songId });
+}
+
+export async function removeFromPlaylist(id, songIndex) {
+  await call('updatePlaylist.view', { playlistId: id, songIndexToRemove: songIndex });
+}
+
+export async function deletePlaylist(id) {
+  await call('deletePlaylist.view', { id });
+}
+
 export function coverArtUrl(id, size = 300) {
   if (!id) return null;
   return buildUrl('getCoverArt.view', { id, size });

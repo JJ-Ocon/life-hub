@@ -8,7 +8,7 @@ import { toast } from '../ui.js';
 
 export async function render({ id }) {
   setActions('');
-  setBack(() => navigate('#/'));
+  setBack(() => navigate('#/library'));
   setTitle('Album');
 
   const view = document.getElementById('view');

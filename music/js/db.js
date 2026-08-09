@@ -8,6 +8,7 @@ const KEYS = {
   config: 'mu_config_v1',
   settings: 'mu_settings_v1',
   downloads: 'mu_downloads_v1',
+  playHistory: 'mu_play_history_v1',
 };
 
 const DOWNLOAD_CACHE = 'music-downloads-v1';
@@ -55,7 +56,7 @@ export function disconnect() {
 }
 
 /* ---------- Einstellungen ---------- */
-const DEFAULT_SETTINGS = { theme: 'dark', accentHue: 213 };
+const DEFAULT_SETTINGS = { theme: 'dark', accentHue: 213, playbackMode: 'off' };
 
 export function getSettings() {
   return { ...DEFAULT_SETTINGS, ...read(KEYS.settings, {}) };
@@ -65,6 +66,52 @@ export function saveSettings(patch) {
   const merged = { ...getSettings(), ...patch };
   write(KEYS.settings, merged);
   return merged;
+}
+
+/* ---------- Wiedergabe-Verlauf (fuer Start-Ansicht "Zuletzt/Meistgespielt"
+   UND fuer den semi-zufaelligen Shuffle-Modus, der die zuletzt gehoerten
+   Titel innerhalb der aktuellen Warteschlange meidet). Rein lokal, wird
+   NICHT an den Server gemeldet - Navidrome hat kein passendes "Play
+   geloggt"-Endpoint in der hier genutzten Subsonic-API-Teilmenge. ---------- */
+// PlayHistoryEntry: { id, title, artist, album, coverArtId, durationSec, playedAt }
+
+const MAX_HISTORY = 500;
+
+export function logPlay(track) {
+  const list = read(KEYS.playHistory, []);
+  list.push({
+    id: track.id, title: track.title, artist: track.artist || '', album: track.album || '',
+    coverArtId: track.coverArtId || null, durationSec: track.durationSec || 0, playedAt: nowIso(),
+  });
+  write(KEYS.playHistory, list.slice(-MAX_HISTORY));
+}
+
+export function getPlayHistory() {
+  return read(KEYS.playHistory, []);
+}
+
+/** Zuletzt gespielte Titel, neuester zuerst, jeder Titel nur einmal (juengstes Vorkommen). */
+export function lastPlayed(limit = 10) {
+  const history = getPlayHistory();
+  const seen = new Set();
+  const out = [];
+  for (let i = history.length - 1; i >= 0 && out.length < limit; i--) {
+    const e = history[i];
+    if (seen.has(e.id)) continue;
+    seen.add(e.id);
+    out.push(e);
+  }
+  return out;
+}
+
+/** Meistgespielte Titel nach Anzahl der Vorkommen im Verlauf. */
+export function mostPlayed(limit = 10) {
+  const counts = new Map();
+  for (const e of getPlayHistory()) {
+    if (!counts.has(e.id)) counts.set(e.id, { ...e, count: 0 });
+    counts.get(e.id).count++;
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, limit);
 }
 
 /* ---------- Downloads: Metadaten-Register ---------- */
@@ -137,6 +184,7 @@ export function exportAllData() {
     exportedAt: nowIso(),
     settings: getSettings(),
     downloads: getDownloads(),
+    playHistory: getPlayHistory(),
   };
 }
 
@@ -144,5 +192,6 @@ export async function resetAllData() {
   localStorage.removeItem(KEYS.config);
   localStorage.removeItem(KEYS.settings);
   localStorage.removeItem(KEYS.downloads);
+  localStorage.removeItem(KEYS.playHistory);
   await caches.delete(DOWNLOAD_CACHE);
 }
