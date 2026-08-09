@@ -5,6 +5,7 @@ import { uid, nowIso, todayKey, monthKey } from './utils.js';
 const KEYS = {
   categories: 'bg_categories_v1',
   expenses: 'bg_expenses_v1',
+  income: 'bg_income_v1',
   settings: 'bg_settings_v1',
   seeded: 'bg_seeded_v1',
   envelopes: 'bg_envelopes_v1',
@@ -123,6 +124,63 @@ export function createExpense(fields) {
 
 export function deleteExpense(id) {
   write(KEYS.expenses, getExpenses().filter((e) => e.id !== id));
+}
+
+/* =========================================================
+   Einnahmen – bewusst ein eigenes, einfacheres Modell statt einer
+   "negativen Ausgabe": keine Kategorie/Steuerrelevanz noetig, dafuer ein
+   freier Quelle-Text (Gehalt, Nebenjob, ...).
+   ========================================================= */
+// Income: { id, date (YYYY-MM-DD), amount, source, note, recurring,
+//           recurringInterval, createdAt }
+
+export function getIncome() {
+  return read(KEYS.income, []);
+}
+
+export function getIncomeById(id) {
+  return getIncome().find((i) => i.id === id) || null;
+}
+
+export function getIncomeForMonth(yearMonth) {
+  return getIncome()
+    .filter((i) => monthKey(i.date) === yearMonth)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+}
+
+export function saveIncome(income) {
+  const list = getIncome();
+  const idx = list.findIndex((i) => i.id === income.id);
+  if (idx >= 0) list[idx] = income; else list.push(income);
+  write(KEYS.income, list);
+  return income;
+}
+
+export function createIncome(fields) {
+  const income = {
+    id: uid(),
+    date: fields.date || todayKey(),
+    amount: Number(fields.amount) || 0,
+    source: fields.source || '',
+    note: fields.note || '',
+    recurring: !!fields.recurring,
+    recurringInterval: fields.recurringInterval || 'monthly',
+    createdAt: nowIso(),
+  };
+  return saveIncome(income);
+}
+
+export function deleteIncome(id) {
+  write(KEYS.income, getIncome().filter((i) => i.id !== id));
+}
+
+export function monthIncomeTotal(yearMonth) {
+  return getIncomeForMonth(yearMonth).reduce((sum, i) => sum + i.amount, 0);
+}
+
+/** Einnahmen minus Ausgaben fuer einen Monat. */
+export function monthNet(yearMonth) {
+  return monthIncomeTotal(yearMonth) - monthTotal(yearMonth);
 }
 
 /* =========================================================
@@ -307,6 +365,7 @@ export function exportAllData() {
     exportedAt: nowIso(),
     categories: getCategories(),
     expenses: getExpenses(),
+    income: getIncome(),
     envelopes: getEnvelopes(),
     settings: getSettings(),
   };
@@ -315,6 +374,7 @@ export function exportAllData() {
 export function importAllData(data) {
   if (data.categories) write(KEYS.categories, data.categories);
   if (data.expenses) write(KEYS.expenses, data.expenses);
+  if (data.income) write(KEYS.income, data.income);
   if (data.envelopes) write(KEYS.envelopes, data.envelopes);
   if (data.settings) write(KEYS.settings, data.settings);
 }
@@ -322,6 +382,7 @@ export function importAllData(data) {
 export function resetAllData() {
   localStorage.removeItem(KEYS.categories);
   localStorage.removeItem(KEYS.expenses);
+  localStorage.removeItem(KEYS.income);
   localStorage.removeItem(KEYS.envelopes);
   localStorage.removeItem(KEYS.settings);
   localStorage.removeItem(KEYS.seeded);

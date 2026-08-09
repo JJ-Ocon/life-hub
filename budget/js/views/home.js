@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
-import { getCategories, budgetStatus, monthTotal, getSettings, totalEnvelopeBalance, subscriptionSummary } from '../db.js';
+import { getCategories, budgetStatus, monthTotal, monthIncomeTotal, monthNet, getSettings, totalEnvelopeBalance, subscriptionSummary } from '../db.js';
 import { monthKey, monthLabel, formatMoney, escapeHtml, clamp } from '../utils.js';
 import { openExpenseModal } from './expenses.js';
 
@@ -20,11 +20,24 @@ function draw() {
 
   const savedTotal = totalEnvelopeBalance();
   const abosMonthly = subscriptionSummary().totalMonthly;
+  const income = monthIncomeTotal(cursor);
+  const net = monthNet(cursor);
 
   view.innerHTML = `
-    <div class="stat-tile" style="margin-bottom:16px">
-      <div class="stat-tile__value">${formatMoney(total, settings.currency)}</div>
-      <div class="stat-tile__label">Ausgaben ${monthLabel(cursor)}</div>
+    <p class="faint" style="margin-bottom:8px">${monthLabel(cursor)}</p>
+    <div class="grid-3" style="margin-bottom:16px">
+      <div class="stat-tile">
+        <div class="stat-tile__value">${formatMoney(total, settings.currency)}</div>
+        <div class="stat-tile__label">Ausgaben</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-tile__value">${formatMoney(income, settings.currency)}</div>
+        <div class="stat-tile__label">Einnahmen</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-tile__value">${formatMoney(net, settings.currency)}</div>
+        <div class="stat-tile__label">Netto</div>
+      </div>
     </div>
     <div class="grid-2" style="margin-bottom:16px">
       <div class="stat-tile card--tap" id="home-savings-tile">

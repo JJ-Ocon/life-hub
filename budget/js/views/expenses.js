@@ -1,6 +1,7 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
   getExpensesForMonth, createExpense, saveExpense, deleteExpense, getExpenseById,
+  getIncomeForMonth, createIncome, saveIncome, deleteIncome, getIncomeById, monthIncomeTotal, monthTotal,
   getCategories, getSettings,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
@@ -8,24 +9,27 @@ import { todayKey, monthKey, addMonths, monthLabel, formatDateKey, formatMoney, 
 import { recognizeText, parseReceiptText } from '../../../shared/receipt-ocr.js';
 
 let cursor = monthKey();
+let section = 'expenses'; // 'expenses' | 'income'
 
 export function render() {
   setTitle('Ausgaben');
   setBack(null);
   setActions(`
-    <button class="icon-btn" id="exp-add" aria-label="Ausgabe erfassen">
+    <button class="icon-btn" id="exp-add" aria-label="Erfassen">
       <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
     </button>
   `);
   draw();
-  document.getElementById('exp-add').addEventListener('click', () => openExpenseModal(null, draw));
+  document.getElementById('exp-add').addEventListener('click', () => {
+    if (section === 'income') openIncomeModal(null, draw);
+    else openExpenseModal(null, draw);
+  });
 }
 
 function draw() {
   const settings = getSettings();
-  const categories = getCategories();
-  const list = getExpensesForMonth(cursor);
   const view = document.getElementById('view');
+  const net = monthIncomeTotal(cursor) - monthTotal(cursor);
 
   view.innerHTML = `
     <div class="row row--between cal-nav" style="margin-bottom:14px">
@@ -33,6 +37,30 @@ function draw() {
       <h3>${monthLabel(cursor)}</h3>
       <button class="icon-btn" id="exp-next" aria-label="Weiter"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
     </div>
+    <div class="section-tabs">
+      <button class="chip ${section === 'expenses' ? 'active' : ''}" data-section="expenses">Ausgaben</button>
+      <button class="chip ${section === 'income' ? 'active' : ''}" data-section="income">Einnahmen</button>
+    </div>
+    <div class="stat-tile" style="margin-bottom:14px">
+      <div class="stat-tile__value">${formatMoney(net, settings.currency)}</div>
+      <div class="stat-tile__label">Netto ${monthLabel(cursor)}</div>
+    </div>
+    <div id="list-content"></div>
+  `;
+
+  document.getElementById('exp-prev').addEventListener('click', () => { cursor = addMonths(cursor, -1); draw(); });
+  document.getElementById('exp-next').addEventListener('click', () => { cursor = addMonths(cursor, 1); draw(); });
+  view.querySelectorAll('[data-section]').forEach((el) => el.addEventListener('click', () => { section = el.dataset.section; draw(); }));
+
+  if (section === 'income') drawIncomeList(); else drawExpenseList();
+}
+
+function drawExpenseList() {
+  const settings = getSettings();
+  const categories = getCategories();
+  const list = getExpensesForMonth(cursor);
+  const content = document.getElementById('list-content');
+  content.innerHTML = `
     ${list.length === 0 ? `
       <div class="empty">
         <h3>Noch keine Ausgaben</h3>
@@ -60,11 +88,42 @@ function draw() {
       </div>
     `}
   `;
-
-  document.getElementById('exp-prev').addEventListener('click', () => { cursor = addMonths(cursor, -1); draw(); });
-  document.getElementById('exp-next').addEventListener('click', () => { cursor = addMonths(cursor, 1); draw(); });
-  view.querySelectorAll('[data-open]').forEach((el) => {
+  content.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => openExpenseModal(getExpenseById(el.dataset.open), draw));
+  });
+}
+
+function drawIncomeList() {
+  const settings = getSettings();
+  const list = getIncomeForMonth(cursor);
+  const content = document.getElementById('list-content');
+  content.innerHTML = `
+    ${list.length === 0 ? `
+      <div class="empty">
+        <h3>Noch keine Einnahmen</h3>
+        <p class="faint">Erfasse Gehalt, Nebenjob oder andere Einnahmen über das Plus oben rechts.</p>
+      </div>
+    ` : `
+      <div class="stack">
+        ${list.map((i) => `
+          <div class="card card--tap" data-open="${i.id}" style="margin-bottom:0">
+            <div class="row row--between">
+              <div class="row grow" style="min-width:0">
+                <span style="font-size:1.3rem">💰</span>
+                <div class="col grow" style="min-width:0">
+                  <p class="truncate">${escapeHtml(i.source || 'Einnahme')}</p>
+                  <p class="faint">${formatDateKey(i.date)}${i.recurring ? ' · wiederkehrend' : ''}</p>
+                </div>
+              </div>
+              <div class="badge">${formatMoney(i.amount, settings.currency)}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `}
+  `;
+  content.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => openIncomeModal(getIncomeById(el.dataset.open), draw));
   });
 }
 
@@ -205,4 +264,63 @@ export function openExpenseModal(existing, onSaved) {
       onSaved?.();
     });
   }
+}
+
+function openIncomeModal(existing, onSaved) {
+  const isNew = !existing?.id;
+  const handle = openModal(`
+    <h3 class="modal-title">${isNew ? 'Einnahme erfassen' : 'Einnahme bearbeiten'}</h3>
+    <div class="field">
+      <label>Betrag</label>
+      <input class="input" type="number" inputmode="decimal" id="inc-amount" min="0" step="0.01" value="${existing?.amount ?? ''}" placeholder="0.00">
+    </div>
+    <div class="field">
+      <label>Datum</label>
+      <input class="input" type="date" id="inc-date" value="${existing?.date || todayKey()}">
+    </div>
+    <div class="field">
+      <label>Quelle (optional)</label>
+      <input class="input" id="inc-source" value="${escapeHtml(existing?.source || '')}" placeholder="z.B. Gehalt, Nebenjob">
+    </div>
+    <div class="field">
+      <label>Notiz (optional)</label>
+      <textarea class="input" id="inc-note">${escapeHtml(existing?.note || '')}</textarea>
+    </div>
+    <div class="switch-row">
+      <p>Wiederkehrend</p>
+      <label class="switch">
+        <input type="checkbox" id="inc-recurring" ${existing?.recurring ? 'checked' : ''}>
+        <span class="switch__track"></span><span class="switch__thumb"></span>
+      </label>
+    </div>
+    <div class="stack" style="margin-top:16px">
+      <button class="btn btn-primary" id="inc-save">Speichern</button>
+      ${!isNew ? '<button class="btn btn-danger" id="inc-delete">Löschen</button>' : ''}
+    </div>
+  `, { center: true });
+
+  handle.sheet.querySelector('#inc-save').addEventListener('click', () => {
+    const amount = Number(handle.sheet.querySelector('#inc-amount').value);
+    if (!amount || amount <= 0) { toast('Bitte einen Betrag eingeben'); return; }
+    const date = handle.sheet.querySelector('#inc-date').value || todayKey();
+    const source = handle.sheet.querySelector('#inc-source').value.trim();
+    const note = handle.sheet.querySelector('#inc-note').value.trim();
+    const recurring = handle.sheet.querySelector('#inc-recurring').checked;
+    if (isNew) {
+      createIncome({ amount, date, source, note, recurring });
+    } else {
+      saveIncome({ ...existing, amount, date, source, note, recurring });
+    }
+    toast('Gespeichert');
+    handle.close();
+    onSaved?.();
+  });
+  handle.sheet.querySelector('#inc-delete')?.addEventListener('click', async () => {
+    const ok = await confirmDialog('Einnahme löschen?', 'Dieser Eintrag wird unwiderruflich gelöscht.');
+    if (!ok) return;
+    deleteIncome(existing.id);
+    toast('Gelöscht');
+    handle.close();
+    onSaved?.();
+  });
 }
