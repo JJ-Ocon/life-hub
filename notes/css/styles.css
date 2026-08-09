@@ -205,3 +205,16 @@ textarea.input { resize: vertical; min-height: 60px; }
 .quick-add textarea { flex: 1; min-height: 44px; }
 .checklist-row { align-items: center; }
 .check-item { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent); }
+
+/* ---------- Editor (E56) ---------- */
+.note-title-input { font-size: 1.15rem; font-weight: 700; border: none; background: transparent; padding: 4px 2px; }
+.note-title-input:focus { outline: none; }
+.editor-textarea { resize: none; width: 100%; }
+
+/* ---------- Notizen-Kachel-Raster (E56) ---------- */
+.notes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.notes-grid .note-card { margin-bottom: 0; max-height: 33vh; overflow: hidden; display: flex; flex-direction: column; }
+.notes-grid .note-card__preview { white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; }
+.note-card__title { font-weight: 700; font-size: .95rem; margin-bottom: 2px; }
+.note-card__date { font-size: .72rem; color: var(--text-faint); margin-top: 8px; }
+.note-card--pressing { transform: scale(.97); transition: transform .15s; }

@@ -26,9 +26,9 @@ function write(key, value) {
    ist optional: ein Datum, an dem die Notiz wieder auffallen soll, statt in
    der Liste unterzugehen.
    ========================================================= */
-// Note: { id, type ('text'|'checklist'), text, items ({id,text,done}[] - nur
+// Note: { id, title, type ('text'|'checklist'), text, items ({id,text,done}[] - nur
 //         bei type 'checklist'), folder (string|null), photo (dataURL|null),
-//         remindAt (YYYY-MM-DD|null), createdAt, updatedAt }
+//         remindAt (YYYY-MM-DD|null), archived, createdAt, updatedAt }
 
 export function getNotes() {
   return read(KEYS.notes, []);
@@ -39,13 +39,25 @@ export function getNoteById(id) {
 }
 
 /** Notizen sortiert: faellige/ueberfaellige Wiedervorlagen zuerst, dann
- *  zukuenftige Wiedervorlagen, dann der Rest nach Erfassungsdatum (neueste zuerst). */
-export function getNotesSorted(today = todayKey()) {
-  const notes = getNotes();
+ *  zukuenftige Wiedervorlagen, dann der Rest nach Erfassungsdatum (neueste zuerst).
+ *  Archivierte Notizen sind standardmaessig ausgeblendet - eigener Archiv-Filter
+ *  in der Ordner-Chip-Reihe zeigt nur sie. */
+export function getNotesSorted(today = todayKey(), { archived = false } = {}) {
+  const notes = getNotes().filter((n) => !!n.archived === archived);
   const due = notes.filter((n) => n.remindAt && n.remindAt <= today).sort((a, b) => a.remindAt.localeCompare(b.remindAt));
   const upcoming = notes.filter((n) => n.remindAt && n.remindAt > today).sort((a, b) => a.remindAt.localeCompare(b.remindAt));
   const plain = notes.filter((n) => !n.remindAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return [...due, ...upcoming, ...plain];
+}
+
+export function archiveNote(id) {
+  const note = getNoteById(id);
+  if (note) saveNote({ ...note, archived: true });
+}
+
+export function unarchiveNote(id) {
+  const note = getNoteById(id);
+  if (note) saveNote({ ...note, archived: false });
 }
 
 /** Alle bereits benutzten Ordnernamen, alphabetisch - keine eigene
@@ -68,12 +80,14 @@ export function saveNote(note) {
 export function createNote(fields) {
   return saveNote({
     id: uid(),
+    title: fields.title || '',
     type: fields.type || 'text',
     text: fields.text || '',
     items: fields.items || [],
     folder: fields.folder || null,
     photo: fields.photo || null,
     remindAt: fields.remindAt || null,
+    archived: !!fields.archived,
     createdAt: nowIso(),
   });
 }
