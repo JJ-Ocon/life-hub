@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack } from '../router.js';
-import { shoppingListForRange, getCheckedShoppingItems, toggleShoppingItem } from '../db.js';
+import { pantryAdjustedShoppingList, getCheckedShoppingItems, toggleShoppingItem } from '../db.js';
 import { todayKey, addDaysToDateKey, mondayOfWeekKey, formatDateKey, formatNum, escapeHtml } from '../utils.js';
 
 let cursor = mondayOfWeekKey(todayKey());
@@ -14,7 +14,7 @@ export function render() {
 async function draw() {
   const view = document.getElementById('view');
   const weekEnd = addDaysToDateKey(cursor, 6);
-  const items = await shoppingListForRange(cursor, weekEnd);
+  const items = await pantryAdjustedShoppingList(cursor, weekEnd);
   const checked = new Set(getCheckedShoppingItems(cursor));
 
   view.innerHTML = `
@@ -30,17 +30,20 @@ async function draw() {
       </div>
     ` : `
       <div class="card">
-        ${items.map((item) => `
+        ${items.map((item) => {
+          const covered = item.hasStock && !item.unclearUnit && item.remainingGrams <= 0;
+          return `
           <div class="shop-item ${checked.has(item.foodName) ? 'checked' : ''}" data-item="${escapeHtml(item.foodName)}">
             <span class="set-check ${checked.has(item.foodName) ? 'done' : ''}">
               <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
             </span>
-            <span class="shop-item__name">${escapeHtml(item.foodName)}</span>
-            <span class="shop-item__amount">${formatNum(item.grams)} g</span>
+            <span class="shop-item__name">${escapeHtml(item.foodName)}${item.hasStock ? ` <span class="faint">${item.unclearUnit ? '(im Vorrat, Menge unklar)' : covered ? '(im Vorrat gedeckt)' : '(teilweise im Vorrat)'}</span>` : ''}</span>
+            <span class="shop-item__amount">${covered ? '–' : formatNum(item.remainingGrams) + ' g'}</span>
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
-      <p class="faint" style="margin-top:10px">Zieht noch nichts vom Vorrat ab - reine Einkaufsliste aus dem Wochenplan.</p>
+      <p class="faint" style="margin-top:10px">Bereits im Vorrat vorhandene Mengen (nach Name abgeglichen, nur bei Gramm-Einheiten automatisch abgezogen) sind bereits berücksichtigt.</p>
     `}
   `;
 

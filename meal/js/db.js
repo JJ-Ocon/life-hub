@@ -15,6 +15,8 @@ const KEYS = {
   ingredientPrices: 'ml_ingredient_prices_v1',
   diets: 'ml_diets_v1',
   recurringRules: 'ml_recurring_rules_v1',
+  pantry: 'ml_pantry_v1',
+  barcodeCache: 'ml_barcode_cache_v1',
 };
 
 function read(key, fallback) {
@@ -448,6 +450,117 @@ export function toggleShoppingItem(weekStart, foodName) {
 }
 
 /* =========================================================
+   Vorratsverwaltung (E55) - lokaler, sich selbst aufbauender Barcode-
+   Cache statt einer mehrere GB grossen Open-Food-Facts-Datenbank: beim
+   ersten Scan eines Produkts wird Name/Einheit einmalig manuell erfasst,
+   ab dann lokal wiedererkannt. Kein externer API-Call (local-first).
+   ========================================================= */
+// PantryItem: { id, name, quantity, unit, category, barcode (optional), createdAt, updatedAt }
+
+export const PANTRY_CATEGORIES = [
+  { key: 'kuehlschrank', label: 'Kühlschrank' },
+  { key: 'tiefkuehl', label: 'Tiefkühl' },
+  { key: 'vorrat', label: 'Vorratsschrank' },
+  { key: 'sonstiges', label: 'Sonstiges' },
+];
+
+export function getPantryItems() {
+  return read(KEYS.pantry, []).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+}
+
+export function getPantryItemById(id) {
+  return read(KEYS.pantry, []).find((p) => p.id === id) || null;
+}
+
+export function getPantryItemByName(name) {
+  const key = name.trim().toLowerCase();
+  return read(KEYS.pantry, []).find((p) => p.name.trim().toLowerCase() === key) || null;
+}
+
+function savePantryItem(item) {
+  const list = read(KEYS.pantry, []);
+  const idx = list.findIndex((p) => p.id === item.id);
+  const updated = { ...item, updatedAt: nowIso() };
+  if (idx >= 0) list[idx] = updated; else list.push(updated);
+  write(KEYS.pantry, list);
+  return updated;
+}
+
+export function createPantryItem(fields) {
+  return savePantryItem({
+    id: uid(), name: fields.name, quantity: Number(fields.quantity) || 0,
+    unit: fields.unit || 'Stück', category: fields.category || 'sonstiges',
+    barcode: fields.barcode || null, createdAt: nowIso(),
+  });
+}
+
+export function adjustPantryQuantity(id, delta) {
+  const item = getPantryItemById(id);
+  if (!item) return null;
+  return savePantryItem({ ...item, quantity: Math.max(0, item.quantity + delta) });
+}
+
+export function deletePantryItem(id) {
+  write(KEYS.pantry, read(KEYS.pantry, []).filter((p) => p.id !== id));
+}
+
+/* ---------- Barcode-Cache ---------- */
+// { [barcode]: { name, unit } }
+
+export function getBarcodeCache() {
+  return read(KEYS.barcodeCache, {});
+}
+
+export function lookupBarcode(barcode) {
+  return read(KEYS.barcodeCache, {})[barcode] || null;
+}
+
+export function cacheBarcode(barcode, name, unit) {
+  const all = read(KEYS.barcodeCache, {});
+  all[barcode] = { name, unit };
+  write(KEYS.barcodeCache, all);
+}
+
+/* ---------- Einkaufsliste abzueglich Vorrat ---------- */
+
+/** Wie shoppingListForRange(), aber je Position mit hasStock/verbleibender
+ *  Menge nach Vorratsabzug. Abzug nur, wenn ein Vorratsposten mit
+ *  passendem Namen existiert UND dessen Einheit in Gramm umrechenbar ist
+ *  (g/kg) - bei anderen Einheiten (Stueck, Packung, ...) ist eine korrekte
+ *  automatische Umrechnung nicht moeglich, dann wird nur "vorhanden"
+ *  markiert statt eine falsche Zahl vorzutaeuschen. */
+export async function pantryAdjustedShoppingList(startDate, endDate) {
+  const items = await shoppingListForRange(startDate, endDate);
+  return items.map((item) => {
+    const pantryItem = getPantryItemByName(item.foodName);
+    if (!pantryItem || pantryItem.quantity <= 0) return { ...item, hasStock: false, remainingGrams: item.grams };
+    const unit = (pantryItem.unit || '').toLowerCase();
+    const pantryGrams = unit === 'kg' ? pantryItem.quantity * 1000 : unit === 'g' ? pantryItem.quantity : null;
+    if (pantryGrams == null) return { ...item, hasStock: true, remainingGrams: item.grams, unclearUnit: true };
+    return { ...item, hasStock: true, remainingGrams: Math.max(0, item.grams - pantryGrams) };
+  });
+}
+
+/* ---------- Rezeptvorschlaege aus dem Vorrat ---------- */
+
+/** Rezepte, deren Zutaten (nach Namen) am ehesten im Vorrat vorhanden sind -
+ *  Namensabgleich, keine Mengen-/Einheitenpruefung (gleiche Einschraenkung
+ *  wie beim Einkaufslisten-Abzug: Vorratseinheiten sind zu uneinheitlich
+ *  fuer eine verlaessliche automatische Mengenrechnung). Nur Rezepte mit
+ *  mindestens einer Uebereinstimmung, absteigend nach Trefferquote sortiert. */
+export function suggestRecipesFromPantry(limit = 10) {
+  const pantryNames = new Set(read(KEYS.pantry, []).filter((p) => p.quantity > 0).map((p) => p.name.trim().toLowerCase()));
+  if (!pantryNames.size) return [];
+  const scored = getRecipes().map((r) => {
+    const total = r.ingredients.length;
+    const matched = r.ingredients.filter((ing) => pantryNames.has(ing.foodName.trim().toLowerCase())).length;
+    return { recipe: r, matched, total };
+  }).filter((s) => s.matched > 0);
+  scored.sort((a, b) => (b.matched / b.total) - (a.matched / a.total) || b.matched - a.matched);
+  return scored.slice(0, limit);
+}
+
+/* =========================================================
    Einstellungen
    ========================================================= */
 
@@ -482,6 +595,8 @@ export function exportAllData() {
     ingredientPrices: getIngredientPrices(),
     diets: getDiets(),
     recurringRules: getRecurringRules(),
+    pantry: getPantryItems(),
+    barcodeCache: getBarcodeCache(),
   };
 }
 
@@ -493,6 +608,8 @@ export function importAllData(data) {
   if (data.ingredientPrices) write(KEYS.ingredientPrices, data.ingredientPrices);
   if (data.diets) write(KEYS.diets, data.diets);
   if (data.recurringRules) write(KEYS.recurringRules, data.recurringRules);
+  if (data.pantry) write(KEYS.pantry, data.pantry);
+  if (data.barcodeCache) write(KEYS.barcodeCache, data.barcodeCache);
 }
 
 export function resetAllData() {
@@ -504,4 +621,6 @@ export function resetAllData() {
   localStorage.removeItem(KEYS.ingredientPrices);
   localStorage.removeItem(KEYS.diets);
   localStorage.removeItem(KEYS.recurringRules);
+  localStorage.removeItem(KEYS.pantry);
+  localStorage.removeItem(KEYS.barcodeCache);
 }

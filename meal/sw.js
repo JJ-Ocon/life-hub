@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'meal-v3';
+const CACHE_VERSION = 'meal-v4';
 
 const ASSETS = [
   './',
@@ -14,9 +14,11 @@ const ASSETS = [
   './js/ui.js',
   './js/utils.js',
   './js/theme.js',
+  './js/barcode-scanner.js',
   './js/views/home.js',
   './js/views/recipes.js',
   './js/views/shopping.js',
+  './js/views/pantry.js',
   './js/views/more.js',
   './icons/icon.svg',
   // Lebensmittel-Referenzdatenbank (~1MB) - klein genug fuers Precaching,
