@@ -2,10 +2,11 @@ import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
   getPersonById, savePerson, deletePerson, getInteractionsForPerson, logInteraction,
   getLinksForPerson, addLink, removeLink, getPeople, isMutualLink, confirmedByOf,
+  CLOSENESS_LEVELS, closenessLabel, getRolesInUse,
 } from '../../../shared/contacts.js';
 import { refreshBirthdayCalendarMirror } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
-import { escapeHtml, todayKey, formatDateKey } from '../utils.js';
+import { escapeHtml, todayKey, formatDateKey, uid } from '../utils.js';
 
 export function render({ id }) {
   const person = getPersonById(id);
@@ -32,11 +33,23 @@ export function render({ id }) {
     }).filter((l) => l.person);
 
     document.getElementById('view').innerHTML = `
+      <div class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:8px">
+        ${p.role ? `<span class="badge">${escapeHtml(p.role)}</span>` : ''}
+        ${p.closeness ? `<span class="badge badge--closeness">${escapeHtml(closenessLabel(p.closeness))}</span>` : ''}
+      </div>
       ${p.birthday ? `<p class="faint" style="margin-bottom:4px">🎂 ${formatDateKey(p.birthday, { withYear: true })}</p>` : ''}
       ${p.socialProfile?.groupName ? `<p class="faint" style="margin-bottom:4px">${escapeHtml(p.socialProfile.groupName)}</p>` : ''}
       ${p.socialProfile?.howMet ? `<p class="faint" style="margin-bottom:4px">Kennengelernt: ${escapeHtml(p.socialProfile.howMet)}</p>` : ''}
       ${(p.socialProfile?.tags || []).length ? `<p style="margin:8px 0 16px">${p.socialProfile.tags.map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</p>` : ''}
       ${p.interests ? `<p class="faint" style="margin-bottom:16px">Interessen: ${escapeHtml(p.interests)}</p>` : ''}
+
+      ${(p.phone || p.email || (p.socialHandles || []).length) ? `
+        <div class="card stack" style="margin-bottom:20px">
+          ${p.phone ? `<a class="contact-line" href="tel:${escapeHtml(p.phone)}">📞 ${escapeHtml(p.phone)}</a>` : ''}
+          ${p.email ? `<a class="contact-line" href="mailto:${escapeHtml(p.email)}">✉️ ${escapeHtml(p.email)}</a>` : ''}
+          ${(p.socialHandles || []).map((h) => `<p class="contact-line">💬 ${escapeHtml(h.platform)}: ${escapeHtml(h.handle)}</p>`).join('')}
+        </div>
+      ` : ''}
 
       <button class="btn btn-primary" id="log-contact" style="margin-bottom:20px">✓ Kontakt heute geloggt</button>
 
@@ -125,6 +138,10 @@ function openLinkModal(personId, onSaved) {
 }
 
 function openEditModal(person, onSaved) {
+  const roles = getRolesInUse();
+  let closeness = person.closeness || null;
+  let handles = (person.socialHandles || []).map((h) => ({ ...h }));
+
   const handle = openModal(`
     <h3 class="modal-title">Kontakt bearbeiten</h3>
     <div class="field">
@@ -134,6 +151,35 @@ function openEditModal(person, onSaved) {
     <div class="field">
       <label>Geburtstag (optional)</label>
       <input class="input" type="date" id="p-birthday" value="${person.birthday || ''}">
+    </div>
+    <div class="field">
+      <label>Rolle (optional)</label>
+      <input class="input" id="p-role" value="${escapeHtml(person.role || '')}" placeholder="z.B. Bester Freund, Mutter, Bruder">
+      ${roles.length ? `
+        <div class="chip-row" id="role-suggest-row" style="margin-top:8px">
+          ${roles.map((r) => `<button type="button" class="chip" data-role-suggest="${escapeHtml(r)}">${escapeHtml(r)}</button>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+    <div class="field">
+      <label>Nähe zu Dir (optional)</label>
+      <div class="chip-row" id="closeness-row">
+        <button type="button" class="chip ${!closeness ? 'active' : ''}" data-closeness="">Keine Angabe</button>
+        ${CLOSENESS_LEVELS.map((c) => `<button type="button" class="chip ${closeness === c.key ? 'active' : ''}" data-closeness="${c.key}">${c.label}</button>`).join('')}
+      </div>
+    </div>
+    <div class="field">
+      <label>Telefon (optional)</label>
+      <input class="input" type="tel" id="p-phone" value="${escapeHtml(person.phone || '')}">
+    </div>
+    <div class="field">
+      <label>E-Mail (optional)</label>
+      <input class="input" type="email" id="p-email" value="${escapeHtml(person.email || '')}">
+    </div>
+    <div class="field">
+      <label>Social-Media (optional)</label>
+      <div id="handle-list" class="stack"></div>
+      <button type="button" class="btn btn-ghost" id="handle-add" style="margin-top:8px">+ Handle hinzufügen</button>
     </div>
     <div class="field">
       <label>Freundeskreis-Gruppe (optional)</label>
@@ -158,6 +204,54 @@ function openEditModal(person, onSaved) {
     <button class="btn btn-primary" id="p-save">Speichern</button>
   `, { center: true });
 
+  handle.sheet.querySelector('#role-suggest-row')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-role-suggest]');
+    if (!btn) return;
+    handle.sheet.querySelector('#p-role').value = btn.dataset.roleSuggest;
+  });
+
+  handle.sheet.querySelector('#closeness-row').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-closeness]');
+    if (!btn) return;
+    closeness = btn.dataset.closeness || null;
+    handle.sheet.querySelectorAll('[data-closeness]').forEach((b) => b.classList.toggle('active', (b.dataset.closeness || null) === closeness));
+  });
+
+  function drawHandles() {
+    const list = handle.sheet.querySelector('#handle-list');
+    list.innerHTML = handles.map((h) => `
+      <div class="row" style="gap:8px" data-handle-row="${h.id}">
+        <input class="input" data-handle-platform="${h.id}" placeholder="Plattform" value="${escapeHtml(h.platform)}" style="flex:1">
+        <input class="input" data-handle-value="${h.id}" placeholder="@handle" value="${escapeHtml(h.handle)}" style="flex:1">
+        <button type="button" class="icon-btn" data-handle-remove="${h.id}" aria-label="Entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+      </div>
+    `).join('');
+    list.querySelectorAll('[data-handle-platform]').forEach((el) => {
+      el.addEventListener('input', () => {
+        const h = handles.find((x) => x.id === el.dataset.handlePlatform);
+        if (h) h.platform = el.value;
+      });
+    });
+    list.querySelectorAll('[data-handle-value]').forEach((el) => {
+      el.addEventListener('input', () => {
+        const h = handles.find((x) => x.id === el.dataset.handleValue);
+        if (h) h.handle = el.value;
+      });
+    });
+    list.querySelectorAll('[data-handle-remove]').forEach((el) => {
+      el.addEventListener('click', () => {
+        handles = handles.filter((x) => x.id !== el.dataset.handleRemove);
+        drawHandles();
+      });
+    });
+  }
+  drawHandles();
+
+  handle.sheet.querySelector('#handle-add').addEventListener('click', () => {
+    handles.push({ id: uid(), platform: '', handle: '' });
+    drawHandles();
+  });
+
   handle.sheet.querySelector('#p-save').addEventListener('click', () => {
     const name = handle.sheet.querySelector('#p-name').value.trim();
     if (!name) { toast('Bitte einen Namen eingeben'); return; }
@@ -167,6 +261,11 @@ function openEditModal(person, onSaved) {
       name,
       birthday: handle.sheet.querySelector('#p-birthday').value || null,
       interests: handle.sheet.querySelector('#p-interests').value.trim(),
+      role: handle.sheet.querySelector('#p-role').value.trim(),
+      closeness,
+      phone: handle.sheet.querySelector('#p-phone').value.trim(),
+      email: handle.sheet.querySelector('#p-email').value.trim(),
+      socialHandles: handles.filter((h) => h.platform.trim() || h.handle.trim()).map((h) => ({ ...h, platform: h.platform.trim(), handle: h.handle.trim() })),
       socialProfile: {
         groupName: handle.sheet.querySelector('#p-group').value.trim(),
         howMet: handle.sheet.querySelector('#p-howmet').value.trim(),

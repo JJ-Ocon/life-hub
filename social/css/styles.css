@@ -218,3 +218,13 @@ textarea.input { resize: vertical; min-height: 60px; }
 .network-link--one-way { stroke: var(--text-dim); }
 .network-arrowhead { fill: var(--text-dim); }
 .network-node { fill: var(--accent); stroke: var(--bg-card); stroke-width: 2; cursor: pointer; }
+.network-node--me { fill: var(--text); cursor: pointer; }
+.network-me-label { fill: var(--bg-card) !important; font-size: 10px !important; pointer-events: none; }
+.network-ring { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 4; opacity: .6; }
+.network-ring-label { font-size: 8px !important; font-weight: 600 !important; fill: var(--text-faint) !important; text-transform: uppercase; letter-spacing: .04em; pointer-events: none; }
+
+/* ---------- Rollen/Naehe/Kontaktdaten (E59) ---------- */
+.badge--closeness { background: var(--accent); color: var(--accent-text); }
+.tag-chip--closeness { background: var(--accent); color: var(--accent-text); }
+.contact-line { display: block; font-size: .88rem; color: var(--text); text-decoration: none; }
+.contact-line:hover { text-decoration: underline; }

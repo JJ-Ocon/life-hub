@@ -1,8 +1,9 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import { getSettings, saveSettings, exportAllData, importAllData, resetAllData } from '../db.js';
+import { getMe, saveMe } from '../../../shared/contacts.js';
 import { applyTheme } from '../theme.js';
 import { confirmDialog, toast, promptDialog } from '../ui.js';
-import { download, readFileAsText, todayKey } from '../utils.js';
+import { download, readFileAsText, todayKey, escapeHtml } from '../utils.js';
 
 const THEMES = [
   { key: 'light', label: 'Light', dot: '#f5f6f8' },
@@ -17,9 +18,18 @@ export function render() {
   setBack(null);
 
   const settings = getSettings();
+  const me = getMe();
 
   document.getElementById('view').innerHTML = `
-    <div class="section-title" style="margin-top:0">Erscheinungsbild</div>
+    <div class="section-title" style="margin-top:0">Ich</div>
+    <div class="card">
+      <div class="field" style="margin:0">
+        <label>Name im Netzwerk-Graphen (Mittelpunkt)</label>
+        <input class="input" id="me-name" value="${escapeHtml(me.name)}" placeholder="Ich">
+      </div>
+    </div>
+
+    <div class="section-title">Erscheinungsbild</div>
     <div class="card">
       <div class="theme-grid" id="theme-grid">
         ${THEMES.map((t) => `
@@ -49,6 +59,12 @@ export function render() {
       <p class="faint" style="margin-top:6px">Alle Daten bleiben ausschließlich lokal auf diesem Gerät gespeichert - diese Kontaktdatenbank läuft über dich selbst, nicht über einen Drittanbieter.</p>
     </div>
   `;
+
+  document.getElementById('me-name').addEventListener('blur', (e) => {
+    const name = e.target.value.trim() || 'Ich';
+    saveMe({ name });
+    e.target.value = name;
+  });
 
   document.querySelectorAll('[data-theme-pick]').forEach((el) => {
     el.addEventListener('click', () => {

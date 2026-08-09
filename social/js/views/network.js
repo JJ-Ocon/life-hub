@@ -1,9 +1,18 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
-import { getPeople, getLinks, confirmedByOf, isMutualLink } from '../../../shared/contacts.js';
+import {
+  getPeople, getLinks, confirmedByOf, isMutualLink, getMe, CLOSENESS_LEVELS, closenessRank,
+} from '../../../shared/contacts.js';
 import { escapeHtml } from '../utils.js';
 
 const WIDTH = 340;
 const HEIGHT = 420;
+const CENTER = { x: WIDTH / 2, y: HEIGHT / 2 };
+const INNER_RADIUS = 34;
+const MAX_RADIUS = Math.min(WIDTH, HEIGHT) / 2 - 26;
+// 6 feste Naehe-Stufen (E59) + ein 7. aeusserster Ring fuer unklassifizierte
+// Kontakte, statt sie auszublenden.
+const RING_COUNT = CLOSENESS_LEVELS.length + 1;
+const RING_GAP = (MAX_RADIUS - INNER_RADIUS) / RING_COUNT;
 
 export function render() {
   setTitle('Netzwerk');
@@ -16,14 +25,24 @@ function draw() {
   const view = document.getElementById('view');
   const people = getPeople();
   const links = getLinks().filter((l) => people.some((p) => p.id === l.personIdA) && people.some((p) => p.id === l.personIdB));
+  const me = getMe();
 
   if (!people.length) {
     view.innerHTML = `<div class="empty"><h3>Noch keine Kontakte</h3><p class="faint">Lege Kontakte an und verknüpfe sie, um das Netzwerk zu sehen.</p></div>`;
     return;
   }
 
-  const positions = layout(people, links);
+  const positions = ringLayout(people);
   const nodeById = new Map(people.map((p, i) => [p.id, positions[i]]));
+
+  const ringsSvg = Array.from({ length: RING_COUNT }, (_, i) => {
+    const r = INNER_RADIUS + (i + 1) * RING_GAP;
+    const level = CLOSENESS_LEVELS[i];
+    return `
+      <circle class="network-ring" cx="${CENTER.x}" cy="${CENTER.y}" r="${r.toFixed(1)}"></circle>
+      <text class="network-ring-label" x="${CENTER.x}" y="${(CENTER.y - r + 11).toFixed(1)}" text-anchor="middle">${level ? escapeHtml(level.label) : 'Unklassifiziert'}</text>
+    `;
+  }).join('');
 
   const edgesSvg = links.map((l) => {
     const mutual = isMutualLink(l);
@@ -49,91 +68,58 @@ function draw() {
   }).join('');
 
   view.innerHTML = `
-    <p class="faint" style="margin-bottom:12px">Manuell gepflegte Verknüpfungen aus den Kontakt-Details. Ein Pfeil zeigt einseitiges Kennen (von der bestätigenden zur anderen Person), eine schlichte Linie beidseitig bestätigtes. Antippen öffnet die Person.</p>
+    <p class="faint" style="margin-bottom:12px">${escapeHtml(me.name)} steht im Mittelpunkt, Ringe zeigen die Nähe-Einstufung. Manuell gepflegte Verknüpfungen ("Kennt auch") aus den Kontakt-Details verbinden Personen untereinander - ein Pfeil zeigt einseitiges Kennen, eine schlichte Linie beidseitig bestätigtes. Antippen öffnet die Person, die Mitte öffnet "Mehr".</p>
     <svg class="network-svg" viewBox="0 0 ${WIDTH} ${HEIGHT}">
       <defs>
         <marker id="network-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
           <path d="M0 0L10 5L0 10z" class="network-arrowhead"></path>
         </marker>
       </defs>
+      ${ringsSvg}
       ${edgesSvg}
       ${nodesSvg}
+      <g data-me="1">
+        <circle class="network-node network-node--me" cx="${CENTER.x}" cy="${CENTER.y}" r="20"></circle>
+        <text x="${CENTER.x}" y="${(CENTER.y + 4).toFixed(1)}" text-anchor="middle" class="network-me-label">${escapeHtml(me.name.split(' ')[0])}</text>
+      </g>
     </svg>
   `;
 
   view.querySelectorAll('[data-person]').forEach((el) => {
     el.addEventListener('click', () => navigate(`#/person/${el.dataset.person}`));
   });
+  view.querySelector('[data-me]').addEventListener('click', () => navigate('#/more'));
 }
 
 /**
- * Minimalistischer Force-Directed-Layout (vereinfachtes Fruchterman-Reingold,
- * keine externe Bibliothek). Feste Anzahl Iterationen, dann statisch
- * gerendert - reicht fuer die ueberschaubare Anzahl an Kontakten hier.
+ * Platziert jede Person auf dem Ring ihrer Naehe-Stufe (INNER_RADIUS + Rang *
+ * RING_GAP) statt eines freien Force-Layouts - der Abstand zu "Ich" in der
+ * Mitte soll die tatsaechliche Naehe-Einstufung direkt sichtbar machen, nicht
+ * nur eine optisch huebsche, aber bedeutungslose Anordnung. Innerhalb eines
+ * Rings werden die Personen gleichmaessig ueber den Kreis verteilt, mit einem
+ * kleinen ring-abhaengigen Rotations-Offset, damit sich mehrere Ringe nicht
+ * alle an derselben Stelle (12 Uhr) optisch "stapeln".
  */
-function layout(people, links) {
-  const n = people.length;
-  const idxById = new Map(people.map((p, i) => [p.id, i]));
-  const pos = people.map(() => ({
-    x: WIDTH / 2 + (Math.random() - 0.5) * WIDTH * 0.6,
-    y: HEIGHT / 2 + (Math.random() - 0.5) * HEIGHT * 0.6,
-  }));
-  const area = WIDTH * HEIGHT;
-  const k = Math.sqrt(area / Math.max(1, n)) * 0.8; // idealer Abstand
-
-  const edges = links
-    .map((l) => [idxById.get(l.personIdA), idxById.get(l.personIdB)])
-    .filter(([a, b]) => a !== undefined && b !== undefined);
-
-  let temp = WIDTH / 10;
-  const iterations = 150;
-
-  for (let iter = 0; iter < iterations; iter++) {
-    const disp = pos.map(() => ({ x: 0, y: 0 }));
-
-    // Abstossung zwischen allen Knotenpaaren
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        let dx = pos[i].x - pos[j].x;
-        let dy = pos[i].y - pos[j].y;
-        let dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-        const force = (k * k) / dist;
-        dx = (dx / dist) * force;
-        dy = (dy / dist) * force;
-        disp[i].x += dx; disp[i].y += dy;
-        disp[j].x -= dx; disp[j].y -= dy;
-      }
-    }
-
-    // Anziehung entlang der Kanten
-    for (const [a, b] of edges) {
-      let dx = pos[a].x - pos[b].x;
-      let dy = pos[a].y - pos[b].y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      const force = (dist * dist) / k;
-      dx = (dx / dist) * force;
-      dy = (dy / dist) * force;
-      disp[a].x -= dx; disp[a].y -= dy;
-      disp[b].x += dx; disp[b].y += dy;
-    }
-
-    // Leichte Kraft zur Mitte, damit nichts wegdriftet
-    for (let i = 0; i < n; i++) {
-      disp[i].x += (WIDTH / 2 - pos[i].x) * 0.01;
-      disp[i].y += (HEIGHT / 2 - pos[i].y) * 0.01;
-    }
-
-    // Verschiebung anwenden, begrenzt durch Temperatur
-    for (let i = 0; i < n; i++) {
-      const dist = Math.sqrt(disp[i].x ** 2 + disp[i].y ** 2) || 0.01;
-      pos[i].x += (disp[i].x / dist) * Math.min(dist, temp);
-      pos[i].y += (disp[i].y / dist) * Math.min(dist, temp);
-      pos[i].x = Math.max(30, Math.min(WIDTH - 30, pos[i].x));
-      pos[i].y = Math.max(30, Math.min(HEIGHT - 40, pos[i].y));
-    }
-
-    temp *= 0.96; // Abkuehlung
+function ringLayout(people) {
+  const byRank = new Map();
+  for (const p of people) {
+    const rank = closenessRank(p.closeness);
+    if (!byRank.has(rank)) byRank.set(rank, []);
+    byRank.get(rank).push(p);
   }
 
-  return pos;
+  const posById = new Map();
+  for (const [rank, group] of byRank) {
+    const radius = INNER_RADIUS + rank * RING_GAP;
+    const offset = (rank * 0.35) - Math.PI / 2; // erste Person nicht immer bei 12 Uhr
+    group.forEach((p, i) => {
+      const angle = offset + (2 * Math.PI * i) / group.length;
+      posById.set(p.id, {
+        x: CENTER.x + radius * Math.cos(angle),
+        y: CENTER.y + radius * Math.sin(angle),
+      });
+    });
+  }
+
+  return people.map((p) => posById.get(p.id));
 }

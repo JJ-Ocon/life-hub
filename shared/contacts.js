@@ -12,6 +12,7 @@ const KEYS = {
   people: 'ct_people_v1',
   interactions: 'ct_interactions_v1',
   links: 'ct_links_v1',
+  me: 'ct_me_v1',
 };
 
 function read(key, fallback) {
@@ -37,10 +38,46 @@ function uid() {
    ========================================================= */
 // Person: {
 //   id, name, birthday (YYYY-MM-DD|null), interests (string),
+//   role (string, frei, z.B. "Mutter"/"Bester Freund" - E59),
+//   closeness (CLOSENESS_LEVELS-Key|null - E59),
+//   phone (string), email (string), socialHandles: {id,platform,handle}[] - E59,
 //   socialProfile: { groupName, howMet, tags: string[], remindWeeks } | null,
 //   jobProfile: { company, position, relation: 'colleague'|'client', careerNotes } | null,
 //   createdAt
 // }
+//
+// phone/email/socialHandles bewusst im Klartext (E59): dieselbe
+// Bedrohungsmodell-Begruendung wie ueberall sonst im Oekosystem ausserhalb
+// von Safety/Diary - die Daten verlassen nie dieses Geraet (kein Cloud-Sync),
+// ein Angreifer braeuchte ohnehin Geraetezugriff. Eine volle Verschluesselung
+// wie beim Digitalen Safe wuerde ausserdem einen App-weiten Entsperr-Screen
+// erzwingen, waehrend Social's eigene Geburtstage (E37) schon plaintext in
+// den geteilten Kalender gespiegelt werden - eine Teil-Verschluesselung nur
+// dieser drei Felder haette also ohnehin keine saubere Sicherheitsgrenze.
+
+/** Feste Naehe-Stufen zu "Ich" (E59) - Rang bestimmt den Ring-Abstand im
+ *  Netzwerk-Graphen (1 = innerster Ring/naechste Stufe). Die Reihenfolge im
+ *  Plan-Dokument war keine Rangfolge, nur eine Aufzaehlung mit Beispielen -
+ *  Rang hier bewusst so gewaehlt, dass "Bester Freund" naeher sitzt als
+ *  "Familie" ohne "eng", was der ueblichen Intuition entspricht. */
+export const CLOSENESS_LEVELS = [
+  { key: 'enge_familie', label: 'Enge Familie', rank: 1 },
+  { key: 'bester_freund', label: 'Bester Freund', rank: 2 },
+  { key: 'familie', label: 'Familie', rank: 3 },
+  { key: 'freunde', label: 'Freunde', rank: 4 },
+  { key: 'entfernte_familie', label: 'Entfernte Familie', rank: 5 },
+  { key: 'bekannte', label: 'Bekannte', rank: 6 },
+];
+
+export function closenessLabel(key) {
+  return CLOSENESS_LEVELS.find((c) => c.key === key)?.label || null;
+}
+
+/** Rang fuer die Ring-Platzierung - unklassifizierte Kontakte bekommen den
+ *  aeussersten Ring (kein `key`/unbekannter Wert), statt ausgeblendet zu werden. */
+export function closenessRank(key) {
+  return CLOSENESS_LEVELS.find((c) => c.key === key)?.rank ?? CLOSENESS_LEVELS.length + 1;
+}
 
 export function getPeople() {
   return read(KEYS.people, []);
@@ -48,6 +85,14 @@ export function getPeople() {
 
 export function getPersonById(id) {
   return getPeople().find((p) => p.id === id) || null;
+}
+
+/** Bereits vergebene Rollen-Werte, alphabetisch - fuer Vorschlag-Chips beim
+ *  Anlegen/Bearbeiten, gleiches "was schon benutzt wird" Prinzip wie
+ *  Inventars Unterkategorien (E53) statt einer separat gepflegten Liste. */
+export function getRolesInUse() {
+  const set = new Set(getPeople().map((p) => p.role).filter(Boolean));
+  return [...set].sort((a, b) => a.localeCompare(b, 'de'));
 }
 
 export function savePerson(person) {
@@ -64,11 +109,32 @@ export function createPerson(fields) {
     name: fields.name,
     birthday: fields.birthday || null,
     interests: fields.interests || '',
+    role: fields.role || '',
+    closeness: fields.closeness || null,
+    phone: fields.phone || '',
+    email: fields.email || '',
+    socialHandles: fields.socialHandles || [],
     socialProfile: fields.socialProfile || null,
     jobProfile: fields.jobProfile || null,
     createdAt: new Date().toISOString(),
   };
   return savePerson(person);
+}
+
+/* =========================================================
+   "Ich" – Mittelpunkt der Netzwerk-Darstellung (E59). Kein Person-Datensatz
+   (keine Verknuepfungen/Interaktionen mit sich selbst noetig) - nur ein
+   optionaler Namens-Override fuer die Beschriftung im Graphen, Default "Ich".
+   ========================================================= */
+
+export function getMe() {
+  return read(KEYS.me, { name: 'Ich' });
+}
+
+export function saveMe(fields) {
+  const merged = { ...getMe(), ...fields };
+  write(KEYS.me, merged);
+  return merged;
 }
 
 /** Entfernt nur das jobProfile aller Personen (Social-Profil, Kern-Daten,
@@ -183,17 +249,19 @@ export function removeLink(id) {
    ========================================================= */
 
 export function exportContacts() {
-  return { people: getPeople(), interactions: getInteractions(), links: getLinks() };
+  return { people: getPeople(), interactions: getInteractions(), links: getLinks(), me: getMe() };
 }
 
 export function importContacts(data) {
   if (data.people) write(KEYS.people, data.people);
   if (data.interactions) write(KEYS.interactions, data.interactions);
   if (data.links) write(KEYS.links, data.links);
+  if (data.me) write(KEYS.me, data.me);
 }
 
 export function resetContacts() {
   localStorage.removeItem(KEYS.people);
   localStorage.removeItem(KEYS.interactions);
   localStorage.removeItem(KEYS.links);
+  localStorage.removeItem(KEYS.me);
 }

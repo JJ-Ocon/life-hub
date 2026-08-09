@@ -1,10 +1,14 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
-import { getPeople, createPerson, lastContactDate } from '../../../shared/contacts.js';
+import {
+  getPeople, createPerson, lastContactDate, CLOSENESS_LEVELS, closenessLabel, closenessRank, getRolesInUse,
+} from '../../../shared/contacts.js';
 import { refreshBirthdayCalendarMirror } from '../db.js';
 import { escapeHtml, todayKey, daysBetweenDateKeys, formatDateKey } from '../utils.js';
 import { openModal, toast } from '../ui.js';
 
 let activeTag = null;
+let activeCloseness = null;
+let sortMode = 'name'; // 'name' | 'closeness'
 let query = '';
 
 export function render() {
@@ -39,24 +43,36 @@ function allTags(people) {
 function draw() {
   const list = document.getElementById('person-list');
   if (!list) return;
-  const people = getPeople().sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const people = getPeople();
   const tags = allTags(people);
   const today = todayKey();
   const q = query.trim().toLowerCase();
   let filtered = activeTag ? people.filter((p) => p.socialProfile?.tags?.includes(activeTag)) : people;
+  if (activeCloseness) filtered = filtered.filter((p) => p.closeness === activeCloseness);
   if (q) filtered = filtered.filter((p) => p.name.toLowerCase().includes(q));
+  filtered = sortMode === 'closeness'
+    ? [...filtered].sort((a, b) => closenessRank(a.closeness) - closenessRank(b.closeness) || a.name.localeCompare(b.name, 'de'))
+    : [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'de'));
 
   list.innerHTML = `
+    <div class="filter-row">
+      <button class="chip ${sortMode === 'name' ? 'active' : ''}" data-sort="name">Name</button>
+      <button class="chip ${sortMode === 'closeness' ? 'active' : ''}" data-sort="closeness">Nähe zu Dir</button>
+    </div>
     ${tags.length ? `
       <div class="filter-row">
-        <button class="chip ${!activeTag ? 'active' : ''}" data-tag="">Alle</button>
+        <button class="chip ${!activeTag ? 'active' : ''}" data-tag="">Alle Tags</button>
         ${tags.map((t) => `<button class="chip ${activeTag === t ? 'active' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join('')}
       </div>
     ` : ''}
+    <div class="filter-row">
+      <button class="chip ${!activeCloseness ? 'active' : ''}" data-closeness-filter="">Alle Nähe-Stufen</button>
+      ${CLOSENESS_LEVELS.map((c) => `<button class="chip ${activeCloseness === c.key ? 'active' : ''}" data-closeness-filter="${c.key}">${c.label}</button>`).join('')}
+    </div>
     ${filtered.length === 0 ? `
       <div class="empty">
-        <h3>${q || activeTag ? 'Keine Treffer' : 'Noch keine Kontakte'}</h3>
-        <p class="faint">${q || activeTag ? 'Andere Suche oder Filter versuchen.' : 'Lege deinen ersten Kontakt über das Plus oben rechts an.'}</p>
+        <h3>${q || activeTag || activeCloseness ? 'Keine Treffer' : 'Noch keine Kontakte'}</h3>
+        <p class="faint">${q || activeTag || activeCloseness ? 'Andere Suche oder Filter versuchen.' : 'Lege deinen ersten Kontakt über das Plus oben rechts an.'}</p>
       </div>
     ` : `
       <div class="stack">
@@ -68,8 +84,9 @@ function draw() {
             <div class="card card--tap person-row" data-open="${p.id}">
               <span class="avatar">${escapeHtml(initials(p.name))}</span>
               <div class="col grow" style="min-width:0">
-                <p class="truncate">${escapeHtml(p.name)}</p>
+                <p class="truncate">${escapeHtml(p.name)}${p.role ? ` <span class="faint">· ${escapeHtml(p.role)}</span>` : ''}</p>
                 <p class="person-row__meta">
+                  ${p.closeness ? `<span class="tag-chip tag-chip--closeness">${escapeHtml(closenessLabel(p.closeness))}</span>` : ''}
                   ${p.socialProfile?.groupName ? escapeHtml(p.socialProfile.groupName) + ' · ' : ''}
                   ${(p.socialProfile?.tags || []).map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}
                 </p>
@@ -84,8 +101,14 @@ function draw() {
     `}
   `;
 
+  list.querySelectorAll('[data-sort]').forEach((el) => {
+    el.addEventListener('click', () => { sortMode = el.dataset.sort; draw(); });
+  });
   list.querySelectorAll('[data-tag]').forEach((el) => {
     el.addEventListener('click', () => { activeTag = el.dataset.tag || null; draw(); });
+  });
+  list.querySelectorAll('[data-closeness-filter]').forEach((el) => {
+    el.addEventListener('click', () => { activeCloseness = el.dataset.closenessFilter || null; draw(); });
   });
   list.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => navigate(`#/person/${el.dataset.open}`));
@@ -97,6 +120,9 @@ function initials(name) {
 }
 
 function openAddModal(onSaved) {
+  const roles = getRolesInUse();
+  let closeness = null;
+
   const handle = openModal(`
     <h3 class="modal-title">Kontakt anlegen</h3>
     <div class="field">
@@ -106,6 +132,22 @@ function openAddModal(onSaved) {
     <div class="field">
       <label>Geburtstag (optional)</label>
       <input class="input" type="date" id="p-birthday">
+    </div>
+    <div class="field">
+      <label>Rolle (optional)</label>
+      <input class="input" id="p-role" placeholder="z.B. Bester Freund, Mutter, Bruder">
+      ${roles.length ? `
+        <div class="chip-row" id="role-suggest-row" style="margin-top:8px">
+          ${roles.map((r) => `<button type="button" class="chip" data-role-suggest="${escapeHtml(r)}">${escapeHtml(r)}</button>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+    <div class="field">
+      <label>Nähe zu Dir (optional)</label>
+      <div class="chip-row" id="closeness-row">
+        <button type="button" class="chip active" data-closeness="">Keine Angabe</button>
+        ${CLOSENESS_LEVELS.map((c) => `<button type="button" class="chip" data-closeness="${c.key}">${c.label}</button>`).join('')}
+      </div>
     </div>
     <div class="field">
       <label>Freundeskreis-Gruppe (optional)</label>
@@ -126,6 +168,19 @@ function openAddModal(onSaved) {
     <button class="btn btn-primary" id="p-save">Speichern</button>
   `, { center: true });
 
+  handle.sheet.querySelector('#role-suggest-row')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-role-suggest]');
+    if (!btn) return;
+    handle.sheet.querySelector('#p-role').value = btn.dataset.roleSuggest;
+  });
+
+  handle.sheet.querySelector('#closeness-row').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-closeness]');
+    if (!btn) return;
+    closeness = btn.dataset.closeness || null;
+    handle.sheet.querySelectorAll('[data-closeness]').forEach((b) => b.classList.toggle('active', (b.dataset.closeness || null) === closeness));
+  });
+
   handle.sheet.querySelector('#p-save').addEventListener('click', () => {
     const name = handle.sheet.querySelector('#p-name').value.trim();
     if (!name) { toast('Bitte einen Namen eingeben'); return; }
@@ -133,6 +188,8 @@ function openAddModal(onSaved) {
     createPerson({
       name,
       birthday: handle.sheet.querySelector('#p-birthday').value || null,
+      role: handle.sheet.querySelector('#p-role').value.trim(),
+      closeness,
       socialProfile: {
         groupName: handle.sheet.querySelector('#p-group').value.trim(),
         howMet: handle.sheet.querySelector('#p-howmet').value.trim(),
