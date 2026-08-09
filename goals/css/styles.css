@@ -222,3 +222,26 @@ textarea.input { resize: vertical; min-height: 60px; }
 /* ---------- Aus Notizen zugeordnet (E57) ---------- */
 .checklist-row { align-items: center; }
 .check-item { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent); }
+
+/* ---------- Lernen (E58, aus der frueheren Lernen-App uebernommen) ---------- */
+.filter-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.due-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.due-row:last-child { border-bottom: none; }
+.due-row__title { flex: 1; font-size: .9rem; }
+.due-row__meta { font-size: .76rem; color: var(--text-faint); margin-top: 2px; }
+.due-row__date { font-size: .76rem; color: var(--text-faint); flex-shrink: 0; }
+.due-row__date--overdue { color: var(--danger); font-weight: 700; }
+
+/* ---------- Kalender (E58, Tages-Picker fuer Todos/Lernplaene) ---------- */
+.cal-nav { padding: 0 4px; }
+.gcal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.gcal-grid--headers { margin-bottom: 6px; }
+.gcal-weekday { text-align: center; font-size: .72rem; color: var(--text-faint); font-weight: 700; }
+.gcal-cell {
+  aspect-ratio: 1; border-radius: var(--radius-s); background: var(--bg-card); border: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer;
+}
+.gcal-cell--muted { opacity: .35; }
+.gcal-cell--today { border-color: var(--accent); border-width: 2px; }
+.gcal-cell__num { font-size: .82rem; }
+.gcal-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }

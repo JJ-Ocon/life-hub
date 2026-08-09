@@ -57,6 +57,29 @@ export function weekdayLabel(dayIndex) {
   return WEEKDAYS[dayIndex];
 }
 
+const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+
+export function monthLabel(year, monthIndex) {
+  return `${MONTH_NAMES[monthIndex]} ${year}`;
+}
+
+export function daysInMonth(year, monthIndex) {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+export function weekdayOfDateKey(dateKey) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+export function daysBetweenDateKeys(fromKey, toKey) {
+  const [y1, m1, d1] = fromKey.split('-').map(Number);
+  const [y2, m2, d2] = toKey.split('-').map(Number);
+  const a = Date.UTC(y1, m1 - 1, d1);
+  const b = Date.UTC(y2, m2 - 1, d2);
+  return Math.round((b - a) / 86400000);
+}
+
 export function formatNum(n, digits = 0) {
   if (n === null || n === undefined || Number.isNaN(n)) return '–';
   const r = Math.round(n * 10 ** digits) / 10 ** digits;

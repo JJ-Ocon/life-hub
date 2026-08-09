@@ -1,6 +1,6 @@
 // Persistenz-Schicht: alles in localStorage, bleibt lokal auf dem Geraet.
 
-import { uid, nowIso, addDaysToDateKey, addMonthsToDateKey, addYearsToDateKey } from './utils.js';
+import { uid, nowIso, addDaysToDateKey, addMonthsToDateKey, addYearsToDateKey, todayKey, mondayOfWeekKey, daysBetweenDateKeys } from './utils.js';
 import { createCalendarEvent } from '../../shared/calendar-schema.js';
 import { replaceSourceEvents } from '../../shared/event-store.js';
 
@@ -9,6 +9,10 @@ const KEYS = {
   milestones: 'gl_milestones_v1',
   todos: 'gl_todos_v1',
   settings: 'gl_settings_v1',
+  skills: 'gl_skills_v1',
+  sessions: 'gl_sessions_v1',
+  learningPlans: 'gl_learning_plans_v1',
+  migrated: 'gl_learning_migrated_v1',
 };
 
 function read(key, fallback) {
@@ -23,6 +27,27 @@ function read(key, fallback) {
 function write(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
+
+/** Einmalige Uebernahme von Lernens Altdaten (E58: Lernen-App in Ziele/Todo
+ *  integriert) - laeuft beim ersten Laden nach dem Merge, kopiert lr_*-
+ *  Schluessel unter dem neuen gl_*-Namensraum, ruehrt die alten Schluessel
+ *  selbst nicht an (falls die alte App-Seite noch irgendwo verlinkt ist,
+ *  bleiben ihre Daten unveraendert lesbar). Idempotent ueber ein eigenes
+ *  Merker-Flag, damit ein spaeteres manuelles Loeschen der gl_*-Daten nicht
+ *  versehentlich die alten lr_*-Daten erneut hereinkopiert. */
+function migrateLearningDataIfNeeded() {
+  if (read(KEYS.migrated, false)) return;
+  try {
+    const oldSkills = localStorage.getItem('lr_skills_v1');
+    const oldSessions = localStorage.getItem('lr_sessions_v1');
+    if (oldSkills) write(KEYS.skills, JSON.parse(oldSkills));
+    if (oldSessions) write(KEYS.sessions, JSON.parse(oldSessions));
+  } catch {
+    // Fehlerhafte Altdaten sollen den Merge nicht blockieren.
+  }
+  write(KEYS.migrated, true);
+}
+migrateLearningDataIfNeeded();
 
 /* =========================================================
    Ziele + Meilensteine
@@ -196,9 +221,12 @@ export function deleteTodo(id) {
 }
 
 /**
- * Spiegelt Todos mit Faelligkeitsdatum in den geteilten Kalender-Event-Store,
- * damit sie im Hub-Kalender auftauchen ("Sync zum Hauptkalender" laut
- * Oekosystem-Dokument). Feuert asynchron im Hintergrund.
+ * Spiegelt Todos mit Faelligkeitsdatum, Kurs-Deadlines und Lernplaene (E58)
+ * gemeinsam unter der einen Quelle 'goals' in den geteilten Kalender-Event-
+ * Store, damit sie im Hub-Kalender auftauchen. Alle drei zusammen in einer
+ * Funktion, da replaceSourceEvents() je Quelle immer ALLE bisherigen Events
+ * ersetzt - zwei getrennte Funktionen unter derselben Quelle wuerden sich
+ * gegenseitig die Eintraege wegloeschen.
  */
 export async function refreshSharedCalendarMirror() {
   try {
@@ -210,10 +238,203 @@ export async function refreshSharedCalendarMirror() {
         start: t.dueDate,
         source: 'goals',
       }));
+    for (const s of read(KEYS.skills, [])) {
+      if (s.type === 'course' && s.deadlineDate) {
+        events.push(createCalendarEvent({ id: `goals-course-${s.id}`, title: `Kurs-Deadline: ${s.name}`, start: s.deadlineDate, source: 'goals' }));
+      }
+    }
+    for (const plan of read(KEYS.learningPlans, [])) {
+      const skill = getSkillById(plan.skillId);
+      if (!skill) continue;
+      for (const dateKey of upcomingLearningPlanDates(plan)) {
+        events.push(createCalendarEvent({ id: `goals-learnplan-${plan.id}-${dateKey}`, title: `📚 ${skill.name}`, start: dateKey, source: 'goals' }));
+      }
+    }
     await replaceSourceEvents('goals', events);
   } catch {
     // Shared Storage ist ein optionales Extra, kein Kernfeature.
   }
+}
+
+/* =========================================================
+   Lernen (E58: aus der frueheren eigenstaendigen Lernen-App integriert) -
+   Skills mit optionalem woechentlichem Zeitziel, Sessions als geloggte
+   Uebungszeit. Datenmodell 1:1 uebernommen, nur der localStorage-
+   Namensraum ist neu (gl_* statt lr_*).
+   ========================================================= */
+// Skill: { id, name, category, type ('generic'|'book'|'course'), note,
+//          targetMinutesPerWeek (optional), totalPages (optional, nur 'book'),
+//          progressPercent (optional, nur 'course'),
+//          deadlineDate (YYYY-MM-DD|null, nur 'course'), createdAt }
+// Session: { id, skillId, date, durationMinutes, pageAt (optional), note, createdAt }
+
+export const CATEGORIES = [
+  { key: 'sprache', label: 'Sprache' },
+  { key: 'instrument', label: 'Instrument' },
+  { key: 'programmieren', label: 'Programmieren' },
+  { key: 'sport', label: 'Sport' },
+  { key: 'handwerk', label: 'Handwerk' },
+  { key: 'sonstiges', label: 'Sonstiges' },
+];
+
+export function categoryLabel(category) {
+  return CATEGORIES.find((c) => c.key === category)?.label || category || 'Sonstiges';
+}
+
+export function getCategories() {
+  const set = new Set(read(KEYS.skills, []).map((s) => categoryLabel(s.category)));
+  return [...set].sort((a, b) => a.localeCompare(b, 'de'));
+}
+
+export const SKILL_TYPES = [
+  { key: 'generic', label: 'Allgemein' },
+  { key: 'book', label: 'Buch' },
+  { key: 'course', label: 'Kurs' },
+];
+
+export function skillTypeLabel(type) {
+  return SKILL_TYPES.find((t) => t.key === type)?.label || 'Allgemein';
+}
+
+export function getSkills() {
+  return read(KEYS.skills, []).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+}
+
+export function getSkillById(id) {
+  return read(KEYS.skills, []).find((s) => s.id === id) || null;
+}
+
+export function saveSkill(skill) {
+  const list = read(KEYS.skills, []);
+  const idx = list.findIndex((s) => s.id === skill.id);
+  if (idx >= 0) list[idx] = skill; else list.push(skill);
+  write(KEYS.skills, list);
+  refreshSharedCalendarMirror();
+  return skill;
+}
+
+export function createSkill(fields) {
+  return saveSkill({
+    id: uid(), name: fields.name, category: fields.category || 'Sonstiges',
+    type: fields.type || 'generic',
+    note: fields.note || '', targetMinutesPerWeek: fields.targetMinutesPerWeek || null,
+    totalPages: fields.totalPages || null,
+    progressPercent: fields.progressPercent ?? null,
+    deadlineDate: fields.deadlineDate || null,
+    createdAt: nowIso(),
+  });
+}
+
+export function deleteSkill(id) {
+  write(KEYS.skills, read(KEYS.skills, []).filter((s) => s.id !== id));
+  write(KEYS.sessions, read(KEYS.sessions, []).filter((s) => s.skillId !== id));
+  write(KEYS.learningPlans, read(KEYS.learningPlans, []).filter((p) => p.skillId !== id));
+  refreshSharedCalendarMirror();
+}
+
+/** Leseforschritt eines Buch-Skills (0-1), aus der zuletzt geloggten Seite
+ *  gegen die Gesamtseitenzahl - null wenn nicht berechenbar. */
+export function bookProgress(skill) {
+  if (skill.type !== 'book' || !skill.totalPages) return null;
+  const latest = getSessions(skill.id).find((s) => s.pageAt != null);
+  if (!latest) return null;
+  return Math.min(1, latest.pageAt / skill.totalPages);
+}
+
+export function bookCurrentPage(skill) {
+  const latest = getSessions(skill.id).find((s) => s.pageAt != null);
+  return latest ? latest.pageAt : null;
+}
+
+export function getSessions(skillId = null) {
+  const all = read(KEYS.sessions, []);
+  const filtered = skillId ? all.filter((s) => s.skillId === skillId) : all;
+  return filtered.slice().sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+}
+
+export function logSession(fields) {
+  const list = read(KEYS.sessions, []);
+  list.push({
+    id: uid(), skillId: fields.skillId, date: fields.date || todayKey(),
+    durationMinutes: fields.durationMinutes || 0, pageAt: fields.pageAt ?? null,
+    note: fields.note || '', createdAt: nowIso(),
+  });
+  write(KEYS.sessions, list);
+}
+
+export function deleteSession(id) {
+  write(KEYS.sessions, read(KEYS.sessions, []).filter((s) => s.id !== id));
+}
+
+export function weeklyMinutes(skillId, weekMondayKey = mondayOfWeekKey(todayKey())) {
+  const weekEnd = addDaysToDateKey(weekMondayKey, 6);
+  return getSessions(skillId)
+    .filter((s) => s.date >= weekMondayKey && s.date <= weekEnd)
+    .reduce((sum, s) => sum + s.durationMinutes, 0);
+}
+
+export function totalMinutes(skillId) {
+  return getSessions(skillId).reduce((sum, s) => sum + s.durationMinutes, 0);
+}
+
+export function currentStreak(skillId) {
+  const dates = [...new Set(getSessions(skillId).map((s) => s.date))].sort().reverse();
+  if (dates.length === 0) return 0;
+  const today = todayKey();
+  let cursor = dates[0] === today ? today : (daysBetweenDateKeys(dates[0], today) === 1 ? dates[0] : null);
+  if (!cursor) return 0;
+  let streak = 0;
+  let expected = cursor;
+  for (const d of dates) {
+    if (d === expected) {
+      streak += 1;
+      expected = addDaysToDateKey(expected, -1);
+    } else if (d < expected) {
+      break;
+    }
+  }
+  return streak;
+}
+
+/* =========================================================
+   Lernplaene (E58, neu) - "an diesen Wochentagen ueben", angelegt ueber den
+   neuen Kalender-Tag-Picker. Rein terminliche Erinnerung (Kalender-Spiegel),
+   erzeugt KEINE Sessions automatisch - das Ueben/Loggen bleibt manuell.
+   ========================================================= */
+// LearningPlan: { id, skillId, weekdays (0=Mo..6=So)[], startDate, durationMinutes, createdAt }
+
+export function getLearningPlans() {
+  return read(KEYS.learningPlans, []);
+}
+
+export function createLearningPlan(fields) {
+  const list = read(KEYS.learningPlans, []);
+  list.push({
+    id: uid(), skillId: fields.skillId, weekdays: fields.weekdays || [],
+    startDate: fields.startDate || todayKey(), durationMinutes: fields.durationMinutes || 30,
+    createdAt: nowIso(),
+  });
+  write(KEYS.learningPlans, list);
+  refreshSharedCalendarMirror();
+}
+
+export function deleteLearningPlan(id) {
+  write(KEYS.learningPlans, read(KEYS.learningPlans, []).filter((p) => p.id !== id));
+  refreshSharedCalendarMirror();
+}
+
+/** Naechste 8 Wochen an Terminen fuer einen Lernplan, an denen sein
+ *  Wochentags-Muster zutrifft (ab startDate, nie in der Vergangenheit). */
+function upcomingLearningPlanDates(plan) {
+  const out = [];
+  const start = plan.startDate > todayKey() ? plan.startDate : todayKey();
+  for (let i = 0; i < 56; i++) {
+    const dateKey = addDaysToDateKey(start, i);
+    const dt = new Date(dateKey + 'T00:00:00Z');
+    const weekday = (dt.getUTCDay() + 6) % 7; // Montag = 0
+    if (plan.weekdays.includes(weekday)) out.push(dateKey);
+  }
+  return out;
 }
 
 /* =========================================================
@@ -247,6 +468,9 @@ export function exportAllData() {
     milestones: getMilestones(),
     todos: getTodos(),
     settings: getSettings(),
+    skills: read(KEYS.skills, []),
+    sessions: read(KEYS.sessions, []),
+    learningPlans: read(KEYS.learningPlans, []),
   };
 }
 
@@ -255,6 +479,9 @@ export function importAllData(data) {
   if (data.milestones) write(KEYS.milestones, data.milestones);
   if (data.todos) write(KEYS.todos, data.todos);
   if (data.settings) write(KEYS.settings, data.settings);
+  if (data.skills) write(KEYS.skills, data.skills);
+  if (data.sessions) write(KEYS.sessions, data.sessions);
+  if (data.learningPlans) write(KEYS.learningPlans, data.learningPlans);
   refreshSharedCalendarMirror();
 }
 
@@ -263,5 +490,8 @@ export function resetAllData() {
   localStorage.removeItem(KEYS.milestones);
   localStorage.removeItem(KEYS.todos);
   localStorage.removeItem(KEYS.settings);
+  localStorage.removeItem(KEYS.skills);
+  localStorage.removeItem(KEYS.sessions);
+  localStorage.removeItem(KEYS.learningPlans);
   refreshSharedCalendarMirror();
 }

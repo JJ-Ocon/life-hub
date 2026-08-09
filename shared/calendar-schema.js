@@ -39,7 +39,7 @@ export function createCalendarEvent(fields) {
  * localStorage same-origin geteilt wird) unter COLOR_OVERRIDES_KEY. */
 const SOURCE_META = {
   fitness: { label: 'Trainingslog', color: '#2fd9a0' },
-  goals: { label: 'Ziele/Todo', color: '#c76ae0' },
+  goals: { label: 'Ziele/Todo/Lernen', color: '#c76ae0' },
   job: { label: 'Job', color: '#4f8fd9' },
   household: { label: 'Haushalt', color: '#5fa06a' },
   possessions: { label: 'Inventar', color: '#c98a3e' },

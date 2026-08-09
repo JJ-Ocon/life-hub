@@ -4,6 +4,8 @@ import { applyTheme } from './theme.js';
 
 import * as home from './views/home.js';
 import * as goals from './views/goals.js';
+import * as learning from './views/learning.js';
+import * as calendar from './views/calendar.js';
 import * as more from './views/more.js';
 
 applyTheme(getSettings());
@@ -11,6 +13,8 @@ applyTheme(getSettings());
 addRoute('/', 'home', () => home.render());
 addRoute('/goals', 'goals', () => goals.render());
 addRoute('/goals/:id', 'goals', (p) => goals.renderDetail(p));
+addRoute('/learning', 'learning', () => learning.render());
+addRoute('/calendar', 'calendar', () => calendar.render());
 addRoute('/more', 'more', () => more.render());
 
 startRouter();

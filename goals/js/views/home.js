@@ -153,7 +153,7 @@ function openAssignedNoteModal(note) {
   });
 }
 
-function openTodoModal(todo, onSaved) {
+export function openTodoModal(todo, onSaved) {
   const goals = getGoals();
   const isNew = !todo.id;
   let repeat = todo.repeat || null;

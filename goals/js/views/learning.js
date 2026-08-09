@@ -1,4 +1,4 @@
-import { setTitle, setActions, setBack } from '../router.js';
+import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
   getSkills, getSkillById, createSkill, saveSkill, deleteSkill, categoryLabel, getCategories,
   SKILL_TYPES, skillTypeLabel, bookProgress, bookCurrentPage,
@@ -10,7 +10,7 @@ import { todayKey, formatDateKey, formatNum, escapeHtml } from '../utils.js';
 let activeCategory = null;
 
 export function render() {
-  setTitle('Skills');
+  setTitle('Lernen');
   setBack(null);
   setActions('');
   draw();
@@ -21,7 +21,38 @@ function draw() {
   const allSkills = getSkills();
   const categories = getCategories();
   const skills = activeCategory ? allSkills.filter((s) => categoryLabel(s.category) === activeCategory) : allSkills;
+
   view.innerHTML = `
+    ${allSkills.length > 0 ? `
+      <div class="section-title" style="margin-top:0">Diese Woche</div>
+      <div class="stack" style="margin-bottom:20px">
+        ${allSkills.map((s) => {
+          const week = weeklyMinutes(s.id);
+          const target = s.targetMinutesPerWeek;
+          const pct = target ? Math.min(100, Math.round((week / target) * 100)) : null;
+          const streak = currentStreak(s.id);
+          return `
+            <div class="card" style="margin-bottom:0">
+              <div class="row row--between">
+                <div class="col grow" style="min-width:0">
+                  <p class="due-row__title truncate">${escapeHtml(s.name)}</p>
+                  <p class="due-row__meta">${escapeHtml(categoryLabel(s.category))}${streak > 0 ? ` · 🔥 ${streak} Tage` : ''}</p>
+                </div>
+                <button class="btn btn-sm btn-primary" data-log="${s.id}">+ Loggen</button>
+              </div>
+              ${target ? `
+                <div style="margin-top:10px">
+                  <p class="faint" style="margin-bottom:6px">${week} / ${target} Min. diese Woche</p>
+                  <div class="pbar"><div class="pbar__fill" style="width:${pct}%"></div></div>
+                </div>
+              ` : `<p class="faint" style="margin-top:10px">${week} Min. diese Woche</p>`}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : ''}
+
+    <div class="section-title" style="margin-top:0">Skills</div>
     ${categories.length > 1 ? `
       <div class="filter-row" style="margin-bottom:14px">
         <button class="chip ${!activeCategory ? 'active' : ''}" data-cat="">Alle</button>
@@ -47,6 +78,10 @@ function draw() {
     `}
     <button class="btn btn-primary" id="skill-add" style="margin-top:16px">+ Skill</button>
   `;
+
+  view.querySelectorAll('[data-log]').forEach((el) => {
+    el.addEventListener('click', () => openLogSessionModal(el.dataset.log, draw));
+  });
   view.querySelectorAll('[data-cat]').forEach((el) => {
     el.addEventListener('click', () => { activeCategory = el.dataset.cat || null; draw(); });
   });
@@ -207,8 +242,9 @@ function openSkillDetail(skill) {
       ` : ''}
       <div class="stack" style="margin-bottom:14px">
         <button class="btn btn-primary" id="d-log">+ Zeit loggen</button>
+        <button class="btn btn-ghost" id="d-plan">📅 Lernplan im Kalender anlegen</button>
         <button class="btn btn-ghost" id="d-edit">Skill bearbeiten</button>
-        <button class="btn btn-ghost" id="d-goal">🎯 Als Ziel in Ziele-App anlegen</button>
+        <button class="btn btn-ghost" id="d-goal">🎯 Als Ziel anlegen</button>
       </div>
       <div class="section-title" style="margin-top:6px">Verlauf</div>
       ${sessions.length === 0 ? '<p class="faint">Noch keine Übungszeit geloggt.</p>' : `
@@ -229,13 +265,17 @@ function openSkillDetail(skill) {
     handle.sheet.querySelector('#d-log').addEventListener('click', () => {
       openLogSessionModal(sk.id, () => { handle.close(); draw2(sk); refreshBackground(); });
     });
+    handle.sheet.querySelector('#d-plan').addEventListener('click', () => {
+      handle.close();
+      navigate(`#/calendar?skillId=${sk.id}`);
+    });
     handle.sheet.querySelector('#d-edit').addEventListener('click', () => {
       handle.close();
       openSkillModal(sk, () => { refreshBackground(); });
     });
     handle.sheet.querySelector('#d-goal').addEventListener('click', () => {
-      const params = new URLSearchParams({ goalQuickAdd: sk.name });
-      location.href = `../goals/#/goals?${params.toString()}`;
+      handle.close();
+      navigate(`#/goals?goalQuickAdd=${encodeURIComponent(sk.name)}`);
     });
     handle.sheet.querySelectorAll('[data-del-session]').forEach((el) => {
       el.addEventListener('click', async () => {
@@ -250,7 +290,7 @@ function openSkillDetail(skill) {
   }
 
   function refreshBackground() {
-    if (document.getElementById('topbar-title')?.textContent === 'Skills') draw();
+    if (document.getElementById('topbar-title')?.textContent === 'Lernen') draw();
   }
 }
 

@@ -1,7 +1,7 @@
 {
-  "name": "Ziele & Todo",
+  "name": "Ziele, Todo & Lernen",
   "short_name": "Ziele & Todo",
-  "description": "Todos, Ziele und Meilensteine mit Kalender-Sync.",
+  "description": "Todos, Ziele, Meilensteine und Lern-Skills mit Kalender-Sync.",
   "lang": "de",
   "dir": "ltr",
   "start_url": "./index.html",

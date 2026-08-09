@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'goals-v3';
+const CACHE_VERSION = 'goals-v4';
 
 const ASSETS = [
   './',
@@ -16,6 +16,8 @@ const ASSETS = [
   './js/theme.js',
   './js/views/home.js',
   './js/views/goals.js',
+  './js/views/learning.js',
+  './js/views/calendar.js',
   './js/views/more.js',
   './icons/icon.svg',
   '../shared/calendar-schema.js',

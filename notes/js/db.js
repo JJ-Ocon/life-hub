@@ -36,7 +36,7 @@ function write(key, value) {
  *  Digitaler Safe/Tagebuch (verschluesselte Apps, keine Plaintext-Notizen
  *  ueber einen Seitenkanal einschleusen) und ohne Notizen selbst. */
 export const ASSIGNABLE_APPS = [
-  { id: 'goals', label: 'Ziele & Todo' },
+  { id: 'goals', label: 'Ziele, Todo & Lernen' },
   { id: 'job', label: 'Job' },
   { id: 'social', label: 'Social' },
   { id: 'household', label: 'Haushalt' },

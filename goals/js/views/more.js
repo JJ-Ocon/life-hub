@@ -45,8 +45,8 @@ export function render() {
 
     <div class="section-title">Über die App</div>
     <div class="card">
-      <p class="faint">Ziele &amp; Todo · Version 1.0</p>
-      <p class="faint" style="margin-top:6px">Alle Daten bleiben ausschließlich lokal auf diesem Gerät gespeichert. Todos mit Fälligkeitsdatum erscheinen automatisch im Hub-Kalender.</p>
+      <p class="faint">Ziele, Todo &amp; Lernen · Version 2.0</p>
+      <p class="faint" style="margin-top:6px">Alle Daten bleiben ausschließlich lokal auf diesem Gerät gespeichert. Todos mit Fälligkeitsdatum, Kurs-Deadlines und Lernpläne erscheinen automatisch im Hub-Kalender.</p>
     </div>
   `;
 
@@ -87,7 +87,7 @@ export function render() {
   });
 
   document.getElementById('reset-all').addEventListener('click', async () => {
-    const ok = await confirmDialog('Wirklich alle Daten löschen?', 'Ziele, Meilensteine und Todos werden unwiderruflich gelöscht.', 'Alles löschen', true);
+    const ok = await confirmDialog('Wirklich alle Daten löschen?', 'Ziele, Meilensteine, Todos, Skills und Lernpläne werden unwiderruflich gelöscht.', 'Alles löschen', true);
     if (!ok) return;
     const typed = await promptDialog('Zur Bestätigung "LÖSCHEN" eingeben', { placeholder: 'LÖSCHEN' });
     if (typed !== 'LÖSCHEN') { toast('Abgebrochen'); return; }
