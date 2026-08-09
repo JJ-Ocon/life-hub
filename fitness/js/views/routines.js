@@ -1,5 +1,5 @@
 import { setTitle, setActions } from '../router.js';
-import { getRoutines, deleteRoutine, newRoutineSkeleton, saveRoutine, duplicateRoutine, getTemplateDefs, instantiateTemplate, getActiveSession, startSessionFromRoutine } from '../db.js';
+import { getRoutines, deleteRoutine, newRoutineSkeleton, saveRoutine, duplicateRoutine, getTemplateDefs, instantiateTemplate, getActiveSession, startSessionFromRoutine, startMergedSession } from '../db.js';
 import { confirmDialog, toast, openModal } from '../ui.js';
 import { escapeHtml } from '../utils.js';
 
@@ -20,6 +20,7 @@ export function render() {
       </div>
     ` : `
       <div class="section-title">Meine Routinen</div>
+      ${routines.length >= 2 ? `<button class="btn btn-ghost" id="merge-routines" ${active ? 'disabled' : ''} style="margin-bottom:12px">🔗 Zwei Routinen zusammenlegen</button>` : ''}
       <div class="stack" id="routine-list">
         ${routines.map((r) => `
           <div class="card" data-id="${r.id}">
@@ -54,6 +55,7 @@ export function render() {
   }
   document.getElementById('add-routine').addEventListener('click', createRoutine);
   document.getElementById('create-routine').addEventListener('click', createRoutine);
+  document.getElementById('merge-routines')?.addEventListener('click', () => openMergeModal(routines));
 
   document.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => location.hash = `#/routines/${el.dataset.open}/edit`));
   document.querySelectorAll('[data-edit]').forEach((el) => el.addEventListener('click', () => location.hash = `#/routines/${el.dataset.edit}/edit`));
@@ -77,6 +79,52 @@ export function render() {
     const routine = instantiateTemplate(el.dataset.template);
     if (routine) { toast('Routine hinzugefügt'); location.hash = `#/routines/${routine.id}/edit`; }
   }));
+}
+
+/** Waehlt zwei Routinen aus und startet eine gemeinsame Session daraus -
+ *  spart Zeit, wenn man z.B. in einer Deload-Woche nicht an zwei
+ *  getrennten Tagen trainieren will. */
+function openMergeModal(routines) {
+  let pickedA = null;
+  let pickedB = null;
+
+  const handle = openModal(`
+    <h3 class="modal-title">Zwei Routinen zusammenlegen</h3>
+    <p class="faint" style="margin-bottom:14px">Beide Übungslisten werden zu einer einzigen Session zusammengefügt - praktisch z.B. in einer Deload-Woche, um Zeit zu sparen.</p>
+    <div class="field">
+      <label>Erste Routine</label>
+      <div class="chip-row" id="merge-a-row">
+        ${routines.map((r) => `<button type="button" class="chip" data-pick-a="${r.id}">${escapeHtml(r.name)}</button>`).join('')}
+      </div>
+    </div>
+    <div class="field">
+      <label>Zweite Routine</label>
+      <div class="chip-row" id="merge-b-row">
+        ${routines.map((r) => `<button type="button" class="chip" data-pick-b="${r.id}">${escapeHtml(r.name)}</button>`).join('')}
+      </div>
+    </div>
+    <button class="btn btn-primary" id="merge-go">Zusammengelegte Session starten</button>
+  `, { center: true });
+
+  handle.sheet.querySelectorAll('[data-pick-a]').forEach((b) => b.addEventListener('click', () => {
+    pickedA = b.dataset.pickA;
+    handle.sheet.querySelectorAll('[data-pick-a]').forEach((x) => x.classList.toggle('active', x.dataset.pickA === pickedA));
+  }));
+  handle.sheet.querySelectorAll('[data-pick-b]').forEach((b) => b.addEventListener('click', () => {
+    pickedB = b.dataset.pickB;
+    handle.sheet.querySelectorAll('[data-pick-b]').forEach((x) => x.classList.toggle('active', x.dataset.pickB === pickedB));
+  }));
+
+  handle.sheet.querySelector('#merge-go').addEventListener('click', () => {
+    if (!pickedA || !pickedB) { toast('Bitte zwei Routinen auswählen'); return; }
+    if (pickedA === pickedB) { toast('Bitte zwei unterschiedliche Routinen auswählen'); return; }
+    if (getActiveSession()) { toast('Es läuft bereits ein Training'); return; }
+    const routineA = routines.find((r) => r.id === pickedA);
+    const routineB = routines.find((r) => r.id === pickedB);
+    startMergedSession(routineA, routineB);
+    handle.close();
+    location.hash = '#/session';
+  });
 }
 
 function groupedTemplates() {

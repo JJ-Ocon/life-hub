@@ -3,6 +3,7 @@ import {
   getSessions, getExercises, sessionVolume, allSetsForExercise, getSettings,
   cardioExerciseIds, cardioRecords, cardioFieldDef, getExerciseById,
   dailyTrainingLoad, volumeByMuscleGroup, planAdherence,
+  getDismissedAdvice, dismissAdvice,
 } from '../db.js';
 import { exercisesNeedingAttention } from '../coach.js';
 import { unlockedAchievements, nextAchievements } from '../achievements.js';
@@ -10,6 +11,8 @@ import { formatNum, formatDuration, estimate1RM, isoWeekKey, startOfWeek, addDay
 import { barChart, lineChart, heatmap, hBarChart } from '../charts.js';
 import { openModal } from '../ui.js';
 import { escapeHtml } from '../utils.js';
+
+let attentionCollapsed = false;
 
 export function render() {
   setTitle('Statistik');
@@ -132,6 +135,31 @@ export function render() {
     card.addEventListener('click', () => openExerciseProgress(card.dataset.exid, exercisesWithData, settings));
   });
   document.getElementById('show-history').addEventListener('click', () => { location.hash = '#/history'; });
+
+  document.getElementById('attention-toggle')?.addEventListener('click', () => {
+    attentionCollapsed = !attentionCollapsed;
+    const list = document.getElementById('attention-list');
+    list.hidden = attentionCollapsed;
+    document.querySelector('#attention-toggle .faint').textContent = attentionCollapsed ? '▸ einblenden' : '▾ ausblenden';
+  });
+
+  document.querySelectorAll('[data-advice]').forEach((card) => {
+    let startX = 0, startY = 0, tracking = false;
+    card.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      startX = t.clientX; startY = t.clientY; tracking = true;
+    }, { passive: true });
+    card.addEventListener('touchend', (e) => {
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      dismissAdvice(card.dataset.advice, card.dataset.adviceStatus);
+      card.remove();
+    }, { passive: true });
+  });
 }
 
 /** Geplant vs. tatsaechlich absolviert – nur sichtbar, wenn ein Wochenplan existiert. */
@@ -186,7 +214,9 @@ function achievementsSectionHtml(unlocked, upcoming) {
  * Entlastung sprechen – bewusst kein pauschaler Deload nach Kalender.
  */
 function attentionSectionHtml(exerciseIds) {
-  const flagged = exercisesNeedingAttention(exerciseIds);
+  const dismissed = getDismissedAdvice();
+  const flagged = exercisesNeedingAttention(exerciseIds)
+    .filter(({ exerciseId, analysis }) => dismissed[exerciseId] !== analysis.status);
   if (!flagged.length) {
     return `
       <div class="section-title">Erholung</div>
@@ -207,12 +237,15 @@ function attentionSectionHtml(exerciseIds) {
   };
 
   return `
-    <div class="section-title">Erholung & Deload</div>
-    <div class="stack">
-      ${flagged.map(({ name, analysis }) => {
+    <div class="row row--between" style="cursor:pointer" id="attention-toggle">
+      <div class="section-title" style="margin:0">Erholung & Deload (${flagged.length})</div>
+      <span class="faint">${attentionCollapsed ? '▸ einblenden' : '▾ ausblenden'}</span>
+    </div>
+    <div class="stack" id="attention-list" ${attentionCollapsed ? 'hidden' : ''}>
+      ${flagged.map(({ exerciseId, name, analysis }) => {
         const meta = statusMeta[analysis.status] || statusMeta.watch;
         return `
-        <div class="card advice advice--${analysis.suggestion?.type || 'hold'}" style="margin-bottom:0">
+        <div class="card advice advice--${analysis.suggestion?.type || 'hold'}" style="margin-bottom:0" data-advice="${exerciseId}" data-advice-status="${analysis.status}">
           <div class="row row--between">
             <span class="advice__title">${meta.icon} ${escapeHtml(name)}</span>
             <span class="badge ${analysis.status !== 'watch' ? 'badge--pr' : ''}">${meta.label}</span>
@@ -224,6 +257,7 @@ function attentionSectionHtml(exerciseIds) {
           ${analysis.reasons.length ? `
             <ul class="advice__list">${analysis.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>
           ` : ''}
+          <p class="faint" style="margin-top:6px">← Wischen zum Ausblenden →</p>
         </div>
       `;
       }).join('')}

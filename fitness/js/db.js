@@ -18,6 +18,7 @@ const KEYS = {
   weeklyPlan: 'tl_weekly_plan_v1',
   migrations: 'tl_migrations_v1',
   rotations: 'tl_rotations_v1',
+  dismissedAdvice: 'tl_dismissed_advice_v1',
 };
 
 function read(key, fallback) {
@@ -38,7 +39,18 @@ function write(key, value) {
    ========================================================= */
 
 export const MUSCLE_GROUPS = [
-  'Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine', 'Gesäß', 'Bauch', 'Ganzkörper', 'Cardio',
+  'Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine', 'Gesäß', 'Bauch', 'Ganzkörper', 'Cardio', 'Dehnen',
+];
+
+const SEED_STRETCHES = [
+  ['Hamstring-Dehnung', 'Dehnen'],
+  ['Quadrizeps-Dehnung', 'Dehnen'],
+  ['Hüftbeuger-Dehnung', 'Dehnen'],
+  ['Waden-Dehnung', 'Dehnen'],
+  ['Schulter-Dehnung', 'Dehnen'],
+  ['Nacken-Dehnung', 'Dehnen'],
+  ['Rücken-Dehnung (Katze-Kuh)', 'Dehnen'],
+  ['Brust-Dehnung im Türrahmen', 'Dehnen'],
 ];
 
 const SEED_EXERCISES = [
@@ -85,6 +97,7 @@ const SEED_EXERCISES = [
   ['Rudergerät', 'Cardio'],
   ['Radfahren', 'Cardio'],
   ['Seilspringen', 'Cardio'],
+  ...SEED_STRETCHES,
 ];
 
 function seedIfNeeded() {
@@ -96,6 +109,20 @@ function seedIfNeeded() {
   write(KEYS.seeded, true);
 }
 seedIfNeeded();
+
+/** Backfill fuer bereits geseedete Installationen (vor Etappe 44), die die
+ *  Dehnuebungen aus SEED_EXERCISES nie bekommen haben, weil seedIfNeeded()
+ *  nur beim allerersten Laden greift. Idempotent ueber die Pruefung, ob
+ *  schon irgendeine 'Dehnen'-Uebung existiert. */
+function seedStretchesIfNeeded() {
+  const exercises = read(KEYS.exercises, []);
+  if (exercises.some((e) => e.muscleGroup === 'Dehnen')) return;
+  const stretches = SEED_STRETCHES.map(([name, group]) => ({
+    id: uid(), name, muscleGroup: group, custom: false, createdAt: nowIso(),
+  }));
+  write(KEYS.exercises, [...exercises, ...stretches]);
+}
+seedStretchesIfNeeded();
 
 export function getExercises() {
   return read(KEYS.exercises, []);
@@ -605,6 +632,22 @@ export function startSessionFromRoutine(routine) {
   return startSessionInternal(routine, { startedAt: nowIso(), retro: false });
 }
 
+/** Legt beide Routinen zu einer einzigen Session zusammen (z.B. in einer
+ *  Deload-Woche, um Zeit zu sparen statt an getrennten Tagen zu trainieren).
+ *  Baut ein synthetisches Routine-Objekt, das die bestehende Session-
+ *  Maschinerie (inkl. Deload-Reduktion) unveraendert durchlaeuft - session.
+ *  routineId zeigt bewusst auf Routine A, da eine Session nur eine einzige
+ *  Routine-ID tragen kann; welche Routine als "erledigt" gilt, ist dieselbe
+ *  offene Frage wie beim Rotations-Kalender (siehe dortige Notiz). */
+export function startMergedSession(routineA, routineB) {
+  const merged = {
+    id: routineA.id,
+    name: `${routineA.name} + ${routineB.name}`,
+    exercises: [...routineA.exercises, ...routineB.exercises],
+  };
+  return startSessionInternal(merged, { startedAt: nowIso(), retro: false });
+}
+
 /**
  * Startet eine Session rueckwirkend fuer ein bereits vergangenes (oder heutiges)
  * Datum – fuer Workouts, die real gemacht, aber vergessen wurden einzutragen.
@@ -623,20 +666,25 @@ function roundToHalf(n) {
   return Math.round(n * 2) / 2;
 }
 
-/** Reduziert die Satzgewichte einer frisch gestarteten Session automatisch,
- *  wenn ihr Datum in eine als Deload markierte Woche faellt - das setzt die
- *  "Deload-Woche" direkt in der Trainingsausfuehrung um, statt nur im
- *  Kalender zu stehen. Zeit-/Cardio-Saetze (kein weight-Feld) bleiben unberuehrt. */
+/** Reduziert Satzgewichte UND Satzanzahl einer frisch gestarteten Session
+ *  automatisch, wenn ihr Datum in eine als Deload markierte Woche faellt -
+ *  das setzt die "Deload-Woche" direkt in der Trainingsausfuehrung um,
+ *  statt nur im Kalender zu stehen. Zeit-/Cardio-Saetze (kein weight-Feld)
+ *  werden im Gewicht nicht angefasst, in der Anzahl aber genauso reduziert
+ *  wie Gewichtssaetze - beide Reduktionen nutzen denselben deloadPercent,
+ *  kein zweiter Einstellungs-Wert noetig. Mindestens 1 Satz bleibt immer
+ *  erhalten. */
 function applyDeloadReduction(exercises, dateKey) {
   const settings = getSettings();
   if (!settings.autoDeloadReduction || !isDeloadWeek(dateKey)) return exercises;
   const factor = 1 - (Number(settings.deloadPercent) || 0) / 100;
-  return exercises.map((ex) => ({
-    ...ex,
-    sets: ex.sets.map((s) => (
+  return exercises.map((ex) => {
+    const reducedWeight = ex.sets.map((s) => (
       s.weight ? { ...s, weight: roundToHalf(Number(s.weight) * factor) } : s
-    )),
-  }));
+    ));
+    const keepCount = Math.max(1, Math.round(reducedWeight.length * factor));
+    return { ...ex, sets: reducedWeight.slice(0, keepCount) };
+  });
 }
 
 function startSessionInternal(routine, { startedAt, retro }) {
@@ -860,6 +908,25 @@ export function resetCalendarColors(source = 'fitness') {
   const settings = getSettings();
   const calendarColors = { ...settings.calendarColors, [source]: { ...DEFAULT_SETTINGS.calendarColors.fitness } };
   return saveSettings({ calendarColors });
+}
+
+/* =========================================================
+   Weggewischte Erholungs-/Deload-Hinweise – rein UI-seitiger Zustand
+   (kein Teil des Backups), damit eine einmal weggewischte Nachricht nicht
+   bei jedem Statistik-Aufruf erneut auftaucht. Key ist die Uebungs-ID,
+   Wert der Status, zu dem sie weggewischt wurde - aendert sich der Status
+   spaeter (z.B. von 'watch' zu 'deload'), taucht die Karte wieder auf,
+   weil es sich um eine inhaltlich neue Meldung handelt.
+   ========================================================= */
+
+export function getDismissedAdvice() {
+  return read(KEYS.dismissedAdvice, {});
+}
+
+export function dismissAdvice(exerciseId, status) {
+  const all = getDismissedAdvice();
+  all[exerciseId] = status;
+  write(KEYS.dismissedAdvice, all);
 }
 
 /* =========================================================
