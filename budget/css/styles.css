@@ -207,3 +207,11 @@ textarea.input { resize: vertical; min-height: 60px; }
 
 /* ---------- Sparumschlaege / Abo-Radar ---------- */
 .section-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+
+/* ---------- Statistik-Diagramme (E51) ---------- */
+.chart-wrap { width: 100%; overflow-x: auto; }
+.chart-svg { width: 100%; height: auto; display: block; }
+.chart-svg text { font-size: 9px; fill: var(--text-faint); }
+.chart-grid line { stroke: var(--border); stroke-width: 1; }
+.chart-bar { fill: var(--accent); }
+.chart-bar--highlight { fill: var(--accent-strong); }

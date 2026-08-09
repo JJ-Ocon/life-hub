@@ -2,7 +2,7 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getExpensesForMonth, createExpense, saveExpense, deleteExpense, getExpenseById,
   getIncomeForMonth, createIncome, saveIncome, deleteIncome, getIncomeById, monthIncomeTotal, monthTotal,
-  getCategories, getSettings,
+  getCategories, getSettings, suggestCategoryForMerchant,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { todayKey, monthKey, addMonths, monthLabel, formatDateKey, formatMoney, escapeHtml } from '../utils.js';
@@ -136,6 +136,7 @@ export function openExpenseModal(existing, onSaved) {
   const categories = getCategories();
   let categoryId = existing?.categoryId || categories[0].id;
   let recurringInterval = existing?.recurringInterval || 'monthly';
+  let categoryManuallySet = !!existing; // beim Bearbeiten nie automatisch ueberschreiben
 
   function content() {
     return `
@@ -196,6 +197,15 @@ export function openExpenseModal(existing, onSaved) {
   const handle = openModal(content(), { center: true });
   wire();
 
+  function applySuggestionIfNeeded() {
+    if (categoryManuallySet) return;
+    const suggestion = suggestCategoryForMerchant(handle.sheet.querySelector('#exp-merchant').value);
+    if (!suggestion || suggestion === categoryId) return;
+    categoryId = suggestion;
+    handle.sheet.querySelectorAll('[data-cat]').forEach((x) => x.classList.toggle('active', x.dataset.cat === categoryId));
+    toast('Kategorie anhand früherer Einträge vorgeschlagen');
+  }
+
   function wire() {
     handle.sheet.querySelector('#exp-scan').addEventListener('click', () => {
       handle.sheet.querySelector('#exp-scan-input').click();
@@ -217,7 +227,7 @@ export function openExpenseModal(existing, onSaved) {
         const parsed = parseReceiptText(text);
         if (parsed.amount !== null) handle.sheet.querySelector('#exp-amount').value = parsed.amount.toFixed(2);
         if (parsed.date) handle.sheet.querySelector('#exp-date').value = parsed.date;
-        if (parsed.merchant) handle.sheet.querySelector('#exp-merchant').value = parsed.merchant;
+        if (parsed.merchant) { handle.sheet.querySelector('#exp-merchant').value = parsed.merchant; applySuggestionIfNeeded(); }
         status.textContent = (parsed.amount === null && !parsed.date && !parsed.merchant)
           ? 'Konnte nichts Eindeutiges erkennen - bitte manuell eintragen.'
           : 'Erkannt - bitte pruefen und bei Bedarf korrigieren.';
@@ -229,8 +239,10 @@ export function openExpenseModal(existing, onSaved) {
     });
     handle.sheet.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => {
       categoryId = b.dataset.cat;
+      categoryManuallySet = true;
       handle.sheet.querySelectorAll('[data-cat]').forEach((x) => x.classList.toggle('active', x.dataset.cat === categoryId));
     }));
+    handle.sheet.querySelector('#exp-merchant').addEventListener('blur', applySuggestionIfNeeded);
     handle.sheet.querySelectorAll('[data-interval]').forEach((b) => b.addEventListener('click', () => {
       recurringInterval = b.dataset.interval;
       handle.sheet.querySelectorAll('[data-interval]').forEach((x) => x.classList.toggle('active', x.dataset.interval === recurringInterval));

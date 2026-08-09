@@ -1,6 +1,6 @@
 // Persistenz-Schicht: alles in localStorage, bleibt lokal auf dem Geraet.
 
-import { uid, nowIso, todayKey, monthKey } from './utils.js';
+import { uid, nowIso, todayKey, monthKey, addMonths } from './utils.js';
 
 const KEYS = {
   categories: 'bg_categories_v1',
@@ -211,6 +211,109 @@ export function budgetStatus(category, yearMonth) {
   const pct = spent / budget;
   const level = pct >= 1 ? 'over' : pct >= 0.8 ? 'warn' : 'ok';
   return { spent, budget, pct, level };
+}
+
+/* =========================================================
+   Statistik/Auswertung (E51) - Monatstrend, lineare Prognose,
+   Kategorie-Vorschlag aus der Historie, Kauf-Intervall je Haendler,
+   Steuer-Jahresreport. Rein aus den bestehenden Ausgaben/Einnahmen
+   abgeleitet, kein eigenes Ledger.
+   ========================================================= */
+
+/** Monatssummen der letzten n Monate (inkl. aktuellem), aeltester zuerst. */
+export function monthlyTotalsSeries(months = 6, endMonth = monthKey()) {
+  const out = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const ym = addMonths(endMonth, -i);
+    out.push({ month: ym, total: monthTotal(ym) });
+  }
+  return out;
+}
+
+/** Lineare Regression (kleinste Quadrate) ueber eine Monatsreihe, liefert
+ *  die Prognose fuer den jeweils naechsten Monat. Braucht mindestens 2
+ *  Datenpunkte, sonst null. */
+export function linearForecast(series) {
+  const n = series.length;
+  if (n < 2) return null;
+  const xs = series.map((_, i) => i);
+  const ys = series.map((p) => p.total);
+  const xMean = xs.reduce((s, x) => s + x, 0) / n;
+  const yMean = ys.reduce((s, y) => s + y, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - xMean) * (ys[i] - yMean);
+    den += (xs[i] - xMean) ** 2;
+  }
+  const slope = den === 0 ? 0 : num / den;
+  const intercept = yMean - slope * xMean;
+  const nextX = n; // naechster Monat nach der Reihe
+  return { nextMonth: addMonths(series[n - 1].month, 1), value: Math.max(0, slope * nextX + intercept), trendPerMonth: slope };
+}
+
+/** Haeufigste Kategorie fuer einen Haendlernamen (case-insensitiv) aus der
+ *  bisherigen Ausgaben-Historie - "lernt" implizit aus jeder gespeicherten
+ *  Ausgabe: waehlt der Nutzer fuer denselben Haendler kuenftig eine andere
+ *  Kategorie, verschiebt sich die Mehrheit bei genuegend Korrekturen von
+ *  selbst, ohne eigenes ML-Modell. */
+export function suggestCategoryForMerchant(merchant) {
+  const key = (merchant || '').trim().toLowerCase();
+  if (!key) return null;
+  const counts = new Map();
+  for (const e of getExpenses()) {
+    if (e.merchant.trim().toLowerCase() !== key) continue;
+    counts.set(e.categoryId, (counts.get(e.categoryId) || 0) + 1);
+  }
+  if (!counts.size) return null;
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
+/** Durchschnittlicher Abstand (Tage) zwischen aufeinanderfolgenden Ausgaben
+ *  desselben Haendlers - eigene, einfachere Variante als Kosmetiks
+ *  Nutzungsdauer-Statistik (dort: wie lange EIN Produkt bis "aufgebraucht"
+ *  haelt; hier: wie oft derselbe Haendler ueberhaupt erneut bezahlt wird -
+ *  Budget hat kein "aufgebraucht"-Konzept, nur wiederholte Ausgaben). Nur
+ *  Haendler mit mindestens zwei Ausgaben werden beruecksichtigt. */
+export function purchaseIntervalStats() {
+  const groups = new Map();
+  for (const e of getExpenses()) {
+    const key = e.merchant.trim();
+    if (!key) continue;
+    const keyLower = key.toLowerCase();
+    if (!groups.has(keyLower)) groups.set(keyLower, { name: key, dates: [] });
+    groups.get(keyLower).dates.push(e.date);
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    const dates = g.dates.slice().sort();
+    if (dates.length < 2) continue;
+    let totalDays = 0;
+    for (let i = 1; i < dates.length; i++) {
+      totalDays += daysBetween(dates[i - 1], dates[i]);
+    }
+    out.push({ name: g.name, avgDays: Math.round(totalDays / (dates.length - 1)), count: dates.length, lastDate: dates[dates.length - 1] });
+  }
+  return out.sort((a, b) => a.avgDays - b.avgDays);
+}
+
+function daysBetween(a, b) {
+  const [ay, am, ad] = a.split('-').map(Number);
+  const [by, bm, bd] = b.split('-').map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
+}
+
+/** Alle steuerlich relevanten Ausgaben eines Jahres, sortiert nach Datum -
+ *  Basis fuer den Steuer-Jahresreport (eigener CSV-Export statt nur der
+ *  generischen JSON-Komplettsicherung). */
+export function taxRelevantExpensesForYear(year) {
+  return getExpenses()
+    .filter((e) => e.taxRelevant && e.date.startsWith(String(year)))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function taxYearsAvailable() {
+  const years = new Set(getExpenses().filter((e) => e.taxRelevant).map((e) => e.date.slice(0, 4)));
+  return [...years].sort().reverse();
 }
 
 /* =========================================================

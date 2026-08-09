@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'budget-v6';
+const CACHE_VERSION = 'budget-v7';
 
 const ASSETS = [
   './',
@@ -14,10 +14,12 @@ const ASSETS = [
   './js/ui.js',
   './js/utils.js',
   './js/theme.js',
+  './js/charts.js',
   './js/views/home.js',
   './js/views/expenses.js',
   './js/views/categories.js',
   './js/views/savings.js',
+  './js/views/stats.js',
   './js/views/more.js',
   './icons/icon.svg',
   // Kleiner OCR-Wrapper wird vorgeladen; die grossen Tesseract-Vendor-Dateien
