@@ -4,6 +4,7 @@
 import { uid, nowIso, addDaysToDateKey, mondayOfWeekKey, daysBetweenDateKeys, todayKey } from './utils.js';
 import { createCalendarEvent } from '../../shared/calendar-schema.js';
 import { replaceSourceEvents } from '../../shared/event-store.js';
+import { publishBodyProportions } from '../../shared/body-data.js';
 
 const KEYS = {
   exercises: 'tl_exercises_v1',
@@ -738,7 +739,26 @@ export const BODY_METRICS = [
   { key: 'arm', label: 'Arm', unit: 'cm', group: 'Umfänge', decimals: 1 },
   { key: 'thigh', label: 'Oberschenkel', unit: 'cm', group: 'Umfänge', decimals: 1 },
   { key: 'hips', label: 'Hüfte', unit: 'cm', group: 'Umfänge', decimals: 1 },
+  { key: 'legLength', label: 'Beinlänge', unit: 'cm', group: 'Maße', decimals: 1 },
+  { key: 'torsoLength', label: 'Torsolänge', unit: 'cm', group: 'Maße', decimals: 1 },
+  { key: 'shoulderWidth', label: 'Schulterbreite', unit: 'cm', group: 'Maße', decimals: 1 },
+  { key: 'waistWidth', label: 'Taillenbreite', unit: 'cm', group: 'Maße', decimals: 1 },
 ];
+
+/** Teilmenge von BODY_METRICS, die an die Kleidung-App weitergegeben wird
+ *  (fuer Passform-Hinweise) - Umfaenge/Koerperanalyse bleiben Fitness-intern. */
+const PROPORTION_KEYS = ['legLength', 'torsoLength', 'shoulderWidth', 'waistWidth'];
+
+function syncBodyProportions() {
+  const latest = {};
+  for (const key of PROPORTION_KEYS) latest[key] = null;
+  for (const entry of getBodyEntries()) {
+    for (const key of PROPORTION_KEYS) {
+      if (entry[key] != null) latest[key] = entry[key];
+    }
+  }
+  publishBodyProportions(latest);
+}
 
 /** BMI aus Gewicht (kg) und Koerpergroesse (cm). */
 export function calcBmi(weightKg, heightCm) {
@@ -781,10 +801,12 @@ export function saveBodyEntry(entry) {
   const idx = list.findIndex((e) => e.id === entry.id || e.date === entry.date);
   if (idx >= 0) list[idx] = { ...list[idx], ...entry }; else list.push({ id: uid(), ...entry });
   write(KEYS.bodyEntries, list);
+  syncBodyProportions();
 }
 
 export function deleteBodyEntry(id) {
   write(KEYS.bodyEntries, read(KEYS.bodyEntries, []).filter((e) => e.id !== id));
+  syncBodyProportions();
 }
 
 /* =========================================================

@@ -22,6 +22,7 @@ const APPS = [
   { id: 'diary', label: 'Tagebuch' },
   { id: 'music', label: 'Musik' },
   { id: 'vehicle', label: 'Fahrzeug' },
+  { id: 'kleidung', label: 'Kleidung' },
 ];
 
 const logCard = document.getElementById('backup-log-card');

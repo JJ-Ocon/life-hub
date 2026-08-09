@@ -1,0 +1,131 @@
+import { setTitle, setActions, setBack } from '../router.js';
+import { getItems, getItemById, createItem, saveItem, deleteItem, categoryLabel, CATEGORIES } from '../db.js';
+import { openModal, confirmDialog, toast } from '../ui.js';
+import { escapeHtml, compressImageFile } from '../utils.js';
+
+let activeCategory = 'alle';
+
+export function render() {
+  setTitle('Kleiderschrank');
+  setBack(null);
+  setActions('');
+  draw();
+}
+
+function draw() {
+  const view = document.getElementById('view');
+  const items = getItems().filter((i) => activeCategory === 'alle' || i.category === activeCategory);
+
+  view.innerHTML = `
+    <div class="chip-row" style="margin-bottom:14px" id="wd-filters">
+      <div class="chip ${activeCategory === 'alle' ? 'active' : ''}" data-cat="alle">Alle</div>
+      ${CATEGORIES.map((c) => `<div class="chip ${activeCategory === c.key ? 'active' : ''}" data-cat="${c.key}">${escapeHtml(c.label)}</div>`).join('')}
+    </div>
+    ${items.length === 0 ? `
+      <div class="empty">
+        <h3>Noch nichts im Schrank</h3>
+        <p class="faint">Leg dein erstes Kleidungsstück mit Foto, Kategorie und Farbe an.</p>
+      </div>
+    ` : `
+      <div class="photo-grid">
+        ${items.map((i) => `
+          <div class="photo-grid__item" data-open="${i.id}" style="cursor:pointer">
+            ${i.photo
+              ? `<img src="${i.photo}" alt="">`
+              : `<div class="photo-grid__item--noimg"><svg viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="1"/><path d="M5 15c0-.75.375-1.375 1.125-1.75l5.375-3a1 1 0 0 1 1 0l5.375 3C18.625 13.625 19 14.25 19 15"/><path d="M5 15h14"/></svg><span class="faint">Kein Foto</span></div>`}
+            <div class="photo-grid__caption">
+              <div class="photo-grid__title truncate">${escapeHtml(i.name)}</div>
+              <div class="photo-grid__meta truncate">${escapeHtml(categoryLabel(i.category))}${i.color ? ' · ' + escapeHtml(i.color) : ''}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `}
+    <button class="fab" id="wd-add" aria-label="Kleidungsstück hinzufügen">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+    </button>
+  `;
+
+  view.querySelectorAll('[data-cat]').forEach((el) => {
+    el.addEventListener('click', () => { activeCategory = el.dataset.cat; draw(); });
+  });
+  view.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => openItemModal(getItemById(el.dataset.open), draw));
+  });
+  document.getElementById('wd-add').addEventListener('click', () => openItemModal(null, draw));
+}
+
+function openItemModal(existing, onSaved) {
+  const isNew = !existing?.id;
+  let photoData = existing?.photo || null;
+
+  const handle = openModal(`
+    <h3 class="modal-title">${isNew ? 'Kleidungsstück anlegen' : 'Kleidungsstück bearbeiten'}</h3>
+    <div class="field">
+      <label>Name</label>
+      <input class="input" id="w-name" value="${escapeHtml(existing?.name || '')}" placeholder="z.B. Blauer Wollpullover">
+    </div>
+    <div class="field">
+      <label>Kategorie</label>
+      <select class="input" id="w-category">
+        ${CATEGORIES.map((c) => `<option value="${c.key}" ${existing?.category === c.key ? 'selected' : ''}>${c.label}</option>`).join('')}
+      </select>
+    </div>
+    <div class="grid-2">
+      <div class="field">
+        <label>Farbe (optional)</label>
+        <input class="input" id="w-color" value="${escapeHtml(existing?.color || '')}" placeholder="z.B. Marineblau">
+      </div>
+      <div class="field">
+        <label>Größe (optional)</label>
+        <input class="input" id="w-size" value="${escapeHtml(existing?.size || '')}" placeholder="z.B. M">
+      </div>
+    </div>
+    <div class="field">
+      <label>Notiz (optional)</label>
+      <textarea class="input" id="w-note">${escapeHtml(existing?.note || '')}</textarea>
+    </div>
+    <div class="field">
+      <label>Foto (optional)</label>
+      <input class="input" type="file" accept="image/*" id="w-photo">
+      <div id="w-photo-preview" style="margin-top:8px">${photoData ? `<img src="${photoData}" style="max-width:100%;border-radius:10px">` : ''}</div>
+    </div>
+    <div class="stack">
+      <button class="btn btn-primary" id="w-save">Speichern</button>
+      ${!isNew ? '<button class="btn btn-danger" id="w-delete">Löschen</button>' : ''}
+    </div>
+  `, { center: true });
+
+  handle.sheet.querySelector('#w-photo').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    photoData = await compressImageFile(file);
+    handle.sheet.querySelector('#w-photo-preview').innerHTML = `<img src="${photoData}" style="max-width:100%;border-radius:10px">`;
+  });
+
+  handle.sheet.querySelector('#w-save').addEventListener('click', () => {
+    const name = handle.sheet.querySelector('#w-name').value.trim();
+    if (!name) { toast('Bitte einen Namen eingeben'); return; }
+    const fields = {
+      name,
+      category: handle.sheet.querySelector('#w-category').value,
+      color: handle.sheet.querySelector('#w-color').value.trim(),
+      size: handle.sheet.querySelector('#w-size').value.trim(),
+      note: handle.sheet.querySelector('#w-note').value.trim(),
+      photo: photoData,
+    };
+    if (isNew) createItem(fields);
+    else saveItem({ ...existing, ...fields });
+    toast('Gespeichert');
+    handle.close();
+    onSaved?.();
+  });
+  handle.sheet.querySelector('#w-delete')?.addEventListener('click', async () => {
+    const ok = await confirmDialog('Kleidungsstück löschen?', 'Wird unwiderruflich gelöscht.');
+    if (!ok) return;
+    deleteItem(existing.id);
+    toast('Gelöscht');
+    handle.close();
+    onSaved?.();
+  });
+}
