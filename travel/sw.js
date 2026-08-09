@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'travel-v2';
+const CACHE_VERSION = 'travel-v3';
 
 const ASSETS = [
   './',
@@ -16,6 +16,7 @@ const ASSETS = [
   './js/theme.js',
   './js/views/trips.js',
   './js/views/trip-detail.js',
+  './js/views/documents.js',
   './js/views/more.js',
   './icons/icon.svg',
   '../shared/calendar-schema.js',

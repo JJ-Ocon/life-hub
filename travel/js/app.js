@@ -4,12 +4,14 @@ import { applyTheme } from './theme.js';
 
 import * as trips from './views/trips.js';
 import * as tripDetail from './views/trip-detail.js';
+import * as documents from './views/documents.js';
 import * as more from './views/more.js';
 
 applyTheme(getSettings());
 
 addRoute('/', 'trips', () => trips.render());
 addRoute('/trip/:id', 'trips', (params) => tripDetail.render(params.id));
+addRoute('/documents', 'documents', () => documents.render());
 addRoute('/more', 'more', () => more.render());
 
 startRouter();
