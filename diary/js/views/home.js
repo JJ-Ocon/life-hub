@@ -91,9 +91,9 @@ function draw() {
     draw();
   });
 
-  document.getElementById('save-entry').addEventListener('click', () => {
+  document.getElementById('save-entry').addEventListener('click', async () => {
     if (!selectedMood) { toast('Bitte eine Stimmung wählen'); return; }
-    saveEntry({
+    await saveEntry({
       date: today, mood: selectedMood, tags: selectedTags,
       note: document.getElementById('note').value.trim(),
       reflectionQuestion: question,

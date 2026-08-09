@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'safety-v3';
+const CACHE_VERSION = 'safety-v4';
 
 const ASSETS = [
   './',
@@ -11,7 +11,8 @@ const ASSETS = [
   './js/app.js',
   './js/router.js',
   './js/db.js',
-  './js/crypto.js',
+  '../shared/crypto.js',
+  '../shared/vault-lockout.js',
   './js/ui.js',
   './js/utils.js',
   './js/theme.js',

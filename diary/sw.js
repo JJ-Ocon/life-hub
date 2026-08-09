@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'diary-v1';
+const CACHE_VERSION = 'diary-v2';
 
 const ASSETS = [
   './',
@@ -11,9 +11,12 @@ const ASSETS = [
   './js/app.js',
   './js/router.js',
   './js/db.js',
+  '../shared/crypto.js',
+  '../shared/vault-lockout.js',
   './js/ui.js',
   './js/utils.js',
   './js/theme.js',
+  './js/views/unlock.js',
   './js/views/home.js',
   './js/views/history.js',
   './js/views/more.js',

@@ -1,5 +1,6 @@
 import { uid, nowIso, todayKey, addDaysToDateKey } from './utils.js';
-import { generateSaltB64, deriveKey, encryptJson, decryptJson } from './crypto.js';
+import { generateSaltB64, deriveKey, encryptJson, decryptJson } from '../../shared/crypto.js';
+import * as vaultLockout from '../../shared/vault-lockout.js';
 
 const KEYS = {
   vault: 'ds_vault_v1',
@@ -7,48 +8,10 @@ const KEYS = {
   lockout: 'ds_lockout_v1',
 };
 
-// ---------- Versuchssperre ----------
-// Bewusst nur eine UI-seitige Bremse gegen jemanden, der ein kurz
-// unbeaufsichtigtes, entsperrtes Geraet findet und ein paar Passphrasen
-// durchprobiert - kein Schutz gegen Offline-Brute-Force auf die
-// Ciphertext-Datei selbst (dagegen schuetzt PBKDF2 mit 250k Iterationen).
-// Zaehler/Sperrzeit liegen bewusst als Klartext AUSSERHALB des Vaults,
-// wie ds_settings_v1 - enthalten keine Dokumentdaten.
-export const MAX_ATTEMPTS = 3;
-const LOCKOUT_MS = 30000;
-
-function readLockout() {
-  try { return JSON.parse(localStorage.getItem(KEYS.lockout)) || { attempts: 0, lockedUntil: 0 }; }
-  catch { return { attempts: 0, lockedUntil: 0 }; }
-}
-
-function writeLockout(state) {
-  localStorage.setItem(KEYS.lockout, JSON.stringify(state));
-}
-
-export function lockoutStatus() {
-  const { attempts, lockedUntil } = readLockout();
-  const remainingMs = Math.max(0, lockedUntil - Date.now());
-  return { attempts, remainingMs, locked: remainingMs > 0 };
-}
-
-/** Nach einer falschen Passphrase aufzurufen. Ab dem 3. Fehlversuch in
- *  Folge wird fuer LOCKOUT_MS gesperrt und der Zaehler zurueckgesetzt, damit
- *  die naechsten drei Fehlversuche wieder eine neue Sperre ausloesen. */
-export function registerFailedUnlockAttempt() {
-  const state = readLockout();
-  state.attempts += 1;
-  if (state.attempts >= MAX_ATTEMPTS) {
-    state.lockedUntil = Date.now() + LOCKOUT_MS;
-    state.attempts = 0;
-  }
-  writeLockout(state);
-  return lockoutStatus();
-}
-
-export function clearLockout() {
-  writeLockout({ attempts: 0, lockedUntil: 0 });
-}
+export const MAX_ATTEMPTS = vaultLockout.MAX_ATTEMPTS;
+export const lockoutStatus = () => vaultLockout.lockoutStatus(KEYS.lockout);
+export const registerFailedUnlockAttempt = () => vaultLockout.registerFailedUnlockAttempt(KEYS.lockout);
+export const clearLockout = () => vaultLockout.clearLockout(KEYS.lockout);
 
 // Frueher eine feste Kategorie-Liste (nur diese sechs Werte waren waehlbar).
 // Jetzt sind Ordner frei benennbar - diese Keys/Labels bleiben nur als

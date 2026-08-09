@@ -106,8 +106,8 @@ function openEntryModal(entry, onSaved) {
     el.classList.toggle('active', tags.includes(tag));
   }));
 
-  handle.sheet.querySelector('#save').addEventListener('click', () => {
-    saveEntry({
+  handle.sheet.querySelector('#save').addEventListener('click', async () => {
+    await saveEntry({
       date: entry.date, mood, tags,
       note: handle.sheet.querySelector('#note').value.trim(),
       reflectionQuestion: entry.reflectionQuestion,
@@ -120,7 +120,7 @@ function openEntryModal(entry, onSaved) {
   handle.sheet.querySelector('#delete').addEventListener('click', async () => {
     const ok = await confirmDialog('Eintrag löschen?', 'Wird unwiderruflich gelöscht.');
     if (!ok) return;
-    deleteEntry(entry.id);
+    await deleteEntry(entry.id);
     toast('Gelöscht');
     handle.close();
     onSaved?.();
