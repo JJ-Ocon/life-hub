@@ -1,5 +1,5 @@
-import { setTitle, setActions, setBack } from '../router.js';
-import { getSettings, saveSettings, getConfig, disconnect, resetAllData } from '../db.js';
+import { setTitle, setActions, setBack, navigate } from '../router.js';
+import { getSettings, saveSettings, getConfig, disconnect, resetAllData, getLocalTracks } from '../db.js';
 import { applyTheme } from '../theme.js';
 import { confirmDialog, toast, promptDialog } from '../ui.js';
 import { escapeHtml } from '../utils.js';
@@ -37,6 +37,15 @@ export function render() {
       <button class="btn btn-danger" id="disconnect" style="margin-top:14px">Verbindung trennen</button>
     </div>
 
+    <div class="section-title">Bibliothek</div>
+    <div class="card card--tap row row--between" id="go-local">
+      <div class="col">
+        <div>Lokale Musik</div>
+        <div class="faint">${getLocalTracks().length} Titel von diesem Gerät, nicht vom Server</div>
+      </div>
+      <svg viewBox="0 0 24 24" style="width:18px;height:18px;flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
+    </div>
+
     <div class="section-title">Erscheinungsbild</div>
     <div class="card">
       <div class="theme-grid" id="theme-grid">
@@ -56,13 +65,13 @@ export function render() {
     <div class="section-title">Daten</div>
     <div class="card stack">
       <button class="btn btn-danger" id="reset-all">Alle App-Daten löschen</button>
-      <p class="faint">Löscht gespeicherte Zugangsdaten, Einstellungen und alle Offline-Downloads. Deine Musik auf dem Server bleibt unangetastet.</p>
+      <p class="faint">Löscht gespeicherte Zugangsdaten, Einstellungen und alle Offline-Downloads. Deine Musik auf dem Server bleibt unangetastet - lokal hinzugefügte Titel (Mehr → Lokale Musik) sind dagegen die einzige Kopie und werden dabei unwiderruflich gelöscht.</p>
     </div>
 
     <div class="section-title">Über die App</div>
     <div class="card">
-      <p class="faint">Musik · Version 1.0</p>
-      <p class="faint" style="margin-top:6px">Streamt von deinem eigenen Navidrome-Server über Tailscale. Downloads werden lokal auf diesem Gerät gespeichert.</p>
+      <p class="faint">Musik · Version 1.1</p>
+      <p class="faint" style="margin-top:6px">Streamt von deinem eigenen Navidrome-Server über Tailscale. Downloads werden lokal auf diesem Gerät gespeichert. Zusätzlich lassen sich eigene Audiodateien aus anderen Quellen lokal hinzufügen (Lokale Musik).</p>
     </div>
   `;
 
@@ -79,6 +88,8 @@ export function render() {
     applyTheme(s);
   });
 
+  document.getElementById('go-local').addEventListener('click', () => navigate('#/local'));
+
   document.getElementById('disconnect').addEventListener('click', async () => {
     const ok = await confirmDialog('Verbindung trennen?', 'Zugangsdaten werden von diesem Gerät entfernt. Offline-Downloads bleiben erhalten.', 'Trennen', true);
     if (!ok) return;
@@ -87,7 +98,7 @@ export function render() {
   });
 
   document.getElementById('reset-all').addEventListener('click', async () => {
-    const ok = await confirmDialog('Wirklich alle App-Daten löschen?', 'Zugangsdaten, Einstellungen und alle Offline-Downloads werden entfernt.', 'Alles löschen', true);
+    const ok = await confirmDialog('Wirklich alle App-Daten löschen?', 'Zugangsdaten, Einstellungen, alle Offline-Downloads UND alle lokal hinzugefügten Titel (nur hier gespeichert, nicht auf dem Server) werden unwiderruflich entfernt.', 'Alles löschen', true);
     if (!ok) return;
     const typed = await promptDialog('Zur Bestätigung "LÖSCHEN" eingeben', { placeholder: 'LÖSCHEN' });
     if (typed !== 'LÖSCHEN') { toast('Abgebrochen'); return; }

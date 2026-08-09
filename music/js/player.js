@@ -2,7 +2,10 @@
 // (eigenes DOM in index.html), damit sie Routenwechsel unbeschadet uebersteht.
 
 import { streamUrl, coverArtUrl, star as apiStar, unstar as apiUnstar, fetchTrackBlob } from './api.js';
-import { isDownloaded, getDownloadedTrackUrl, downloadTrack, downloadsSupported, logPlay, getSettings, saveSettings } from './db.js';
+import {
+  isDownloaded, getDownloadedTrackUrl, downloadTrack, downloadsSupported, logPlay, getSettings, saveSettings,
+  isLocalTrack, getLocalTrackUrl,
+} from './db.js';
 import { openModal, toast } from './ui.js';
 import { formatDuration, escapeHtml } from './utils.js';
 
@@ -96,7 +99,9 @@ async function loadAndPlay() {
   const track = currentTrack();
   if (!track) return;
   let src;
-  if (isDownloaded(track.id)) {
+  if (isLocalTrack(track.id)) {
+    src = await getLocalTrackUrl(track.id);
+  } else if (isDownloaded(track.id)) {
     src = await getDownloadedTrackUrl(track.id);
   } else {
     src = streamUrl(track.id);
@@ -210,10 +215,12 @@ export function openNowPlaying() {
       <span class="icon-btn" id="np-next" aria-label="Naechster Titel"><svg viewBox="0 0 24 24"><path d="M5 5v14l11-7z"/><path d="M18 5v14"/></svg></span>
     </div>
     <div class="now-playing__extra">
-      <span class="icon-btn ${track.starred ? 'active' : ''}" id="np-star" aria-label="Favorit"><svg viewBox="0 0 24 24" fill="${track.starred ? 'currentColor' : 'none'}"><path d="M12 3l2.9 6.3 6.9.9-5 4.8 1.3 6.8-6.1-3.4-6.1 3.4 1.3-6.8-5-4.8 6.9-.9z"/></svg></span>
-      <span class="icon-btn ${isDownloaded(track.id) ? 'active' : ''}" id="np-download" aria-label="Herunterladen">
-        ${downloadingIds.has(track.id) ? '<span class="spinner"></span>' : '<svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-5-5m5 5l5-5"/><path d="M4 19h16"/></svg>'}
-      </span>
+      ${isLocalTrack(track.id) ? '<span class="faint">Lokaler Titel - immer offline verfügbar</span>' : `
+        <span class="icon-btn ${track.starred ? 'active' : ''}" id="np-star" aria-label="Favorit"><svg viewBox="0 0 24 24" fill="${track.starred ? 'currentColor' : 'none'}"><path d="M12 3l2.9 6.3 6.9.9-5 4.8 1.3 6.8-6.1-3.4-6.1 3.4 1.3-6.8-5-4.8 6.9-.9z"/></svg></span>
+        <span class="icon-btn ${isDownloaded(track.id) ? 'active' : ''}" id="np-download" aria-label="Herunterladen">
+          ${downloadingIds.has(track.id) ? '<span class="spinner"></span>' : '<svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-5-5m5 5l5-5"/><path d="M4 19h16"/></svg>'}
+        </span>
+      `}
     </div>
     <button class="btn btn-ghost btn-sm" id="np-mode" style="margin-top:12px;width:100%">
       <svg viewBox="0 0 24 24" id="np-mode-icon" style="width:16px;height:16px;margin-right:6px;vertical-align:-3px">${modeIconPath(playbackMode)}</svg>
@@ -230,14 +237,14 @@ export function openNowPlaying() {
     handle.sheet.querySelector('#np-mode-icon').innerHTML = modeIconPath(mode);
     handle.sheet.querySelector('#np-mode-label').textContent = playbackModeLabel(mode);
   });
-  handle.sheet.querySelector('#np-star').addEventListener('click', async () => {
+  handle.sheet.querySelector('#np-star')?.addEventListener('click', async () => {
     try {
       if (track.starred) { await apiUnstar(track.id); track.starred = false; }
       else { await apiStar(track.id); track.starred = true; }
       openNowPlaying(); handle.close();
     } catch { toast('Favorit konnte nicht geändert werden'); }
   });
-  handle.sheet.querySelector('#np-download').addEventListener('click', async () => {
+  handle.sheet.querySelector('#np-download')?.addEventListener('click', async () => {
     if (isDownloaded(track.id) || downloadingIds.has(track.id)) return;
     if (!downloadsSupported()) {
       toast('Downloads brauchen eine sichere Verbindung (HTTPS) – funktioniert auf der veröffentlichten App');

@@ -5,7 +5,7 @@
 // neuen Auth-Token/Salt tragen und sich daher nicht als stabiler Cache-Key eignen.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'music-v2';
+const CACHE_VERSION = 'music-v3';
 
 const ASSETS = [
   './',
@@ -28,6 +28,7 @@ const ASSETS = [
   './js/views/album.js',
   './js/views/playlist.js',
   './js/views/downloads.js',
+  './js/views/local.js',
   './js/views/more.js',
   './icons/icon.svg',
 ];
@@ -41,7 +42,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
-      keys.filter((k) => k !== CACHE_VERSION && k !== 'music-downloads-v1').map((k) => caches.delete(k))
+      keys.filter((k) => k !== CACHE_VERSION && k !== 'music-downloads-v1' && k !== 'music-local-v1').map((k) => caches.delete(k))
     )).then(() => self.clients.claim())
   );
 });

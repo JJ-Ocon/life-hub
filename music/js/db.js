@@ -9,9 +9,11 @@ const KEYS = {
   settings: 'mu_settings_v1',
   downloads: 'mu_downloads_v1',
   playHistory: 'mu_play_history_v1',
+  localTracks: 'mu_local_tracks_v1',
 };
 
 const DOWNLOAD_CACHE = 'music-downloads-v1';
+const LOCAL_CACHE = 'music-local-v1';
 
 /** Cache Storage (und damit echtes Offline-Download) steht nur in sicheren Kontexten
  *  zur Verfuegung (HTTPS oder localhost) - z.B. nicht ueber eine blanke http://<Tailscale-IP>
@@ -178,6 +180,71 @@ export async function getDownloadedTrackUrl(id) {
   return URL.createObjectURL(blob);
 }
 
+/* ---------- Lokal hinzugefuegte Musik (E60) ----------
+   Titel aus anderen Quellen als dem eigenen Navidrome-Server, direkt vom
+   Geraet importiert - unabhaengig vom Downloads-Mechanismus oben, der immer
+   einen vorhandenen Server-Titel voraussetzt. Bewusst eine eigene
+   Cache-Storage-Bucket + eigenes Metadaten-Register statt Wiederverwendung
+   von KEYS.downloads/DOWNLOAD_CACHE: Downloads werden beim Entfernen als
+   "wieder vom Server nachladbar" behandelt, lokale Titel dagegen sind die
+   EINZIGE Kopie - eine Vermischung beider Register haette dieses Unterscheiden
+   unmoeglich gemacht (z.B. beim Aufraeumen "nicht mehr heruntergeladen"). IDs
+   tragen bewusst das Praefix "local-", damit sie nie mit echten Server-Song-IDs
+   kollidieren koennen (relevant fuer isDownloaded()/streamUrl() an anderer Stelle). */
+// LocalTrackEntry: { id, title, artist, album, durationSec, sizeBytes, addedAt }
+
+function localTrackId() {
+  return 'local-' + (window.crypto?.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 9));
+}
+
+export function getLocalTracks() {
+  return read(KEYS.localTracks, []);
+}
+
+export function isLocalTrack(id) {
+  return typeof id === 'string' && id.startsWith('local-');
+}
+
+function localBlobCacheKey(id) {
+  return `./__local__/${id}`;
+}
+
+export async function addLocalTrack(meta, blob) {
+  const id = localTrackId();
+  const cache = await caches.open(LOCAL_CACHE);
+  await cache.put(localBlobCacheKey(id), new Response(blob, { headers: { 'Content-Type': blob.type || 'audio/mpeg' } }));
+  const entry = {
+    id, title: meta.title || 'Unbenannt', artist: meta.artist || '', album: meta.album || '',
+    durationSec: meta.durationSec || 0, sizeBytes: blob.size, addedAt: nowIso(),
+  };
+  write(KEYS.localTracks, [...getLocalTracks(), entry]);
+  return entry;
+}
+
+export function renameLocalTrack(id, patch) {
+  const list = getLocalTracks().map((t) => (t.id === id ? { ...t, ...patch } : t));
+  write(KEYS.localTracks, list);
+}
+
+export async function removeLocalTrack(id) {
+  const cache = await caches.open(LOCAL_CACHE);
+  await cache.delete(localBlobCacheKey(id));
+  write(KEYS.localTracks, getLocalTracks().filter((t) => t.id !== id));
+}
+
+export async function clearAllLocalTracks() {
+  await caches.delete(LOCAL_CACHE);
+  write(KEYS.localTracks, []);
+}
+
+export async function getLocalTrackUrl(id) {
+  const cache = await caches.open(LOCAL_CACHE);
+  const res = await cache.match(localBlobCacheKey(id));
+  if (!res) return null;
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 /* ---------- Export / Import / Reset ---------- */
 export function exportAllData() {
   return {
@@ -185,6 +252,7 @@ export function exportAllData() {
     settings: getSettings(),
     downloads: getDownloads(),
     playHistory: getPlayHistory(),
+    localTracks: getLocalTracks(),
   };
 }
 
@@ -193,5 +261,7 @@ export async function resetAllData() {
   localStorage.removeItem(KEYS.settings);
   localStorage.removeItem(KEYS.downloads);
   localStorage.removeItem(KEYS.playHistory);
+  localStorage.removeItem(KEYS.localTracks);
   await caches.delete(DOWNLOAD_CACHE);
+  await caches.delete(LOCAL_CACHE);
 }

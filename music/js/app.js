@@ -10,6 +10,7 @@ import * as artist from './views/artist.js';
 import * as album from './views/album.js';
 import * as playlist from './views/playlist.js';
 import * as downloads from './views/downloads.js';
+import * as local from './views/local.js';
 import * as more from './views/more.js';
 
 applyTheme(getSettings());
@@ -32,6 +33,7 @@ function startApp() {
   addRoute('/album/:id', 'library', (p) => album.render(p));
   addRoute('/playlist/:id', 'library', (p) => playlist.render(p));
   addRoute('/downloads', 'downloads', () => downloads.render());
+  addRoute('/local', 'more', () => local.render());
   addRoute('/more', 'more', () => more.render());
 
   initPlayer();
