@@ -2,10 +2,12 @@ import { addRoute, startRouter } from './router.js';
 import { getSettings } from './db.js';
 import { applyTheme } from './theme.js';
 import * as wardrobe from './views/wardrobe.js';
+import * as style from './views/style.js';
 import * as more from './views/more.js';
 
 applyTheme(getSettings());
 addRoute('/', 'wardrobe', () => wardrobe.render());
+addRoute('/style', 'style', () => style.render());
 addRoute('/more', 'more', () => more.render());
 startRouter();
 

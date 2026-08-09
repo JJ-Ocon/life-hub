@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack } from '../router.js';
-import { getItems, getItemById, createItem, saveItem, deleteItem, categoryLabel, CATEGORIES } from '../db.js';
+import { getItems, getItemById, createItem, saveItem, deleteItem, categoryLabel, CATEGORIES, shuffleOutfit, getStyleRules } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { escapeHtml, compressImageFile } from '../utils.js';
 
@@ -17,6 +17,7 @@ function draw() {
   const items = getItems().filter((i) => activeCategory === 'alle' || i.category === activeCategory);
 
   view.innerHTML = `
+    ${getItems().length > 0 ? `<button class="btn btn-primary" id="wd-shuffle" style="margin-bottom:14px">🎲 Outfit mischen</button>` : ''}
     <div class="chip-row" style="margin-bottom:14px" id="wd-filters">
       <div class="chip ${activeCategory === 'alle' ? 'active' : ''}" data-cat="alle">Alle</div>
       ${CATEGORIES.map((c) => `<div class="chip ${activeCategory === c.key ? 'active' : ''}" data-cat="${c.key}">${escapeHtml(c.label)}</div>`).join('')}
@@ -53,6 +54,49 @@ function draw() {
     el.addEventListener('click', () => openItemModal(getItemById(el.dataset.open), draw));
   });
   document.getElementById('wd-add').addEventListener('click', () => openItemModal(null, draw));
+  document.getElementById('wd-shuffle')?.addEventListener('click', openOutfitModal);
+}
+
+function openOutfitModal() {
+  const rules = getStyleRules();
+
+  function draw(handle) {
+    const outfit = shuffleOutfit();
+    const content = handle.sheet.querySelector('#outfit-content');
+    if (!outfit) {
+      content.innerHTML = `<div class="empty"><h3>Zu wenig im Schrank</h3><p class="faint">Für ein Outfit braucht es mindestens ein Kleid/Rock oder ein Oberteil + eine Hose.</p></div>`;
+      return;
+    }
+    content.innerHTML = `
+      <div class="photo-grid">
+        ${outfit.map((i) => `
+          <div class="photo-grid__item">
+            ${i.photo ? `<img src="${i.photo}" alt="">` : `<div class="photo-grid__item--noimg"><span class="faint">Kein Foto</span></div>`}
+            <div class="photo-grid__caption">
+              <div class="photo-grid__title truncate">${escapeHtml(i.name)}</div>
+              <div class="photo-grid__meta truncate">${escapeHtml(categoryLabel(i.category))}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      ${rules.length ? `
+        <p class="faint" style="margin:14px 0 8px">Denk an deine Style-Regeln:</p>
+        <div class="card" style="margin-bottom:0">
+          <div class="stack">
+            ${rules.map((r) => `<p class="faint">• ${escapeHtml(r.text)}</p>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  const handle = openModal(`
+    <h3 class="modal-title">Outfit-Vorschlag</h3>
+    <div id="outfit-content"></div>
+    <button class="btn btn-primary" id="outfit-reshuffle" style="margin-top:16px">🎲 Nochmal mischen</button>
+  `, { center: true });
+  handle.sheet.querySelector('#outfit-reshuffle').addEventListener('click', () => draw(handle));
+  draw(handle);
 }
 
 function openItemModal(existing, onSaved) {
@@ -80,6 +124,10 @@ function openItemModal(existing, onSaved) {
         <label>Größe (optional)</label>
         <input class="input" id="w-size" value="${escapeHtml(existing?.size || '')}" placeholder="z.B. M">
       </div>
+    </div>
+    <div class="field">
+      <label>Farbton (optional)</label>
+      <input type="color" class="color-input" id="w-color-hex" value="${existing?.colorHex || '#888888'}">
     </div>
     <div class="field">
       <label>Notiz (optional)</label>
@@ -110,6 +158,7 @@ function openItemModal(existing, onSaved) {
       name,
       category: handle.sheet.querySelector('#w-category').value,
       color: handle.sheet.querySelector('#w-color').value.trim(),
+      colorHex: handle.sheet.querySelector('#w-color-hex').value,
       size: handle.sheet.querySelector('#w-size').value.trim(),
       note: handle.sheet.querySelector('#w-note').value.trim(),
       photo: photoData,

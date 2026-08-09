@@ -15,6 +15,16 @@ export function todayKey(date = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
+/** HSL (h: 0-360, s/l: 0-100) zu #rrggbb - fuer das Farbrad. */
+export function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (n) => Math.round(f(n) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(0)}${toHex(8)}${toHex(4)}`;
+}
+
 export function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
