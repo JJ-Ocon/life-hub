@@ -8,7 +8,7 @@ import {
 import { analyzeExercise, platesForWeight, warmupSets } from '../coach.js';
 import { estimateRoutineLoad } from '../nutrition.js';
 import { openModal, confirmDialog, toast, toastWithUndo } from '../ui.js';
-import { formatDuration, estimate1RM, formatNum, nowIso, escapeHtml, todayKey } from '../utils.js';
+import { formatDuration, estimate1RM, formatNum, nowIso, escapeHtml, todayKey, addDaysToDateKey } from '../utils.js';
 
 let restTimer = null; // { remaining, total, intervalId, exerciseName }
 let tickHandle = null;
@@ -693,16 +693,29 @@ export function render() {
     // Geplante Workout-Eintraege fuer diesen Tag automatisch entfernen - nicht nur
     // die absolvierte Routine selbst, sondern auch andere fuer denselben Tag geplante
     // Routinen: es wurde bereits trainiert, ein zweiter geplanter Eintrag waere ueberholt.
-    getCalendarEntriesForDate(todayKey(new Date(session.endedAt)))
+    const sessionDayKey = todayKey(new Date(session.endedAt));
+    getCalendarEntriesForDate(sessionDayKey)
       .filter((e) => e.type === 'workout')
       .forEach((e) => deleteCalendarEntry(e.id));
 
-    // Gehoert die Routine zu einer Rotation, ruecke den Zeiger vor und
-    // aktualisiere die Kalender-Projektion – das ist die "Verpasst-Kaskade":
-    // verpasste Termine bleiben stehen, bis sie tatsaechlich absolviert werden.
-    if (advanceRotationIfNeeded(session.routineId)) {
-      syncWeeklyPlanToCalendar();
-    }
+    // Gehoert die Routine zu einer Rotation, ruecke den Zeiger vor (nur wenn
+    // die absolvierte Routine auch die laut Zeiger faellige war) und
+    // aktualisiere DANACH IMMER die Kalender-Projektion - das ist die
+    // "Verpasst-Kaskade": wurde statt der faelligen Routine A eine andere
+    // Routine B trainiert (z.B. bewusster Tausch), rueckt der Zeiger bewusst
+    // NICHT vor, A bleibt offen. Genau in diesem Fall muss die Projektion
+    // trotzdem neu berechnet werden, sonst zeigt der Kalender fuer die
+    // naechsten Termine weiterhin die alte, vor dem Tausch erstellte
+    // Reihenfolge (z.B. faelschlich B statt weiterhin A) - der Bugfix bestand
+    // frueher aus einem "nur bei tatsaechlichem Fortschritt aktualisieren"-
+    // Gate, das den Kalender in genau diesem Tausch-Fall nie neu berechnet hat.
+    advanceRotationIfNeeded(session.routineId);
+    // Ab dem Tag NACH der Session neu projizieren, nicht ab heute - heute
+    // wurde gerade unconditional oben geleert (Zeile 696), eine sofortige
+    // Neuprojektion ab heute wuerde sonst faelschlich wieder einen Eintrag
+    // fuer heute einfuegen, selbst wenn schon (mit einer anderen Routine)
+    // trainiert wurde.
+    syncWeeklyPlanToCalendar(undefined, addDaysToDateKey(sessionDayKey, 1));
     // Die abgeschlossene Session selbst muss unabhaengig von der Rotation
     // in den geteilten Kalender gespiegelt werden.
     refreshSharedCalendarMirror();
