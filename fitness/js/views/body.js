@@ -1,15 +1,16 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
-  getBodyEntries, saveBodyEntry, deleteBodyEntry, getSettings, listPhotos, putPhoto, deletePhoto,
+  getBodyEntries, saveBodyEntry, deleteBodyEntry, getSettings, saveSettings, listPhotos, putPhoto, deletePhoto,
   BODY_METRICS, calcBmi, bodySeries, getLatestBodyEntry,
 } from '../db.js';
 import { calcCalorieNeeds, missingProfileFields } from '../nutrition.js';
 import {
   todayKey, formatDate, formatDateShort, formatDateKey, formatNum, uid, resizeImage,
-  aggregateSeries, GRANULARITIES, escapeHtml,
+  aggregateSeries, GRANULARITIES, escapeHtml, readFileAsText,
 } from '../utils.js';
 import { lineChart } from '../charts.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
+import { detectFormatAndParse } from '../health-import.js';
 
 // Metriken inkl. berechnetem BMI (nicht eingebbar, wird aus Gewicht + Groesse abgeleitet)
 const CHART_METRICS = [
@@ -57,7 +58,10 @@ export async function render() {
     <div class="section-title">Aktuelle Werte</div>
     ${overviewTableHtml(settings)}
 
-    <button class="btn btn-primary" id="add-entry" style="margin-top:12px">+ Messung eintragen</button>
+    <div class="grid-2" style="margin-top:12px">
+      <button class="btn btn-primary" id="add-entry">+ Messung eintragen</button>
+      <button class="btn btn-ghost" id="health-import">⬆ Gesundheitsdaten importieren</button>
+    </div>
 
     <div class="section-title">Verläufe</div>
     <div class="stack" id="metric-cards">
@@ -312,6 +316,7 @@ function openFullscreenChart(metricKey, settings) {
 function wire(settings, photos) {
   document.getElementById('add-entry').addEventListener('click', () => openEntryForm(settings));
   document.getElementById('body-add').addEventListener('click', () => openEntryForm(settings));
+  document.getElementById('health-import').addEventListener('click', () => openHealthImportModal(settings));
   document.getElementById('go-profile')?.addEventListener('click', () => { location.hash = '#/more'; });
   document.getElementById('kcal-details')?.addEventListener('click', openCalorieDetails);
 
@@ -409,6 +414,73 @@ function openEntryForm(settings) {
     toast('Gespeichert');
     handle.close();
     render();
+  });
+}
+
+/* ---------- Gesundheitsdaten-Import (Apple Health / FHIR) ---------- */
+
+const IMPORT_METRIC_LABELS = { weight: 'Gewicht', bodyFat: 'Körperfett', muscle: 'Muskelmasse', waist: 'Taille' };
+
+function openHealthImportModal(settings) {
+  const handle = openModal(`
+    <h3 class="modal-title">Gesundheitsdaten importieren</h3>
+    <p class="faint" style="margin-bottom:14px">
+      Unterstützt zwei offene Formate statt einer geräteproprietären Anbindung:
+      Apple Healths <code>export.xml</code> (Health-App → Profil → „Alle Gesundheitsdaten exportieren“)
+      oder ein FHIR-Observation-Bundle (JSON) aus einem anderen Anbieter.
+    </p>
+    <input type="file" id="hi-file" accept=".xml,.json,application/json,text/xml" hidden>
+    <button class="btn btn-ghost" id="hi-pick">Datei auswählen</button>
+    <div id="hi-status" style="margin-top:14px"></div>
+  `, { center: true });
+
+  let parsed = null;
+
+  handle.sheet.querySelector('#hi-pick').addEventListener('click', () => handle.sheet.querySelector('#hi-file').click());
+  handle.sheet.querySelector('#hi-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const status = handle.sheet.querySelector('#hi-status');
+    status.innerHTML = `<p class="faint">Wird gelesen …</p>`;
+    try {
+      const text = await readFileAsText(file);
+      parsed = detectFormatAndParse(text, settings.units);
+      const dateCount = parsed.entriesByDate.size;
+      const countLines = Object.entries(parsed.counts)
+        .map(([key, n]) => `${n}× ${IMPORT_METRIC_LABELS[key] || key}`)
+        .join(', ');
+      if (!dateCount && parsed.heightCm == null) {
+        status.innerHTML = `<p class="faint">Keine auswertbaren Einträge gefunden (unterstützt werden Gewicht, Körperfett, Muskelmasse, Taille, Körpergröße).</p>`;
+        return;
+      }
+      status.innerHTML = `
+        <div class="card" style="margin-bottom:0">
+          <p>${parsed.format === 'healthkit' ? 'Apple-Health-Export' : 'FHIR-Bundle'} erkannt.</p>
+          <p class="faint" style="margin-top:6px">${dateCount} Tage mit Messwerten${countLines ? ` (${countLines})` : ''}${parsed.heightCm != null ? `, Körpergröße ${formatNum(parsed.heightCm, 1)} cm` : ''}.</p>
+          <p class="faint" style="margin-top:6px">Bereits vorhandene Einträge am selben Tag werden je Feld überschrieben, andere Felder an dem Tag bleiben erhalten.</p>
+        </div>
+        <button class="btn btn-primary" id="hi-confirm" style="margin-top:14px">${dateCount} Tage importieren</button>
+      `;
+      handle.sheet.querySelector('#hi-confirm')?.addEventListener('click', async () => {
+        const ok = await confirmDialog(
+          'Import bestätigen',
+          `${dateCount} Tage werden in deine Körperdaten übernommen. Fahre nur fort, wenn du dem Ursprung dieser Datei vertraust.`,
+          'Importieren', false
+        );
+        if (!ok) return;
+        for (const [date, fields] of parsed.entriesByDate) {
+          saveBodyEntry({ id: uid(), date, ...fields });
+        }
+        if (parsed.heightCm != null && !settings.heightCm) {
+          saveSettings({ heightCm: Math.round(parsed.heightCm * 10) / 10 });
+        }
+        toast(`${dateCount} Tage importiert`);
+        handle.close();
+        render();
+      });
+    } catch (err) {
+      status.innerHTML = `<p class="faint">Import fehlgeschlagen: ${escapeHtml(err.message)}</p>`;
+    }
   });
 }
 
