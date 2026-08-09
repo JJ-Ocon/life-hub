@@ -1,5 +1,6 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
 import { getPeople, createPerson, lastContactDate } from '../../../shared/contacts.js';
+import { refreshBirthdayCalendarMirror } from '../db.js';
 import { escapeHtml, todayKey, daysBetweenDateKeys, formatDateKey } from '../utils.js';
 import { openModal, toast } from '../ui.js';
 
@@ -139,6 +140,7 @@ function openAddModal(onSaved) {
         remindWeeks: Number(handle.sheet.querySelector('#p-remind').value) || null,
       },
     });
+    refreshBirthdayCalendarMirror();
     toast('Gespeichert');
     handle.close();
     onSaved?.();

@@ -47,6 +47,7 @@ const SOURCE_META = {
   cosmetics: { label: 'Kosmetik', color: '#e0629a' },
   learning: { label: 'Lernen', color: '#7c5cff' },
   vehicle: { label: 'Fahrzeug', color: '#c9524a' },
+  social: { label: 'Social', color: '#dc3c71' },
 };
 const COLOR_OVERRIDES_KEY = 'hub_source_colors_v1';
 

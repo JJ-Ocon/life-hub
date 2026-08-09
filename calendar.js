@@ -22,9 +22,18 @@ function toggleSourceVisibility(source) {
 
 function pad(n) { return String(n).padStart(2, '0'); }
 function toDateKey(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+/** 'yearly' Events (z.B. Social's Geburtstags-Mirror) treffen jedes Jahr am
+ *  gleichen Monat/Tag zu, unabhaengig vom Jahr ihres gespeicherten `start` -
+ *  das `recurrence`-Feld existiert im Schema seit E3, wird hier zum ersten
+ *  Mal tatsaechlich ausgewertet statt nur durchgereicht. */
+function matchesDate(event, dateKey) {
+  if (event.start.slice(0, 10) === dateKey) return true;
+  if (event.recurrence === 'yearly') return event.start.slice(5, 10) === dateKey.slice(5, 10);
+  return false;
+}
 function eventsForDay(dateKey) {
   const hidden = getHiddenSources();
-  return allEvents.filter((e) => e.start.slice(0, 10) === dateKey && !hidden.has(e.source));
+  return allEvents.filter((e) => matchesDate(e, dateKey) && !hidden.has(e.source));
 }
 
 async function load() {

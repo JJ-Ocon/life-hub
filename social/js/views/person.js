@@ -3,6 +3,7 @@ import {
   getPersonById, savePerson, deletePerson, getInteractionsForPerson, logInteraction,
   getLinksForPerson, addLink, removeLink, getPeople,
 } from '../../../shared/contacts.js';
+import { refreshBirthdayCalendarMirror } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { escapeHtml, todayKey, formatDateKey } from '../utils.js';
 
@@ -73,6 +74,7 @@ export function render({ id }) {
       const ok = await confirmDialog('Kontakt löschen?', 'Beziehungs-Log und Verknüpfungen werden mit-entfernt.');
       if (!ok) return;
       deletePerson(id);
+      refreshBirthdayCalendarMirror();
       toast('Gelöscht');
       navigate('#/');
     });
@@ -168,6 +170,7 @@ function openEditModal(person, onSaved) {
         remindWeeks: Number(handle.sheet.querySelector('#p-remind').value) || null,
       },
     });
+    refreshBirthdayCalendarMirror();
     toast('Gespeichert');
     handle.close();
     onSaved?.();
