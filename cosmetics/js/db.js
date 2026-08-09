@@ -121,6 +121,46 @@ export function usageStatsByName() {
 }
 
 /* =========================================================
+   Ausgaben-Statistik – rein aus purchasePrice/-date abgeleitet (seit E30
+   erfasst, bisher aber nirgends aggregiert dargestellt). Kein eigenes
+   Ledger, nur Auswertungen ueber die bestehenden Produktdaten.
+   ========================================================= */
+
+export function totalSpent() {
+  return read(KEYS.products, []).reduce((sum, p) => sum + (p.purchasePrice || 0), 0);
+}
+
+export function spendingByCategory() {
+  const sums = {};
+  for (const p of read(KEYS.products, [])) {
+    if (!p.purchasePrice) continue;
+    sums[p.category] = (sums[p.category] || 0) + p.purchasePrice;
+  }
+  return Object.entries(sums)
+    .map(([category, total]) => ({ category, label: categoryLabel(category), total }))
+    .sort((a, b) => b.total - a.total);
+}
+
+export function spendingByYear() {
+  const sums = {};
+  for (const p of read(KEYS.products, [])) {
+    if (!p.purchasePrice || !p.purchaseDate) continue;
+    const year = p.purchaseDate.slice(0, 4);
+    sums[year] = (sums[year] || 0) + p.purchasePrice;
+  }
+  return Object.entries(sums).map(([year, total]) => ({ year, total })).sort((a, b) => a.year.localeCompare(b.year));
+}
+
+export function productCounts() {
+  const products = read(KEYS.products, []);
+  return {
+    total: products.length,
+    active: products.filter((p) => !p.usedUpDate).length,
+    usedUp: products.filter((p) => p.usedUpDate).length,
+  };
+}
+
+/* =========================================================
    Restmengen-Log – manuell erfasste Prozent-Checkpoints pro Produkt,
    daraus ein linearer Verbrauchstrend ("noch ca. X Wochen").
    ========================================================= */

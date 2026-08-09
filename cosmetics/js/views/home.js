@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
-import { getDueItems, getLowStockItems, usageStatsByName, categoryLabel } from '../db.js';
+import { getDueItems, getLowStockItems, categoryLabel } from '../db.js';
 import { todayKey, formatDateKey, escapeHtml } from '../utils.js';
 
 export function render() {
@@ -13,7 +13,6 @@ function draw() {
   const view = document.getElementById('view');
   const items = getDueItems();
   const lowStock = getLowStockItems();
-  const stats = usageStatsByName();
   const today = todayKey();
 
   view.innerHTML = `
@@ -53,20 +52,6 @@ function draw() {
         }).join('')}
       </div>
     `}
-    ${stats.length > 0 ? `
-      <div class="section-title">Nutzungsdauer-Statistik</div>
-      <div class="card">
-        ${stats.map((s) => `
-          <div class="due-row">
-            <div class="col grow" style="min-width:0">
-              <p class="due-row__title truncate">${escapeHtml(s.name)}</p>
-              <p class="due-row__meta">${s.count} Produkt${s.count === 1 ? '' : 'e'} aufgebraucht</p>
-            </div>
-            <span class="due-row__date">Ø ${s.avgDays} Tage</span>
-          </div>
-        `).join('')}
-      </div>
-    ` : ''}
   `;
 
   view.querySelectorAll('[data-open]').forEach((el) => {

@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'cosmetics-v2';
+const CACHE_VERSION = 'cosmetics-v3';
 
 const ASSETS = [
   './',
@@ -16,6 +16,7 @@ const ASSETS = [
   './js/theme.js',
   './js/views/home.js',
   './js/views/products.js',
+  './js/views/stats.js',
   './js/views/more.js',
   './icons/icon.svg',
   '../shared/calendar-schema.js',
