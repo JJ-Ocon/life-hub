@@ -7,6 +7,24 @@ import {
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { todayKey, formatDateKey, formatMoney, escapeHtml } from '../utils.js';
 import { recognizeText, parseReceiptText } from '../../../shared/receipt-ocr.js';
+import { findConflictingEvents } from '../../../shared/event-store.js';
+import { getSourceLabel } from '../../../shared/calendar-schema.js';
+
+/** Warnt, wenn am neuen Faelligkeitsdatum bereits Termine aus anderen Apps
+ *  liegen - gleiches Muster wie Ziele/Todo, Job und Reisen seit E18. Nur
+ *  wenn sich das Datum tatsaechlich veraendert hat, um nicht bei jeder
+ *  Bearbeitung eines bereits kollidierenden Eintrags erneut zu nerven. */
+async function warnIfConflicting(newDate, oldDate) {
+  if (newDate === oldDate) return true;
+  const conflicts = await findConflictingEvents(newDate, 'household').catch(() => []);
+  if (!conflicts.length) return true;
+  const names = [...new Set(conflicts.map((c) => getSourceLabel(c.source)))].join(', ');
+  return confirmDialog(
+    'Termin überschneidet sich',
+    `Am ${formatDateKey(newDate)} gibt es bereits Einträge in: ${names}. Trotzdem speichern?`,
+    'Trotzdem speichern', false
+  );
+}
 
 let section = 'maintenance'; // 'maintenance' | 'contracts' | 'invoices'
 
@@ -131,12 +149,15 @@ function openMaintenanceModal(existing, onSaved) {
     </div>
   `, { center: true });
 
-  handle.sheet.querySelector('#m-save').addEventListener('click', () => {
+  handle.sheet.querySelector('#m-save').addEventListener('click', async () => {
     const title = handle.sheet.querySelector('#m-title').value.trim();
     if (!title) { toast('Bitte einen Titel eingeben'); return; }
     const intervalMonths = Number(handle.sheet.querySelector('#m-interval').value) || 12;
     const lastDone = handle.sheet.querySelector('#m-last').value || null;
     const note = handle.sheet.querySelector('#m-note').value.trim();
+    const newDue = maintenanceNextDue({ lastDone, intervalMonths });
+    const oldDue = existing ? maintenanceNextDue(existing) : null;
+    if (!(await warnIfConflicting(newDue, oldDue))) return;
     if (isNew) createMaintenanceTask({ title, intervalMonths, lastDone, note });
     else saveMaintenanceTask({ ...existing, title, intervalMonths, lastDone, note });
     toast('Gespeichert');
@@ -183,13 +204,16 @@ function openContractModal(existing, onSaved) {
     </div>
   `, { center: true });
 
-  handle.sheet.querySelector('#c-save').addEventListener('click', () => {
+  handle.sheet.querySelector('#c-save').addEventListener('click', async () => {
     const provider = handle.sheet.querySelector('#c-provider').value.trim();
     const renewalDate = handle.sheet.querySelector('#c-renewal').value;
     if (!provider || !renewalDate) { toast('Bitte Anbieter und Datum angeben'); return; }
     const monthlyCost = Number(handle.sheet.querySelector('#c-cost').value) || 0;
     const cancellationNoticeWeeks = Number(handle.sheet.querySelector('#c-notice').value) || 0;
     const note = handle.sheet.querySelector('#c-note').value.trim();
+    const newReminder = contractReminderDate({ renewalDate, cancellationNoticeWeeks });
+    const oldReminder = existing ? contractReminderDate(existing) : null;
+    if (!(await warnIfConflicting(newReminder, oldReminder))) return;
     if (isNew) createContract({ provider, monthlyCost, renewalDate, cancellationNoticeWeeks, note });
     else saveContract({ ...existing, provider, monthlyCost, renewalDate, cancellationNoticeWeeks, note });
     toast('Gespeichert');

@@ -17,9 +17,13 @@ export function lineChart(points, opts = {}) {
   // Grosse Variante: mehr Platz fuer Achsen und Beschriftungen. Die Basisgroesse
   // orientiert sich an der realen Breite auf dem Handy (statt einer Desktop-
   // Groesse) - sonst wird per CSS width:100% stark herunterskaliert, was den
-  // SVG-Text (v.a. Achsen-Beschriftung) sichtbar unscharf rendert.
-  const width = opts.width ?? (large ? 340 : 320);
-  const height = opts.height ?? (large ? 200 : 160);
+  // SVG-Text (v.a. Achsen-Beschriftung) sichtbar unscharf rendert. 296/340 statt
+  // vormals 320/340: die kompakte (nicht-large) Variante liegt in einer .card
+  // (2x14px Padding) in .view (2x14px Padding) - auf einem 360px-Handy bleiben
+  // damit real nur ~304px, 320px wurde also selbst schon leicht herunterskaliert
+  // (E49, Nachzuegler aus dem E18-Feedback "leicht verschwommene Diagramme").
+  const width = opts.width ?? (large ? 340 : 296);
+  const height = opts.height ?? (large ? 200 : 148);
   const padL = large ? 34 : 38;
   const padR = large ? 10 : 12;
   const padT = large ? 12 : 14;
@@ -182,7 +186,7 @@ export function hBarChart(rows, { unit = '', decimals = 0 } = {}) {
  * Balkendiagramm (z.B. Volumen pro Woche).
  * @param {{label:string, value:number, highlight?:boolean}[]} bars
  */
-export function barChart(bars, { width = 320, height = 160, unit = '' } = {}) {
+export function barChart(bars, { width = 296, height = 148, unit = '' } = {}) {
   if (!bars.length) return `<div class="empty"><p>Noch keine Daten</p></div>`;
   const padL = 34, padR = 8, padT = 14, padB = 22;
   const w = width - padL - padR;
