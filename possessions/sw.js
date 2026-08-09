@@ -1,7 +1,8 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'possessions-v2';
+const CACHE_VERSION = 'possessions-v3';
+const ATTACHMENT_CACHE = 'possessions-attachments-v1';
 
 const ASSETS = [
   './',
@@ -14,6 +15,7 @@ const ASSETS = [
   './js/ui.js',
   './js/utils.js',
   './js/theme.js',
+  './js/insurance-export.js',
   './js/views/home.js',
   './js/views/items.js',
   './js/views/more.js',
@@ -32,7 +34,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
-      keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k))
+      keys.filter((k) => k !== CACHE_VERSION && k !== ATTACHMENT_CACHE).map((k) => caches.delete(k))
     )).then(() => self.clients.claim())
   );
 });

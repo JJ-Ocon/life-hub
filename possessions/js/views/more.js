@@ -3,6 +3,7 @@ import { getSettings, saveSettings, exportAllData, importAllData, resetAllData }
 import { applyTheme } from '../theme.js';
 import { confirmDialog, toast, promptDialog } from '../ui.js';
 import { download, readFileAsText, todayKey } from '../utils.js';
+import { openInsuranceReport } from '../insurance-export.js';
 
 const THEMES = [
   { key: 'light', label: 'Light', dot: '#f5f6f8' },
@@ -35,6 +36,12 @@ export function render() {
       </div>
     </div>
 
+    <div class="section-title">Versicherung</div>
+    <div class="card">
+      <p class="faint" style="margin-bottom:12px">Druckfertige Liste aller Gegenstände mit Fotos, Werten und Belegen für den Hausrat-Schadensfall - im Druckdialog als PDF speicherbar.</p>
+      <button class="btn btn-ghost" id="insurance-export">Versicherungsfall-Export</button>
+    </div>
+
     <div class="section-title">Daten</div>
     <div class="card stack">
       <button class="btn btn-ghost" id="export-json">Backup exportieren (JSON)</button>
@@ -61,6 +68,11 @@ export function render() {
   document.getElementById('hue-slider')?.addEventListener('input', (e) => {
     const s = saveSettings({ accentHue: Number(e.target.value) });
     applyTheme(s);
+  });
+
+  document.getElementById('insurance-export').addEventListener('click', () => {
+    const ok = openInsuranceReport();
+    if (!ok) toast('Popup wurde blockiert - bitte Popups für diese Seite erlauben');
   });
 
   document.getElementById('export-json').addEventListener('click', () => {
@@ -90,7 +102,7 @@ export function render() {
     if (!ok) return;
     const typed = await promptDialog('Zur Bestätigung "LÖSCHEN" eingeben', { placeholder: 'LÖSCHEN' });
     if (typed !== 'LÖSCHEN') { toast('Abgebrochen'); return; }
-    resetAllData();
+    await resetAllData();
     toast('Alle Daten wurden gelöscht');
     location.hash = '#/';
     setTimeout(() => location.reload(), 400);

@@ -9,6 +9,8 @@ const KEYS = {
   settings: 'ps_settings_v1',
 };
 
+const ATTACHMENT_CACHE = 'possessions-attachments-v1';
+
 function read(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -35,6 +37,19 @@ export function categoryLabel(key) {
   return CATEGORIES.find((c) => c.key === key)?.label || 'Sonstiges';
 }
 
+/** Frei vergebene Unterkategorien je Hauptkategorie (z.B. Bücher →
+ *  Fantasy/Kochbuch/Sachbuch) - bewusst kein eigenes verwaltetes Vokabular,
+ *  sondern einfach die bereits bei anderen Gegenstaenden derselben
+ *  Kategorie genutzten Werte, damit sich das Vokabular organisch aus der
+ *  tatsaechlichen Nutzung ergibt statt vorab gepflegt werden zu muessen. */
+export function getSubcategoriesForCategory(category) {
+  const set = new Set();
+  for (const i of read(KEYS.items, [])) {
+    if (i.category === category && i.subcategory) set.add(i.subcategory);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, 'de'));
+}
+
 /** Grobe Standard-Nutzungsdauern je Kategorie (Monate) - kein externer
  *  Datensatz, nur eine kleine eingebaute Faustregel-Tabelle als Vorschlag,
  *  gleiches Muster wie Household's PLANT_INTERVAL_SUGGESTIONS. */
@@ -52,10 +67,15 @@ export function suggestLifespanMonths(category) {
    keine sensiblen Daten) in den Hub-Kalender - anders als der
    Digitale Safe braucht dieses Inventar keine Verschluesselung.
    ========================================================= */
-// Item: { id, name, category, serialNumber, purchaseDate (YYYY-MM-DD|null),
+// Item: { id, name, category, subcategory, serialNumber, purchaseDate (YYYY-MM-DD|null),
 //         purchasePrice, currentValue, lifespanMonths (fuer Abschreibung/Ruecklage, optional),
 //         retailer, warrantyExpiryDate (YYYY-MM-DD|null),
-//         warrantyReminderLeadDays, note, photo (dataURL|null), createdAt, updatedAt }
+//         warrantyReminderLeadDays, note, photo (dataURL|null),
+//         attachments: [{id, name, type, sizeBytes, addedAt}], createdAt, updatedAt }
+// Anhaenge (Belege, Garantie-PDFs, ...) liegen als Blobs in der Cache Storage,
+// nicht als dataURL in localStorage - PDFs koennen mehrere MB gross sein und
+// wuerden das ~5-10MB-localStorage-Kontingent schnell sprengen. Gleiches
+// Muster wie Musiks Downloads (music/js/db.js).
 
 export function getItems() {
   return read(KEYS.items, []).sort((a, b) => a.name.localeCompare(b.name, 'de'));
@@ -78,12 +98,13 @@ export function saveItem(item) {
 export function createItem(fields) {
   return saveItem({
     id: uid(), name: fields.name, category: fields.category || 'sonstiges',
+    subcategory: fields.subcategory || '',
     serialNumber: fields.serialNumber || '', purchaseDate: fields.purchaseDate || null,
     purchasePrice: fields.purchasePrice ?? null, currentValue: fields.currentValue ?? null,
     lifespanMonths: fields.lifespanMonths ?? null,
     retailer: fields.retailer || '', warrantyExpiryDate: fields.warrantyExpiryDate || null,
     warrantyReminderLeadDays: fields.warrantyReminderLeadDays ?? 30,
-    note: fields.note || '', photo: fields.photo || null, createdAt: nowIso(),
+    note: fields.note || '', photo: fields.photo || null, attachments: [], createdAt: nowIso(),
   });
 }
 
@@ -114,9 +135,63 @@ export function totalSuggestedMonthlyReserve() {
   return read(KEYS.items, []).reduce((sum, i) => sum + (suggestedMonthlyReserve(i) || 0), 0);
 }
 
-export function deleteItem(id) {
+export async function deleteItem(id) {
+  const item = getItemById(id);
+  if (item) {
+    for (const att of item.attachments || []) await deleteAttachmentBlob(id, att.id);
+  }
   write(KEYS.items, read(KEYS.items, []).filter((i) => i.id !== id));
   refreshSharedCalendarMirror();
+}
+
+/* ---------- Anhaenge (Belege/Dokumente, insbesondere PDF) ---------- */
+
+function attachmentCacheKey(itemId, attachmentId) {
+  return `./__att__/${itemId}/${attachmentId}`;
+}
+
+async function deleteAttachmentBlob(itemId, attachmentId) {
+  try {
+    const cache = await caches.open(ATTACHMENT_CACHE);
+    await cache.delete(attachmentCacheKey(itemId, attachmentId));
+  } catch {
+    // Cache Storage kann in unsicheren Kontexten fehlen - dann bleibt nur die Metadaten-Liste.
+  }
+}
+
+export async function addAttachment(itemId, file) {
+  const item = getItemById(itemId);
+  if (!item) return null;
+  const attachment = { id: uid(), name: file.name, type: file.type || 'application/octet-stream', sizeBytes: file.size, addedAt: nowIso() };
+  const cache = await caches.open(ATTACHMENT_CACHE);
+  await cache.put(attachmentCacheKey(itemId, attachment.id), new Response(file, { headers: { 'Content-Type': attachment.type } }));
+  saveItem({ ...item, attachments: [...(item.attachments || []), attachment] });
+  return attachment;
+}
+
+export async function removeAttachment(itemId, attachmentId) {
+  const item = getItemById(itemId);
+  if (!item) return;
+  await deleteAttachmentBlob(itemId, attachmentId);
+  saveItem({ ...item, attachments: (item.attachments || []).filter((a) => a.id !== attachmentId) });
+}
+
+/** Objekt-URL zum Anzeigen/Herunterladen eines Anhangs - vom Aufrufer nach
+ *  Gebrauch per URL.revokeObjectURL freizugeben. null, wenn nicht (mehr) im Cache. */
+export async function getAttachmentUrl(itemId, attachmentId) {
+  try {
+    const cache = await caches.open(ATTACHMENT_CACHE);
+    const res = await cache.match(attachmentCacheKey(itemId, attachmentId));
+    if (!res) return null;
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
+}
+
+export function attachmentsSupported() {
+  return typeof caches !== 'undefined' && window.isSecureContext;
 }
 
 export function warrantyReminderDate(item) {
@@ -187,8 +262,9 @@ export function importAllData(data) {
   refreshSharedCalendarMirror();
 }
 
-export function resetAllData() {
+export async function resetAllData() {
   localStorage.removeItem(KEYS.items);
   localStorage.removeItem(KEYS.settings);
+  try { await caches.delete(ATTACHMENT_CACHE); } catch { /* siehe attachmentsSupported() */ }
   refreshSharedCalendarMirror();
 }
