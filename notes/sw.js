@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'notes-v3';
+const CACHE_VERSION = 'notes-v4';
 
 const ASSETS = [
   './',
@@ -18,6 +18,7 @@ const ASSETS = [
   './js/views/editor.js',
   './js/views/more.js',
   './icons/icon.svg',
+  '../shared/notes-bridge.js',
 ];
 
 self.addEventListener('install', (event) => {

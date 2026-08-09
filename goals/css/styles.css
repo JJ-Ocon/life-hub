@@ -218,3 +218,7 @@ textarea.input { resize: vertical; min-height: 60px; }
 .milestone-row:last-child { border-bottom: none; }
 .milestone-row.done .milestone-row__title { text-decoration: line-through; color: var(--text-faint); }
 .milestone-row__title { flex: 1; font-size: .88rem; }
+
+/* ---------- Aus Notizen zugeordnet (E57) ---------- */
+.checklist-row { align-items: center; }
+.check-item { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent); }

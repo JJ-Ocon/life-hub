@@ -211,6 +211,17 @@ textarea.input { resize: vertical; min-height: 60px; }
 .note-title-input:focus { outline: none; }
 .editor-textarea { resize: none; width: 100%; }
 
+/* ---------- Ordner-Bereich (E57) ---------- */
+.folder-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
+.folder-tile {
+  aspect-ratio: 1; border-radius: var(--radius-m); border: none; color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  padding: 6px; position: relative; overflow: hidden;
+}
+.folder-tile__count { position: absolute; top: 6px; right: 8px; font-size: .68rem; font-weight: 800; opacity: .85; }
+.folder-tile__name { font-size: .74rem; font-weight: 700; text-align: center; line-height: 1.2; word-break: break-word; }
+.folder-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
 /* ---------- Notizen-Kachel-Raster (E56) ---------- */
 .notes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .notes-grid .note-card { margin-bottom: 0; max-height: 33vh; overflow: hidden; display: flex; flex-direction: column; }

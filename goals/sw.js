@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'goals-v2';
+const CACHE_VERSION = 'goals-v3';
 
 const ASSETS = [
   './',
@@ -20,6 +20,7 @@ const ASSETS = [
   './icons/icon.svg',
   '../shared/calendar-schema.js',
   '../shared/event-store.js',
+  '../shared/notes-bridge.js',
 ];
 
 self.addEventListener('install', (event) => {

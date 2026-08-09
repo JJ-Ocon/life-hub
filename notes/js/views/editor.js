@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
-import { getNoteById, createNote, saveNote, deleteNote, getFolders } from '../db.js';
+import { getNoteById, createNote, saveNote, deleteNote, getFolders, ASSIGNABLE_APPS } from '../db.js';
 import { confirmDialog, toast, promptDialog } from '../ui.js';
 import { escapeHtml, uid, compressImageFile } from '../utils.js';
 
@@ -28,7 +28,7 @@ export function render(params) {
   } else {
     draft = existing
       ? { ...existing, items: (existing.items || []).map((i) => ({ ...i })) }
-      : { title: '', type: 'text', text: '', items: [], folder: null, photo: null, remindAt: null, archived: false };
+      : { title: '', type: 'text', text: '', items: [], folder: null, photo: null, remindAt: null, archived: false, assignedApp: null };
     pendingDrafts[draftKey] = draft;
   }
 
@@ -134,6 +134,13 @@ function draw() {
     <div class="field" style="margin-top:16px">
       <label>Wiedervorlage (optional) - "erneut zeigen am ..."</label>
       <input class="input" type="date" id="note-remind" value="${draft.remindAt || ''}">
+    </div>
+
+    <div class="section-title">Andere App (optional)</div>
+    <p class="faint" style="margin:-4px 0 10px">Zugeordnete Notizen erscheinen dort in einem eigenen Bereich, lesbar und mit Titel/Text direkt bearbeitbar - Notizen bleibt trotzdem die eigentliche Ablage.</p>
+    <div class="chip-row" id="assign-row">
+      <button type="button" class="chip ${!draft.assignedApp ? 'active' : ''}" data-assign="">Keine</button>
+      ${ASSIGNABLE_APPS.map((a) => `<button type="button" class="chip ${draft.assignedApp === a.id ? 'active' : ''}" data-assign="${a.id}">${escapeHtml(a.label)}</button>`).join('')}
     </div>
 
     ${draft.archived ? `<p class="faint" style="margin-top:14px">📦 Archiviert</p>` : ''}
@@ -270,6 +277,13 @@ function wire() {
   });
 
   document.getElementById('note-remind').addEventListener('change', commitAutosave);
+
+  document.querySelectorAll('[data-assign]').forEach((b) => b.addEventListener('click', () => {
+    syncDraftFromDom();
+    draft.assignedApp = b.dataset.assign || null;
+    commitAutosave();
+    draw();
+  }));
 
   document.getElementById('note-todo').addEventListener('click', () => {
     syncDraftFromDom();

@@ -5,6 +5,7 @@ import { uid, nowIso, todayKey } from './utils.js';
 const KEYS = {
   notes: 'nt_notes_v1',
   settings: 'nt_settings_v1',
+  folderColors: 'nt_folder_colors_v1',
 };
 
 function read(key, fallback) {
@@ -28,7 +29,25 @@ function write(key, value) {
    ========================================================= */
 // Note: { id, title, type ('text'|'checklist'), text, items ({id,text,done}[] - nur
 //         bei type 'checklist'), folder (string|null), photo (dataURL|null),
-//         remindAt (YYYY-MM-DD|null), archived, createdAt, updatedAt }
+//         remindAt (YYYY-MM-DD|null), archived, assignedApp (string|null),
+//         createdAt, updatedAt }
+
+/** Andere Apps, denen eine Notiz zugeordnet werden kann (E57) - bewusst ohne
+ *  Digitaler Safe/Tagebuch (verschluesselte Apps, keine Plaintext-Notizen
+ *  ueber einen Seitenkanal einschleusen) und ohne Notizen selbst. */
+export const ASSIGNABLE_APPS = [
+  { id: 'goals', label: 'Ziele & Todo' },
+  { id: 'job', label: 'Job' },
+  { id: 'social', label: 'Social' },
+  { id: 'household', label: 'Haushalt' },
+  { id: 'travel', label: 'Reisen' },
+  { id: 'vehicle', label: 'Fahrzeug' },
+  { id: 'kleidung', label: 'Kleidung' },
+];
+
+export function assignableAppLabel(id) {
+  return ASSIGNABLE_APPS.find((a) => a.id === id)?.label || id;
+}
 
 export function getNotes() {
   return read(KEYS.notes, []);
@@ -88,8 +107,45 @@ export function createNote(fields) {
     photo: fields.photo || null,
     remindAt: fields.remindAt || null,
     archived: !!fields.archived,
+    assignedApp: fields.assignedApp || null,
     createdAt: nowIso(),
   });
+}
+
+/** Notizen ohne Ordner (und nicht archiviert) - fuer die Gruppe unterhalb
+ *  der Ordner-Kacheln im Ordner-Bereich. */
+export function getUnassignedNotes() {
+  return getNotesSorted(todayKey(), { archived: false }).filter((n) => !n.folder);
+}
+
+export function notesInFolder(folder) {
+  return getNotesSorted(todayKey(), { archived: false }).filter((n) => n.folder === folder);
+}
+
+/** Anzahl nicht-archivierter Notizen je Ordner, fuer die Kachel-Badges. */
+export function getFolderCounts() {
+  const counts = {};
+  for (const n of getNotes()) {
+    if (n.archived || !n.folder) continue;
+    counts[n.folder] = (counts[n.folder] || 0) + 1;
+  }
+  return counts;
+}
+
+/* =========================================================
+   Ordner-Farben (E57) - jedem Ordnernamen wird beim ersten Auftauchen
+   automatisch eine feste Farbe aus einer kleinen Palette zugewiesen und
+   dauerhaft gemerkt (Reihum-Vergabe, keine manuelle Farbwahl noetig).
+   ========================================================= */
+const FOLDER_COLOR_PALETTE = ['#e0629a', '#5b9bd9', '#3ddc84', '#e0a63a', '#8f7ee0', '#4fc3d9', '#f06464', '#c76ae0'];
+
+export function getFolderColor(name) {
+  const map = read(KEYS.folderColors, {});
+  if (map[name]) return map[name];
+  const color = FOLDER_COLOR_PALETTE[Object.keys(map).length % FOLDER_COLOR_PALETTE.length];
+  map[name] = color;
+  write(KEYS.folderColors, map);
+  return color;
 }
 
 export function deleteNote(id) {
@@ -128,15 +184,17 @@ export function saveSettings(patch) {
    ========================================================= */
 
 export function exportAllData() {
-  return { exportedAt: nowIso(), notes: getNotes(), settings: getSettings() };
+  return { exportedAt: nowIso(), notes: getNotes(), settings: getSettings(), folderColors: read(KEYS.folderColors, {}) };
 }
 
 export function importAllData(data) {
   if (data.notes) write(KEYS.notes, data.notes);
   if (data.settings) write(KEYS.settings, data.settings);
+  if (data.folderColors) write(KEYS.folderColors, data.folderColors);
 }
 
 export function resetAllData() {
   localStorage.removeItem(KEYS.notes);
   localStorage.removeItem(KEYS.settings);
+  localStorage.removeItem(KEYS.folderColors);
 }
