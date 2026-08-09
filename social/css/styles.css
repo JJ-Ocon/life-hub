@@ -215,4 +215,6 @@ textarea.input { resize: vertical; min-height: 60px; }
 .network-svg { width: 100%; height: auto; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-m); }
 .network-svg text { font-size: 11px; fill: var(--text); font-weight: 600; }
 .network-link { stroke: var(--border); stroke-width: 1.5; }
+.network-link--one-way { stroke: var(--text-dim); }
+.network-arrowhead { fill: var(--text-dim); }
 .network-node { fill: var(--accent); stroke: var(--bg-card); stroke-width: 2; cursor: pointer; }

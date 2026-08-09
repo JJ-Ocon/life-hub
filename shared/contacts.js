@@ -120,9 +120,19 @@ export function lastContactDate(personId) {
 
 /* =========================================================
    Verknuepfungstabelle ("wer kennt wen") – manuell gepflegt,
-   speist die Netzwerk-Darstellung der Social-App.
+   speist die Netzwerk-Darstellung von Social/Job.
+
+   `confirmedBy` haelt fest, von welcher Seite(n) aus die Verknuepfung
+   angelegt wurde: wird sie nur von einer Person aus deren eigenem
+   Kontakt-Detail hinzugefuegt, ist es (noch) einseitiges Kennen; legt die
+   andere Person spaeter unabhaengig ebenfalls eine Verknuepfung zu dieser
+   Person an, wird derselbe Datensatz nur um die zweite Bestaetigung
+   ergaenzt statt dupliziert - `confirmedBy.length === 2` heisst beidseitig
+   bestaetigt. Alt-Datensaetze ohne `confirmedBy` (vor dieser Etappe
+   angelegt) gelten als nur von personIdA aus bestaetigt, siehe
+   confirmedByOf() unten - keine Migration noetig.
    ========================================================= */
-// Link: { id, personIdA, personIdB }
+// Link: { id, personIdA, personIdB, confirmedBy: string[] }
 
 export function getLinks() {
   return read(KEYS.links, []);
@@ -132,14 +142,35 @@ export function getLinksForPerson(personId) {
   return getLinks().filter((l) => l.personIdA === personId || l.personIdB === personId);
 }
 
-export function addLink(personIdA, personIdB) {
-  if (personIdA === personIdB) return null;
-  const exists = getLinks().some((l) =>
-    (l.personIdA === personIdA && l.personIdB === personIdB) ||
-    (l.personIdA === personIdB && l.personIdB === personIdA));
-  if (exists) return null;
-  const link = { id: uid(), personIdA, personIdB };
-  write(KEYS.links, [...getLinks(), link]);
+/** Wer die Verknuepfung (mindestens) bestaetigt hat - faellt bei
+ *  Alt-Datensaetzen ohne das Feld auf personIdA zurueck. */
+export function confirmedByOf(link) {
+  return link.confirmedBy || [link.personIdA];
+}
+
+/** true, wenn beide Seiten die Verknuepfung unabhaengig angelegt haben. */
+export function isMutualLink(link) {
+  return confirmedByOf(link).length >= 2;
+}
+
+/** `fromId` bestaetigt, `toId` zu kennen. Existiert die Verknuepfung (in
+ *  beliebiger Richtung) schon, wird `fromId` nur als zusaetzliche
+ *  Bestaetigung ergaenzt statt einen zweiten Datensatz anzulegen. */
+export function addLink(fromId, toId) {
+  if (fromId === toId) return null;
+  const links = getLinks();
+  const existing = links.find((l) =>
+    (l.personIdA === fromId && l.personIdB === toId) ||
+    (l.personIdA === toId && l.personIdB === fromId));
+  if (existing) {
+    const confirmedBy = confirmedByOf(existing);
+    if (confirmedBy.includes(fromId)) return existing;
+    const updated = { ...existing, confirmedBy: [...confirmedBy, fromId] };
+    write(KEYS.links, links.map((l) => (l.id === existing.id ? updated : l)));
+    return updated;
+  }
+  const link = { id: uid(), personIdA: fromId, personIdB: toId, confirmedBy: [fromId] };
+  write(KEYS.links, [...links, link]);
   return link;
 }
 

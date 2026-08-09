@@ -1,7 +1,7 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
   getPersonById, savePerson, deletePerson, getInteractionsForPerson, logInteraction,
-  getLinksForPerson, addLink, removeLink, getPeople,
+  getLinksForPerson, addLink, removeLink, getPeople, isMutualLink, confirmedByOf,
 } from '../../../shared/contacts.js';
 import { refreshBirthdayCalendarMirror } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
@@ -24,7 +24,11 @@ export function render({ id }) {
     const interactions = getInteractionsForPerson(id);
     const links = getLinksForPerson(id).map((l) => {
       const otherId = l.personIdA === id ? l.personIdB : l.personIdA;
-      return { linkId: l.id, person: getPersonById(otherId) };
+      const mutual = isMutualLink(l);
+      // Aus Sicht DIESER Person: hat sie selbst bestaetigt (-> zeigt weg von ihr),
+      // oder nur die andere Seite (<- die andere Person kennt sie, noch unbestaetigt)?
+      const confirmedByThisPerson = confirmedByOf(l).includes(id);
+      return { linkId: l.id, person: getPersonById(otherId), mutual, confirmedByThisPerson };
     }).filter((l) => l.person);
 
     document.getElementById('view').innerHTML = `
@@ -50,7 +54,7 @@ export function render({ id }) {
       <div class="card">
         ${links.length === 0 ? '<p class="faint">Noch keine Verknüpfung.</p>' : links.map((l) => `
           <div class="row row--between" style="padding:6px 0">
-            <span>${escapeHtml(l.person.name)}</span>
+            <span>${l.mutual ? '⇄' : (l.confirmedByThisPerson ? '→' : '←')} ${escapeHtml(l.person.name)}${l.mutual ? '' : ` <span class="faint">(einseitig${l.confirmedByThisPerson ? '' : ', noch nicht bestätigt'})</span>`}</span>
             <button class="icon-btn" data-unlink="${l.linkId}" aria-label="Verknüpfung entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
           </div>
         `).join('')}

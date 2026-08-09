@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
-import { getPeople, getLinks } from '../../../shared/contacts.js';
+import { getPeople, getLinks, confirmedByOf, isMutualLink } from '../../../shared/contacts.js';
 import { escapeHtml } from '../utils.js';
 
 const WIDTH = 340;
@@ -27,10 +27,13 @@ function draw() {
   const nodeById = new Map(people.map((p, i) => [p.id, positions[i]]));
 
   const edgesSvg = links.map((l) => {
-    const a = nodeById.get(l.personIdA);
-    const b = nodeById.get(l.personIdB);
-    if (!a || !b) return '';
-    return `<line class="network-link" x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}"/>`;
+    const mutual = isMutualLink(l);
+    const fromId = mutual ? l.personIdA : confirmedByOf(l)[0];
+    const toId = fromId === l.personIdA ? l.personIdB : l.personIdA;
+    const from = nodeById.get(fromId);
+    const to = nodeById.get(toId);
+    if (!from || !to) return '';
+    return `<line class="network-link ${mutual ? '' : 'network-link--one-way'}" x1="${from.x.toFixed(1)}" y1="${from.y.toFixed(1)}" x2="${to.x.toFixed(1)}" y2="${to.y.toFixed(1)}" ${mutual ? '' : 'marker-end="url(#network-arrow)"'}/>`;
   }).join('');
 
   const nodesSvg = people.map((p, i) => {
@@ -44,8 +47,13 @@ function draw() {
   }).join('');
 
   view.innerHTML = `
-    <p class="faint" style="margin-bottom:12px">Verknüpfungen werden im Kontakt-Detail gepflegt (geteilt mit Social - eine dort angelegte Verbindung erscheint hier automatisch mit, wenn beide Personen einen Job-Kontakt haben). Antippen öffnet die Person.</p>
+    <p class="faint" style="margin-bottom:12px">Verknüpfungen werden im Kontakt-Detail gepflegt (geteilt mit Social - eine dort angelegte Verbindung erscheint hier automatisch mit, wenn beide Personen einen Job-Kontakt haben). Ein Pfeil zeigt einseitiges Kennen, eine schlichte Linie beidseitig bestätigtes. Antippen öffnet die Person.</p>
     <svg class="network-svg" viewBox="0 0 ${WIDTH} ${HEIGHT}">
+      <defs>
+        <marker id="network-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0L10 5L0 10z" class="network-arrowhead"></path>
+        </marker>
+      </defs>
       ${edgesSvg}
       ${nodesSvg}
     </svg>
