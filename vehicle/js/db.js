@@ -28,11 +28,21 @@ function write(key, value) {
 export const VEHICLE_TYPES = [
   { key: 'auto', label: 'Auto' },
   { key: 'motorrad', label: 'Motorrad' },
+  { key: 'fahrrad', label: 'Fahrrad' },
+  { key: 'e-bike', label: 'E-Bike' },
   { key: 'sonstiges', label: 'Sonstiges' },
 ];
 
 export function vehicleTypeLabel(type) {
   return VEHICLE_TYPES.find((t) => t.key === type)?.label || 'Sonstiges';
+}
+
+/** Der Tanken-Bereich rechnet in Litern/Kilometerstand - das passt weder
+ *  auf ein rein muskelbetriebenes Fahrrad noch auf ein E-Bike (das laedt
+ *  Strom statt zu tanken, hier noch nicht separat modelliert). Fuer beide
+ *  bleibt nur Wartung relevant (Kette, Bremsen, Reifen, Akku-Check). */
+export function isFuelPowered(type) {
+  return type !== 'fahrrad' && type !== 'e-bike';
 }
 
 /** Vorschlaege fuer wiederkehrende Wartungsaufgaben inkl. typischem

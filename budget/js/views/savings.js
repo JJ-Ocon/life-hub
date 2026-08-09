@@ -184,9 +184,12 @@ function drawSubscriptions() {
     ${items.length === 0 && external.length === 0 ? `
       <div class="empty">
         <h3>Keine Abos erkannt</h3>
-        <p class="faint">Markiere Ausgaben beim Erfassen als "wiederkehrend", damit sie hier auftauchen. Verträge mit Kosten aus der Haushalt-App erscheinen automatisch mit.</p>
+        <p class="faint">Markiere Ausgaben beim Erfassen als "wiederkehrend", damit sie hier auftauchen. Verträge/Kosten aus Haushalt und Fahrzeug erscheinen automatisch mit.</p>
       </div>
     ` : `
+      ${external.length > 0 ? `
+        <p class="faint" style="margin-bottom:10px">Die Zeilen "aus Haushalt"/"aus Fahrzeug" sind Schätzungen aus den jeweiligen Apps - trage dieselben Kosten nicht zusätzlich manuell als eigene wiederkehrende Ausgabe hier ein, sonst zählt die Summe oben sie doppelt.</p>
+      ` : ''}
       <div class="card">
         ${items.map((i) => `
           <div class="list-row">

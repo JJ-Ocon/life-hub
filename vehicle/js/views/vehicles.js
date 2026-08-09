@@ -1,6 +1,6 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
-  getVehicles, getVehicleById, createVehicle, saveVehicle, deleteVehicle, VEHICLE_TYPES, vehicleTypeLabel,
+  getVehicles, getVehicleById, createVehicle, saveVehicle, deleteVehicle, VEHICLE_TYPES, vehicleTypeLabel, isFuelPowered,
   getMaintenanceTasks, createMaintenanceTask, markMaintenanceDone, deleteMaintenanceTask, maintenanceNextDue,
   MAINTENANCE_SUGGESTIONS,
   getFuelLogs, createFuelLog, deleteFuelLog, fuelConsumptionSeries, avgFuelConsumption, totalFuelCost, avgMonthlyFuelCost,
@@ -31,7 +31,7 @@ function draw() {
     ${vehicles.length === 0 ? `
       <div class="empty">
         <h3>Noch keine Fahrzeuge</h3>
-        <p class="faint">Lege ein Auto, Motorrad oder ein anderes Fahrzeug an, um Wartung und Tankkosten zu verwalten.</p>
+        <p class="faint">Lege ein Auto, Motorrad, Fahrrad, E-Bike oder ein anderes Fahrzeug an, um Wartung und (falls zutreffend) Tankkosten zu verwalten.</p>
       </div>
     ` : `
       <div class="card">
@@ -134,12 +134,14 @@ export function renderDetail({ id }) {
 function drawDetail() {
   const vehicle = getVehicleById(vehicleId);
   if (!vehicle) { navigate('#/vehicles'); return; }
+  const fuelPowered = isFuelPowered(vehicle.type);
+  if (section === 'fuel' && !fuelPowered) section = 'overview';
   const view = document.getElementById('view');
   view.innerHTML = `
     <div class="section-tabs">
       <button class="chip ${section === 'overview' ? 'active' : ''}" data-sec="overview">Übersicht</button>
       <button class="chip ${section === 'maintenance' ? 'active' : ''}" data-sec="maintenance">Wartung</button>
-      <button class="chip ${section === 'fuel' ? 'active' : ''}" data-sec="fuel">Tanken</button>
+      ${fuelPowered ? `<button class="chip ${section === 'fuel' ? 'active' : ''}" data-sec="fuel">Tanken</button>` : ''}
     </div>
     <div id="section-body"></div>
   `;
@@ -150,23 +152,26 @@ function drawDetail() {
 function drawSection(vehicle) {
   const body = document.getElementById('section-body');
   if (section === 'overview') {
+    const fuelPowered = isFuelPowered(vehicle.type);
     const monthly = estimatedMonthlyCost(vehicle.id);
-    const consumption = avgFuelConsumption(vehicle.id);
+    const consumption = fuelPowered ? avgFuelConsumption(vehicle.id) : null;
     body.innerHTML = `
       <div class="card">
         <p class="faint">${escapeHtml(vehicleTypeLabel(vehicle.type))}${vehicle.licensePlate ? ' · ' + escapeHtml(vehicle.licensePlate) : ''}</p>
         ${vehicle.purchaseDate ? `<p class="faint" style="margin-top:4px">Gekauft am ${formatDateKey(vehicle.purchaseDate)}</p>` : ''}
         ${vehicle.note ? `<p style="margin-top:10px">${escapeHtml(vehicle.note)}</p>` : ''}
       </div>
-      <div class="grid-2">
+      <div class="${fuelPowered ? 'grid-2' : ''}">
         <div class="stat-tile">
           <div class="stat-tile__value">${monthly > 0 ? formatMoney(monthly) : '–'}</div>
-          <div class="stat-tile__label">Geschätzte Kosten/Monat</div>
+          <div class="stat-tile__label">Geschätzte Kosten/Monat${fuelPowered ? '' : ' (Wartung)'}</div>
         </div>
-        <div class="stat-tile">
-          <div class="stat-tile__value">${consumption !== null ? formatNum(consumption, 1) + ' l' : '–'}</div>
-          <div class="stat-tile__label">Ø Verbrauch/100km</div>
-        </div>
+        ${fuelPowered ? `
+          <div class="stat-tile">
+            <div class="stat-tile__value">${consumption !== null ? formatNum(consumption, 1) + ' l' : '–'}</div>
+            <div class="stat-tile__label">Ø Verbrauch/100km</div>
+          </div>
+        ` : ''}
       </div>
       <div class="stack" style="margin-top:14px">
         <button class="btn btn-ghost" id="v-edit">Fahrzeug bearbeiten</button>
