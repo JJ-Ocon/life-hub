@@ -10,6 +10,7 @@ const KEYS = {
   mealPlan: 'ml_meal_plan_v1',
   settings: 'ml_settings_v1',
   shoppingChecked: 'ml_shopping_checked_v1',
+  customFoods: 'ml_custom_foods_v1',
 };
 
 function read(key, fallback) {
@@ -40,10 +41,47 @@ export function loadFoods() {
   return foodsPromise;
 }
 
+/* =========================================================
+   Eigene Zutaten – die USDA-Datenbank ist englischsprachig und deckt
+   naturgemaess nicht jede rohe Zutat unter dem gesuchten (oft deutschen)
+   Namen ab; wer nichts Passendes findet, legt selbst eine Zutat mit den
+   Naehrwerten pro 100g an. Gleiche Form wie ein foods.json-Eintrag, damit
+   recipeNutrition() etc. nicht zwischen beiden Quellen unterscheiden muss.
+   ========================================================= */
+// CustomFood: { id, name, kcal_100g, protein_100g, carbs_100g, fat_100g, createdAt }
+
+export function getCustomFoods() {
+  return read(KEYS.customFoods, []);
+}
+
+export function createCustomFood(fields) {
+  const food = {
+    id: uid(),
+    name: (fields.name || '').trim(),
+    kcal_100g: Number(fields.kcal_100g) || 0,
+    protein_100g: Number(fields.protein_100g) || 0,
+    carbs_100g: Number(fields.carbs_100g) || 0,
+    fat_100g: Number(fields.fat_100g) || 0,
+    createdAt: nowIso(),
+  };
+  write(KEYS.customFoods, [...getCustomFoods(), food]);
+  return food;
+}
+
+export function deleteCustomFood(id) {
+  write(KEYS.customFoods, getCustomFoods().filter((f) => f.id !== id));
+}
+
+async function loadAllFoods() {
+  const usda = await loadFoods();
+  return [...getCustomFoods(), ...usda];
+}
+
+/** Eigene Zutaten zuerst (meist gezielter angelegt als ein USDA-Treffer). */
 export async function searchFoods(query, limit = 20) {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  const foods = await loadFoods();
+  const foods = await loadAllFoods();
   const out = [];
   for (const f of foods) {
     if (f.name.toLowerCase().includes(q)) {
@@ -55,7 +93,7 @@ export async function searchFoods(query, limit = 20) {
 }
 
 export async function getFoodByName(name) {
-  const foods = await loadFoods();
+  const foods = await loadAllFoods();
   return foods.find((f) => f.name === name) || null;
 }
 
@@ -101,8 +139,10 @@ export function deleteRecipe(id) {
 
 /** Naehrwerte eines Rezepts (Summe + pro Portion) anhand der Zutatenliste. */
 export async function recipeNutrition(recipe) {
-  const foods = await loadFoods();
-  const byName = new Map(foods.map((f) => [f.name, f]));
+  const usda = await loadFoods();
+  // USDA zuerst in die Map, eigene Zutaten danach - bei einem Namenskonflikt
+  // (Map.set ueberschreibt) gewinnt bewusst die eigene, gezielt angelegte Zutat.
+  const byName = new Map([...usda, ...getCustomFoods()].map((f) => [f.name, f]));
   const total = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
   for (const ing of recipe.ingredients) {
     const food = byName.get(ing.foodName);
@@ -241,6 +281,7 @@ export function exportAllData() {
     exportedAt: nowIso(),
     recipes: getRecipes(),
     mealPlan: getMealPlanEntries(),
+    customFoods: getCustomFoods(),
     settings: getSettings(),
   };
 }
@@ -248,6 +289,7 @@ export function exportAllData() {
 export function importAllData(data) {
   if (data.recipes) write(KEYS.recipes, data.recipes);
   if (data.mealPlan) write(KEYS.mealPlan, data.mealPlan);
+  if (data.customFoods) write(KEYS.customFoods, data.customFoods);
   if (data.settings) write(KEYS.settings, data.settings);
 }
 
@@ -256,4 +298,5 @@ export function resetAllData() {
   localStorage.removeItem(KEYS.mealPlan);
   localStorage.removeItem(KEYS.settings);
   localStorage.removeItem(KEYS.shoppingChecked);
+  localStorage.removeItem(KEYS.customFoods);
 }

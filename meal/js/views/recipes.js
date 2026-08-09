@@ -1,6 +1,6 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
-  getRecipes, getRecipeById, saveRecipe, createRecipe, deleteRecipe, recipeNutrition, searchFoods,
+  getRecipes, getRecipeById, saveRecipe, createRecipe, deleteRecipe, recipeNutrition, searchFoods, createCustomFood,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { escapeHtml, formatNum, uid } from '../utils.js';
@@ -130,9 +130,12 @@ function openRecipeModal(existing, onSaved) {
       ing.foodName = foodInput.value;
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
-        const matches = await searchFoods(foodInput.value);
-        if (!matches.length) { suggestList.hidden = true; return; }
-        suggestList.innerHTML = matches.map((f) => `<div class="food-suggest__item" data-pick="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>`).join('');
+        const query = foodInput.value.trim();
+        if (!query) { suggestList.hidden = true; return; }
+        const matches = await searchFoods(query);
+        suggestList.innerHTML =
+          matches.map((f) => `<div class="food-suggest__item" data-pick="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>`).join('')
+          + `<div class="food-suggest__item food-suggest__item--custom" data-create-custom>+ „${escapeHtml(query)}" als eigene Zutat anlegen</div>`;
         suggestList.hidden = false;
         suggestList.querySelectorAll('[data-pick]').forEach((item) => item.addEventListener('click', () => {
           ing.foodName = item.dataset.pick;
@@ -140,6 +143,14 @@ function openRecipeModal(existing, onSaved) {
           suggestList.hidden = true;
           updateSummary();
         }));
+        suggestList.querySelector('[data-create-custom]').addEventListener('click', () => {
+          suggestList.hidden = true;
+          openCustomFoodModal(query, (food) => {
+            ing.foodName = food.name;
+            foodInput.value = food.name;
+            updateSummary();
+          });
+        });
       }, 200);
     });
     foodInput.addEventListener('blur', () => setTimeout(() => { suggestList.hidden = true; }, 150));
@@ -194,4 +205,52 @@ function openRecipeModal(existing, onSaved) {
     handle.close();
     onSaved?.();
   }
+}
+
+/** Legt eine eigene Zutat mit Naehrwerten pro 100g an - fuer Faelle, in
+ *  denen die (englischsprachige) USDA-Datenbank nichts Passendes liefert,
+ *  z.B. bei auf Deutsch gesuchten rohen Zutaten. */
+function openCustomFoodModal(prefillName, onCreated) {
+  const handle = openModal(`
+    <h3 class="modal-title">Eigene Zutat anlegen</h3>
+    <div class="field">
+      <label>Name</label>
+      <input class="input" id="cf-name" value="${escapeHtml(prefillName)}" placeholder="z.B. Honig">
+    </div>
+    <p class="faint" style="margin-bottom:10px">Nährwerte pro 100g/ml:</p>
+    <div class="grid-2">
+      <div class="field">
+        <label>Kalorien (kcal)</label>
+        <input class="input" type="number" min="0" step="0.1" id="cf-kcal">
+      </div>
+      <div class="field">
+        <label>Eiweiß (g)</label>
+        <input class="input" type="number" min="0" step="0.1" id="cf-protein">
+      </div>
+      <div class="field">
+        <label>Kohlenhydrate (g)</label>
+        <input class="input" type="number" min="0" step="0.1" id="cf-carbs">
+      </div>
+      <div class="field">
+        <label>Fett (g)</label>
+        <input class="input" type="number" min="0" step="0.1" id="cf-fat">
+      </div>
+    </div>
+    <button class="btn btn-primary" id="cf-save" style="margin-top:10px">Anlegen</button>
+  `, { center: true });
+
+  handle.sheet.querySelector('#cf-save').addEventListener('click', () => {
+    const name = handle.sheet.querySelector('#cf-name').value.trim();
+    if (!name) { toast('Bitte einen Namen eingeben'); return; }
+    const food = createCustomFood({
+      name,
+      kcal_100g: handle.sheet.querySelector('#cf-kcal').value,
+      protein_100g: handle.sheet.querySelector('#cf-protein').value,
+      carbs_100g: handle.sheet.querySelector('#cf-carbs').value,
+      fat_100g: handle.sheet.querySelector('#cf-fat').value,
+    });
+    toast('Zutat angelegt');
+    handle.close();
+    onCreated(food);
+  });
 }
