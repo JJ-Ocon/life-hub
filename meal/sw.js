@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'meal-v8';
+const CACHE_VERSION = 'meal-v9';
 
 const ASSETS = [
   './',
@@ -24,6 +24,7 @@ const ASSETS = [
   // Lebensmittel-Referenzdatenbank (~1MB) - klein genug fuers Precaching,
   // damit die Rezeptsuche auch offline direkt nach dem Start funktioniert.
   '../shared/foods.json',
+  '../shared/foods-de-aliases.json',
   '../shared/body-data.js',
   '../shared/grocery-cost.js',
   '../shared/receipt-ocr.js',

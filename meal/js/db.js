@@ -47,6 +47,22 @@ export function loadFoods() {
   return foodsPromise;
 }
 
+/** Deutsche Alias-Tabelle (haeufige Grundzutaten -> passender USDA-Eintrag) -
+ *  kein Ersatz fuer eine echte deutsche Lebensmitteldatenbank (der BLS ist
+ *  nicht frei nutzbar, siehe tools/build-foods.js's Kommentar zur Quelle),
+ *  aber deckt die Suche nach den haeufigsten Zutaten auf Deutsch ab, ohne
+ *  jedes Mal eine eigene Zutat anlegen zu muessen. */
+let deAliasesPromise = null;
+
+function loadDeAliases() {
+  if (!deAliasesPromise) {
+    deAliasesPromise = fetch(new URL('../../shared/foods-de-aliases.json', import.meta.url))
+      .then((r) => r.json())
+      .catch(() => ({}));
+  }
+  return deAliasesPromise;
+}
+
 /* =========================================================
    Eigene Zutaten – die USDA-Datenbank ist englischsprachig und deckt
    naturgemaess nicht jede rohe Zutat unter dem gesuchten (oft deutschen)
@@ -119,15 +135,32 @@ async function loadAllFoods() {
   return [...getCustomFoods(), ...usda];
 }
 
-/** Eigene Zutaten zuerst (meist gezielter angelegt als ein USDA-Treffer). */
+/** Eigene Zutaten zuerst (meist gezielter angelegt als ein USDA-Treffer),
+ *  danach normale Namens-Suche, danach deutsche Alias-Treffer (siehe
+ *  loadDeAliases) - so findet z.B. "hähnchen" den passenden USDA-Eintrag,
+ *  ohne dass die (englischsprachige) Datenbank selbst uebersetzt sein muss. */
 export async function searchFoods(query, limit = 20) {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   const foods = await loadAllFoods();
   const out = [];
+  const seenNames = new Set();
   for (const f of foods) {
     if (f.name.toLowerCase().includes(q)) {
       out.push(f);
+      seenNames.add(f.name);
+      if (out.length >= limit) break;
+    }
+  }
+  if (out.length < limit) {
+    const aliases = await loadDeAliases();
+    const byName = new Map(foods.map((f) => [f.name, f]));
+    for (const [de, enName] of Object.entries(aliases)) {
+      if (!de.includes(q) && !q.includes(de)) continue;
+      const food = byName.get(enName);
+      if (!food || seenNames.has(food.name)) continue;
+      out.push(food);
+      seenNames.add(food.name);
       if (out.length >= limit) break;
     }
   }
