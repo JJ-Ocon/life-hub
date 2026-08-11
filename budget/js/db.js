@@ -1,6 +1,6 @@
 // Persistenz-Schicht: alles in localStorage, bleibt lokal auf dem Geraet.
 
-import { uid, nowIso, todayKey, monthKey, addMonths } from './utils.js';
+import { uid, nowIso, todayKey, monthKey, addMonths, mondayOfWeekKey, addDaysToDateKey } from './utils.js';
 import { publishGrocerySpend } from '../../shared/grocery-cost.js';
 
 const KEYS = {
@@ -31,16 +31,16 @@ function write(key, value) {
    ========================================================= */
 
 const DEFAULT_CATEGORIES = [
-  { id: 'housing', name: 'Wohnen', icon: '🏠', color: '#2f6fd9', budgetMonthly: null },
-  { id: 'groceries', name: 'Lebensmittel', icon: '🛒', color: '#3ddc84', budgetMonthly: null },
-  { id: 'transport', name: 'Transport', icon: '🚗', color: '#e0a63a', budgetMonthly: null },
-  { id: 'leisure', name: 'Freizeit & Hobbys', icon: '🎉', color: '#c76ae0', budgetMonthly: null },
-  { id: 'health', name: 'Gesundheit', icon: '💊', color: '#f06464', budgetMonthly: null },
-  { id: 'clothing', name: 'Kleidung', icon: '👕', color: '#4fc3d9', budgetMonthly: null },
-  { id: 'subscriptions', name: 'Abos & Mitgliedschaften', icon: '🔁', color: '#8f7ee0', budgetMonthly: null },
-  { id: 'household', name: 'Haushalt', icon: '🧺', color: '#d98f4f', budgetMonthly: null },
-  { id: 'education', name: 'Bildung', icon: '📚', color: '#5b9bd9', budgetMonthly: null },
-  { id: 'other', name: 'Sonstiges', icon: '📦', color: '#8891a0', budgetMonthly: null },
+  { id: 'housing', name: 'Wohnen', icon: '🏠', color: '#2f6fd9', budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null },
+  { id: 'groceries', name: 'Lebensmittel', icon: '🛒', color: '#3ddc84', budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null },
+  { id: 'transport', name: 'Transport', icon: '🚗', color: '#e0a63a', budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null },
+  { id: 'leisure', name: 'Freizeit & Hobbys', icon: '🎉', color: '#c76ae0', budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null },
+  { id: 'health', name: 'Gesundheit', icon: '💊', color: '#f06464', budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null },
+  { id: 'clothing', name: 'Kleidung', icon: '👕', color: '#4fc3d9', budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null },
+  { id: 'subscriptions', name: 'Abos & Mitgliedschaften', icon: '🔁', color: '#8f7ee0', budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null },
+  { id: 'household', name: 'Haushalt', icon: '🧺', color: '#d98f4f', budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null },
+  { id: 'education', name: 'Bildung', icon: '📚', color: '#5b9bd9', budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null },
+  { id: 'other', name: 'Sonstiges', icon: '📦', color: '#8891a0', budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null },
 ];
 
 function ensureSeeded() {
@@ -50,8 +50,19 @@ function ensureSeeded() {
 }
 ensureSeeded();
 
+/** Altbestand (vor E62, nur budgetMonthly) wird beim Lesen einmalig auf das
+ *  neue Schema gehoben - bestehende Limits bleiben als monatliches Budget
+ *  erhalten, kein Datenverlust. */
+function migrateCategoryShape(c) {
+  if (c.budgetAmount !== undefined) return c;
+  return { ...c, budgetAmount: c.budgetMonthly ?? null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null };
+}
+
 export function getCategories() {
-  return read(KEYS.categories, DEFAULT_CATEGORIES);
+  const list = read(KEYS.categories, DEFAULT_CATEGORIES);
+  const upgraded = list.map(migrateCategoryShape);
+  if (upgraded.some((c, i) => c !== list[i])) write(KEYS.categories, upgraded);
+  return upgraded;
 }
 
 export function getCategoryById(id) {
@@ -67,7 +78,7 @@ export function saveCategory(cat) {
 }
 
 export function createCategory(name, icon = '📦', color = '#8891a0') {
-  const cat = { id: uid(), name: name.trim(), icon, color, budgetMonthly: null };
+  const cat = { id: uid(), name: name.trim(), icon, color, budgetAmount: null, budgetPeriod: 'monthly', carryover: 0, lastRolloverPeriod: null };
   return saveCategory(cat);
 }
 
@@ -214,17 +225,80 @@ export function monthTotal(yearMonth) {
   return getExpensesForMonth(yearMonth).reduce((sum, e) => sum + e.amount, 0);
 }
 
+/* =========================================================
+   Woechentliche/monatliche Budgets mit Uebertrag (E62) - jede Kategorie
+   waehlt ihre eigene Periode (Woche oder Monat). Der Uebertrag (+/-) aus
+   der VORHERIGEN Periode fliesst als carryover in die aktuelle ein, sodass
+   Unterschreitung/Ueberschreitung sich Periode fuer Periode fortsetzt, statt
+   am Periodenende einfach zu verfallen.
+   ========================================================= */
+
+function periodKeyFor(category, dateKey = todayKey()) {
+  return category.budgetPeriod === 'weekly' ? mondayOfWeekKey(dateKey) : monthKey(dateKey);
+}
+
+function nextPeriodKey(category, periodKey) {
+  return category.budgetPeriod === 'weekly' ? addDaysToDateKey(periodKey, 7) : addMonths(periodKey, 1);
+}
+
+function spentInPeriod(category, periodKey) {
+  const expenses = getExpenses().filter((e) => e.categoryId === category.id);
+  if (category.budgetPeriod === 'weekly') {
+    const end = addDaysToDateKey(periodKey, 6);
+    return expenses.filter((e) => e.date >= periodKey && e.date <= end).reduce((sum, e) => sum + e.amount, 0);
+  }
+  return expenses.filter((e) => monthKey(e.date) === periodKey).reduce((sum, e) => sum + e.amount, 0);
+}
+
+/** Wandert den Uebertrag jeder budgetierten Kategorie bis zur aktuellen
+ *  Periode nach - idempotent (ueber lastRolloverPeriod), unconditionally auf
+ *  jedem App-Start aufgerufen, gleiches Muster wie accrueEnvelopes() (E20).
+ *  Beim allerersten Mal (kein lastRolloverPeriod) wird nur der Ausgangspunkt
+ *  gesetzt, kein rueckwirkender Uebertrag erfunden. Ein Schutzzaehler
+ *  verhindert eine Endlosschleife bei defekten/sehr alten Datumswerten. */
+export function applyBudgetRollovers() {
+  const categories = getCategories();
+  let changed = false;
+  const today = todayKey();
+  const updated = categories.map((c) => {
+    if (!c.budgetAmount || c.budgetAmount <= 0) return c;
+    const currentPeriod = periodKeyFor(c, today);
+    if (!c.lastRolloverPeriod) {
+      changed = true;
+      return { ...c, lastRolloverPeriod: currentPeriod };
+    }
+    if (c.lastRolloverPeriod === currentPeriod) return c;
+    let periodCursor = c.lastRolloverPeriod;
+    let carryover = c.carryover || 0;
+    let guard = 0;
+    while (periodCursor !== currentPeriod && guard < 600) {
+      const spent = spentInPeriod(c, periodCursor);
+      const effectiveBudget = c.budgetAmount + carryover;
+      carryover = effectiveBudget - spent;
+      periodCursor = nextPeriodKey(c, periodCursor);
+      guard++;
+    }
+    changed = true;
+    return { ...c, carryover, lastRolloverPeriod: currentPeriod };
+  });
+  if (changed) write(KEYS.categories, updated);
+}
+
 /**
- * Ampel-Status einer Kategorie fuer einen Monat.
- * @returns {{spent:number, budget:number|null, pct:number|null, level:'ok'|'warn'|'over'|'nolimit'}}
+ * Ampel-Status einer Kategorie fuer ihre aktuelle Periode (Woche oder Monat,
+ * je nach category.budgetPeriod) - inklusive Uebertrag aus der Vorperiode.
+ * @returns {{spent:number, budget:number|null, pct:number|null, level:'ok'|'warn'|'over'|'nolimit', carryover:number}}
  */
-export function budgetStatus(category, yearMonth) {
-  const spent = monthlySpendByCategory(yearMonth)[category.id] || 0;
-  const budget = category.budgetMonthly;
-  if (!budget || budget <= 0) return { spent, budget: null, pct: null, level: 'nolimit' };
-  const pct = spent / budget;
+export function budgetStatus(category) {
+  const periodKey = periodKeyFor(category);
+  const spent = spentInPeriod(category, periodKey);
+  const budget = category.budgetAmount;
+  if (!budget || budget <= 0) return { spent, budget: null, pct: null, level: 'nolimit', carryover: 0 };
+  const carryover = category.carryover || 0;
+  const effectiveBudget = budget + carryover;
+  const pct = effectiveBudget > 0 ? spent / effectiveBudget : (spent > 0 ? 1 : 0);
   const level = pct >= 1 ? 'over' : pct >= 0.8 ? 'warn' : 'ok';
-  return { spent, budget, pct, level };
+  return { spent, budget: effectiveBudget, pct, level, carryover };
 }
 
 /* =========================================================

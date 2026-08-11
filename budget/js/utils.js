@@ -33,6 +33,22 @@ export function addMonths(yearMonth, n) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+/** Montag der Woche, die dateKey enthaelt - dient als Wochen-Periodenschluessel
+ *  fuer woechentliche Budgets (E62), analog zu monthKey() fuer Monate. */
+export function mondayOfWeekKey(dateKey) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const day = (dt.getUTCDay() + 6) % 7; // Montag = 0
+  dt.setUTCDate(dt.getUTCDate() - day);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
+export function addDaysToDateKey(dateKey, n) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
 export function formatDateKey(dateKey) {
   const [y, m, d] = dateKey.split('-').map(Number);
   return `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y}`;

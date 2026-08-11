@@ -12,7 +12,7 @@ let cursor = monthKey();
 let section = 'expenses'; // 'expenses' | 'income'
 
 export function render() {
-  setTitle('Ausgaben');
+  setTitle('Kontostand');
   setBack(null);
   setActions(`
     <button class="icon-btn" id="exp-add" aria-label="Erfassen">
@@ -278,7 +278,7 @@ export function openExpenseModal(existing, onSaved) {
   }
 }
 
-function openIncomeModal(existing, onSaved) {
+export function openIncomeModal(existing, onSaved) {
   const isNew = !existing?.id;
   const handle = openModal(`
     <h3 class="modal-title">${isNew ? 'Einnahme erfassen' : 'Einnahme bearbeiten'}</h3>

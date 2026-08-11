@@ -1,7 +1,10 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
-import { getCategories, budgetStatus, monthTotal, monthIncomeTotal, monthNet, getSettings, totalEnvelopeBalance, subscriptionSummary } from '../db.js';
+import {
+  getCategories, budgetStatus, monthTotal, monthIncomeTotal, monthNet, getSettings,
+  totalEnvelopeBalance, subscriptionSummary, applyBudgetRollovers,
+} from '../db.js';
 import { monthKey, monthLabel, formatMoney, escapeHtml, clamp } from '../utils.js';
-import { openExpenseModal } from './expenses.js';
+import { openExpenseModal, openIncomeModal } from './expenses.js';
 
 const cursor = monthKey();
 
@@ -9,6 +12,7 @@ export function render() {
   setTitle('Budget');
   setBack(null);
   setActions('');
+  applyBudgetRollovers();
   draw();
 }
 
@@ -50,12 +54,15 @@ function draw() {
       </div>
     </div>
 
-    <button class="btn btn-primary" id="home-add" style="margin-bottom:20px">+ Ausgabe erfassen</button>
+    <div class="row" style="gap:10px; margin-bottom:20px">
+      <button class="btn btn-primary grow" id="home-add">+ Ausgabe</button>
+      <button class="btn btn-ghost grow" id="home-add-income">+ Einnahme</button>
+    </div>
 
     <div class="section-title" style="margin-top:0">Kategorien</div>
     <div class="card">
       ${categories.map((c) => {
-        const status = budgetStatus(c, cursor);
+        const status = budgetStatus(c);
         const pct = status.pct === null ? 0 : clamp(status.pct * 100, 0, 100);
         const levelClass = status.level === 'nolimit' ? '' : status.level;
         return `
@@ -82,6 +89,7 @@ function draw() {
   `;
 
   document.getElementById('home-add').addEventListener('click', () => openExpenseModal(null, draw));
+  document.getElementById('home-add-income').addEventListener('click', () => openIncomeModal(null, draw));
   document.getElementById('home-savings-tile').addEventListener('click', () => navigate('#/savings'));
   document.getElementById('home-subs-tile').addEventListener('click', () => navigate('#/savings'));
 }
