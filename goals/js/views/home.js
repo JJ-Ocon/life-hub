@@ -17,12 +17,25 @@ export function render() {
   handleQuickAddParam();
 }
 
+/** Ein quickAdd-Deep-Link kann mehrere zeilengetrennte Titel tragen (z.B.
+ *  aus Notizen' Checklisten-Uebertragung, siehe shared/notes-bridge-nahe
+ *  Pattern in notes/js/views/editor.js) - bei genau einem Titel oeffnet sich
+ *  wie bisher das Modal zum Nachbearbeiten, bei mehreren werden alle direkt
+ *  angelegt (ein Bestaetigungsdialog pro Todo waere bei einer ganzen
+ *  Checkliste nur laestig). */
 function handleQuickAddParam() {
   const query = new URLSearchParams(location.hash.split('?')[1] || '');
   const text = query.get('quickAdd');
   if (!text) return;
   history.replaceState(null, '', location.pathname + '#/');
-  openTodoModal({ id: null, title: text, dueDate: null, goalId: null }, draw);
+  const lines = text.split('\n').map((s) => s.trim()).filter(Boolean);
+  if (lines.length > 1) {
+    lines.forEach((title) => createTodo({ title, dueDate: null, goalId: null }));
+    toast(`${lines.length} Todos angelegt`);
+    draw();
+  } else {
+    openTodoModal({ id: null, title: lines[0] || text, dueDate: null, goalId: null }, draw);
+  }
 }
 
 function draw() {

@@ -109,14 +109,26 @@ function draw() {
 
     ${draft.type === 'text' ? `
       <div class="field editor-text-field">
-        <textarea class="input editor-textarea" id="note-text" placeholder="Notiz … (GTD: erst erfassen, später einsortieren)">${escapeHtml(draft.text)}</textarea>
+        <textarea class="input editor-textarea" id="note-text" placeholder="Notiz … (GTD: erst erfassen, später einsortieren) &#10;Tipp: '- ' am Zeilenanfang beginnt eine Liste, die sich beim Enter fortsetzt.">${escapeHtml(draft.text)}</textarea>
       </div>
+      ${looksLikeList(draft.text) ? `<button type="button" class="btn btn-ghost" id="list-to-checklist" style="margin-top:-6px;margin-bottom:16px">☑ Als Checkliste übernehmen</button>` : ''}
     ` : `
       <div class="stack" id="checklist-items" style="margin-bottom:10px">
-        ${draft.items.map((it) => `
-          <div class="row checklist-row" style="gap:8px" data-item-row="${it.id}">
+        ${draft.items.map((it, i) => `
+          <div class="row checklist-row" style="gap:6px" data-item-row="${it.id}">
             <input type="checkbox" class="check-item" data-item-check="${it.id}" ${it.done ? 'checked' : ''}>
             <input class="input grow" data-item-text="${it.id}" value="${escapeHtml(it.text)}" placeholder="Punkt …">
+            <div class="checklist-reorder">
+              <button type="button" data-item-up="${it.id}" aria-label="Nach oben" ${i === 0 ? 'disabled' : ''}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
+              </button>
+              <button type="button" data-item-down="${it.id}" aria-label="Nach unten" ${i === draft.items.length - 1 ? 'disabled' : ''}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+            <button type="button" class="icon-btn" data-item-todo="${it.id}" aria-label="Als Todo anlegen">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            </button>
             <button type="button" class="icon-btn" data-item-remove="${it.id}" aria-label="Entfernen">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
             </button>
@@ -222,6 +234,56 @@ function currentPlainText() {
   return draft.text;
 }
 
+/** Erkennt eine "- "-Liste im Freitext - Grundlage fuer den "Als Checkliste
+ *  uebernehmen"-Button. Mindestens eine Zeile mit tatsaechlichem Inhalt nach
+ *  dem Listenzeichen reicht, muss keine reine Liste sein. */
+function looksLikeList(text) {
+  return text.split('\n').some((line) => line.startsWith('- ') && line.slice(2).trim());
+}
+
+function parseListLines(text) {
+  return text.split('\n').filter((line) => line.startsWith('- ') && line.slice(2).trim());
+}
+
+/** Enter am Ende einer "- "-Zeile setzt automatisch "- " auf der naechsten
+ *  Zeile fort; Enter auf einer bereits leeren "- "-Zeile beendet die Liste
+ *  wieder, statt eine weitere leere Zeile anzuhaengen. */
+function wireListToChecklistButton() {
+  document.getElementById('list-to-checklist')?.addEventListener('click', async () => {
+    syncDraftFromDom();
+    const listLines = parseListLines(draft.text);
+    const hasExtra = draft.text.split('\n').some((line) => line.trim() && !listLines.includes(line));
+    if (hasExtra) {
+      const ok = await confirmDialog('In Checkliste umwandeln?', 'Text außerhalb der "- "-Liste geht dabei verloren.', 'Umwandeln', true);
+      if (!ok) return;
+    }
+    draft.type = 'checklist';
+    draft.items = listLines.map((line) => ({ id: uid(), text: line.slice(2).trim(), done: false }));
+    commitAutosave();
+    draw();
+  });
+}
+
+function handleListAutoContinue(e) {
+  if (e.key !== 'Enter') return;
+  const ta = e.target;
+  const cursor = ta.selectionStart;
+  if (cursor !== ta.selectionEnd) return; // Textauswahl statt reinem Cursor - Standardverhalten
+  const value = ta.value;
+  const lineStart = value.lastIndexOf('\n', cursor - 1) + 1;
+  const currentLine = value.slice(lineStart, cursor);
+  if (currentLine === '- ') {
+    e.preventDefault();
+    ta.value = value.slice(0, lineStart) + value.slice(cursor);
+    ta.selectionStart = ta.selectionEnd = lineStart;
+  } else if (currentLine.startsWith('- ')) {
+    e.preventDefault();
+    const insertion = '\n- ';
+    ta.value = value.slice(0, cursor) + insertion + value.slice(cursor);
+    ta.selectionStart = ta.selectionEnd = cursor + insertion.length;
+  }
+}
+
 function onArchiveClick() {
   const note = getNoteById(editingId);
   if (!note) return;
@@ -245,6 +307,28 @@ function wire() {
   document.getElementById('note-title').addEventListener('blur', commitAutosave);
   document.getElementById('note-text')?.addEventListener('blur', commitAutosave);
   document.getElementById('note-text')?.addEventListener('focus', adjustTextareaHeight);
+  document.getElementById('note-text')?.addEventListener('keydown', handleListAutoContinue);
+  // Button-Sichtbarkeit live nach jedem Tastendruck aktualisieren, statt erst
+  // beim naechsten vollen draw() (z.B. beim Verlassen des Feldes) - sonst
+  // waere der Button erst nach einem Ordner-/Typ-Wechsel sichtbar.
+  document.getElementById('note-text')?.addEventListener('input', (e) => {
+    const shouldShow = looksLikeList(e.target.value);
+    const existing = document.getElementById('list-to-checklist');
+    if (shouldShow && !existing) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-ghost';
+      btn.id = 'list-to-checklist';
+      btn.style.cssText = 'margin-top:-6px;margin-bottom:16px';
+      btn.textContent = '☑ Als Checkliste übernehmen';
+      e.target.insertAdjacentElement('afterend', btn);
+      wireListToChecklistButton();
+    } else if (!shouldShow && existing) {
+      existing.remove();
+    }
+  });
+
+  wireListToChecklistButton();
 
   document.querySelectorAll('[data-type]').forEach((b) => b.addEventListener('click', () => {
     syncDraftFromDom();
@@ -269,6 +353,31 @@ function wire() {
     draft.items = draft.items.filter((i) => i.id !== b.dataset.itemRemove);
     commitAutosave();
     draw();
+  }));
+
+  document.querySelectorAll('[data-item-up]').forEach((b) => b.addEventListener('click', () => {
+    syncDraftFromDom();
+    const i = draft.items.findIndex((it) => it.id === b.dataset.itemUp);
+    if (i <= 0) return;
+    [draft.items[i - 1], draft.items[i]] = [draft.items[i], draft.items[i - 1]];
+    commitAutosave();
+    draw();
+  }));
+  document.querySelectorAll('[data-item-down]').forEach((b) => b.addEventListener('click', () => {
+    syncDraftFromDom();
+    const i = draft.items.findIndex((it) => it.id === b.dataset.itemDown);
+    if (i === -1 || i >= draft.items.length - 1) return;
+    [draft.items[i + 1], draft.items[i]] = [draft.items[i], draft.items[i + 1]];
+    commitAutosave();
+    draw();
+  }));
+  document.querySelectorAll('[data-item-todo]').forEach((b) => b.addEventListener('click', () => {
+    syncDraftFromDom();
+    const item = draft.items.find((it) => it.id === b.dataset.itemTodo);
+    const text = item?.text.trim();
+    if (!text) { toast('Punkt ist leer'); return; }
+    commitAutosave();
+    location.href = `../goals/#/?quickAdd=${encodeURIComponent(text)}`;
   }));
 
   document.querySelectorAll('[data-folder]').forEach((b) => b.addEventListener('click', () => {
@@ -312,6 +421,17 @@ function wire() {
 
   document.getElementById('note-todo').addEventListener('click', () => {
     syncDraftFromDom();
+    // Bei einer Checkliste wird jeder noch offene Punkt ein eigenes Todo
+    // (siehe home.js's handleQuickAddParam), statt alles zu einem einzigen
+    // Todo-Titel zusammenzuquetschen - einzelne Punkte lassen sich zusaetzlich
+    // per data-item-todo-Knopf gezielt einzeln uebertragen.
+    if (draft.type === 'checklist') {
+      const openItems = draft.items.filter((i) => !i.done && i.text.trim());
+      if (!openItems.length) { toast('Keine offenen Punkte'); return; }
+      commitAutosave();
+      location.href = `../goals/#/?quickAdd=${encodeURIComponent(openItems.map((i) => i.text.trim()).join('\n'))}`;
+      return;
+    }
     const text = currentPlainText().trim();
     if (!text) { toast('Notiz ist leer'); return; }
     commitAutosave();
