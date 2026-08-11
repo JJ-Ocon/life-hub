@@ -2,10 +2,12 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getPantryItems, createPantryItem, adjustPantryQuantity, deletePantryItem, getPantryItemById,
   PANTRY_CATEGORIES, lookupBarcode, cacheBarcode, suggestRecipesFromPantry, getRecipeById,
+  extractReceiptItemCandidates,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { escapeHtml, formatNum } from '../utils.js';
 import { barcodeScanSupported, startBarcodeScan } from '../barcode-scanner.js';
+import { recognizeText } from '../../../shared/receipt-ocr.js';
 
 export function render() {
   setTitle('Vorrat');
@@ -98,12 +100,94 @@ function openAddMenu() {
     <h3 class="modal-title">Zum Vorrat hinzufügen</h3>
     <div class="stack">
       ${barcodeScanSupported() ? '<button class="btn btn-primary" id="add-scan">📷 Barcode scannen</button>' : ''}
+      <button class="btn btn-ghost" id="add-receipt">🧾 Kassenbon scannen</button>
       <button class="btn btn-ghost" id="add-manual">✏️ Manuell eingeben</button>
     </div>
-    ${barcodeScanSupported() ? '' : '<p class="faint" style="margin-top:12px">Barcode-Scan wird von diesem Browser nicht unterstützt - hier funktioniert nur die manuelle Eingabe.</p>'}
+    ${barcodeScanSupported() ? '' : '<p class="faint" style="margin-top:12px">Barcode-Scan wird von diesem Browser nicht unterstützt - hier funktionieren Kassenbon-Scan und manuelle Eingabe.</p>'}
   `, { center: true });
   handle.sheet.querySelector('#add-scan')?.addEventListener('click', () => { handle.close(); openScanModal(); });
+  handle.sheet.querySelector('#add-receipt').addEventListener('click', () => { handle.close(); openReceiptScanModal(); });
   handle.sheet.querySelector('#add-manual').addEventListener('click', () => { handle.close(); openManualModal(); });
+}
+
+/** Kassenbon-Foto per OCR auswerten (E63), fuer spontane Einkaufe ohne
+ *  vorherigen Plan in der App - anders als der Barcode-Scan (ein Produkt
+ *  pro Scan) liefert das hier mehrere Produkt-KANDIDATEN auf einmal, die
+ *  der Nutzer per Checkliste bestaetigt. Bewusst KEINE Mengen-/Einheiten-
+ *  Erkennung (shared/receipt-ocr.js liefert dafuer auf Zeilenebene keine
+ *  verlaessliche Grundlage) - jede bestaetigte Zeile landet mit Menge 1
+ *  Stück im Vorrat und ist danach ganz normal +/- korrigierbar. */
+function openReceiptScanModal() {
+  const handle = openModal(`
+    <h3 class="modal-title">Kassenbon scannen</h3>
+    <button class="btn btn-primary" id="receipt-photo" type="button">📷 Foto aufnehmen/auswählen</button>
+    <input type="file" accept="image/*" id="receipt-photo-input" hidden>
+    <p class="faint" id="receipt-status" style="margin-top:10px"></p>
+    <div id="receipt-candidates"></div>
+  `, { center: true });
+
+  handle.sheet.querySelector('#receipt-photo').addEventListener('click', () => {
+    handle.sheet.querySelector('#receipt-photo-input').click();
+  });
+
+  handle.sheet.querySelector('#receipt-photo-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const status = handle.sheet.querySelector('#receipt-status');
+    const photoBtn = handle.sheet.querySelector('#receipt-photo');
+    photoBtn.disabled = true;
+    status.textContent = 'Beleg wird erkannt … (beim ersten Mal laedt die OCR-Engine, das dauert etwas laenger)';
+    try {
+      const text = await recognizeText(file, (info) => {
+        if (info.status === 'recognizing text') {
+          status.textContent = `Text wird erkannt … ${Math.round(info.progress * 100)}%`;
+        }
+      });
+      const candidates = extractReceiptItemCandidates(text);
+      if (!candidates.length) {
+        status.textContent = 'Keine Produktzeilen erkannt - bitte manuell eingeben.';
+        photoBtn.disabled = false;
+        return;
+      }
+      status.textContent = `${candidates.length} mögliche Produkte erkannt - bitte prüfen und Menge/Einheit bei Bedarf anpassen.`;
+      renderCandidates(candidates);
+    } catch {
+      status.textContent = 'Beleg konnte nicht erkannt werden - bitte manuell eingeben.';
+      photoBtn.disabled = false;
+    }
+  });
+
+  function renderCandidates(candidates) {
+    const list = handle.sheet.querySelector('#receipt-candidates');
+    list.innerHTML = `
+      <div class="stack" style="margin-top:14px">
+        ${candidates.map((c, i) => `
+          <div class="row" style="gap:8px; align-items:center">
+            <input type="checkbox" id="rc-check-${i}" checked>
+            <input class="input" id="rc-name-${i}" value="${escapeHtml(c.name)}" style="flex:2">
+            <input class="input" type="number" min="0" step="0.1" id="rc-qty-${i}" value="1" style="flex:1">
+            <input class="input" id="rc-unit-${i}" value="Stück" style="flex:1">
+          </div>
+        `).join('')}
+      </div>
+      <button class="btn btn-primary" id="rc-add-all" style="margin-top:14px">Ausgewählte hinzufügen</button>
+    `;
+    list.querySelector('#rc-add-all').addEventListener('click', () => {
+      let added = 0;
+      candidates.forEach((c, i) => {
+        if (!list.querySelector(`#rc-check-${i}`).checked) return;
+        const name = list.querySelector(`#rc-name-${i}`).value.trim();
+        if (!name) return;
+        const quantity = list.querySelector(`#rc-qty-${i}`).value;
+        const unit = list.querySelector(`#rc-unit-${i}`).value.trim() || 'Stück';
+        createPantryItem({ name, quantity, unit });
+        added++;
+      });
+      toast(`${added} Produkt${added === 1 ? '' : 'e'} hinzugefügt`);
+      handle.close();
+      draw();
+    });
+  }
 }
 
 function openManualModal(prefill = {}) {

@@ -60,8 +60,34 @@ async function draw() {
   });
 }
 
+/** Zutaten-Mengen koennen in g, ml oder Stück angegeben werden (E63) - g/ml
+ *  gelten fuer die Naehrwert-/Kostenrechnung als 1:1-aequivalent (grobe, aber
+ *  fuer Kochzutaten uebliche Naeherung: 1ml Wasser/Milch/Bruehe ≈ 1g; bei
+ *  z.B. Oel weicht das leicht ab, wird bewusst nicht mit einer Dichtetabelle
+ *  ueberkonstruiert). Bei Stück gibt es keinen allgemeinguelten Umrechnungs-
+ *  faktor (ein Ei wiegt anders als eine Zwiebel) - dafuer fragt die Zeile ein
+ *  editierbares "≈g/Stück" ab, Default 50g. `grams` bleibt in JEDEM Fall das
+ *  fuer Naehrwerte/Kosten/Vorrats-Abgleich massgebliche gerechnete Feld -
+ *  alle bestehenden Verbraucher (recipeNutrition, recipeCost, ...) bleiben
+ *  dadurch unveraendert.
+ */
+function normalizeIngredient(i) {
+  return {
+    _id: uid(),
+    foodName: i.foodName || '',
+    grams: i.grams ?? 100,
+    unit: i.unit || 'g',
+    displayAmount: i.displayAmount ?? i.grams ?? 100,
+    gramsPerPiece: i.gramsPerPiece ?? 50,
+  };
+}
+
+function recomputeGrams(ing) {
+  ing.grams = ing.unit === 'stueck' ? (ing.displayAmount || 0) * (ing.gramsPerPiece || 0) : (ing.displayAmount || 0);
+}
+
 function openRecipeModal(existing, onSaved) {
-  const ingredients = existing ? existing.ingredients.map((i) => ({ ...i, _id: uid() })) : [{ _id: uid(), foodName: '', grams: 100 }];
+  const ingredients = existing ? existing.ingredients.map(normalizeIngredient) : [normalizeIngredient({ foodName: '', grams: 100 })];
 
   function content() {
     return `
@@ -138,11 +164,45 @@ function openRecipeModal(existing, onSaved) {
     }));
   }
 
-  const handle = openModal(content(), { center: true });
+  // Ausgangszustand fuer den Dirty-Check beim automatischen Speichern beim
+  // Schliessen (E63) - ein unveraendert wieder geschlossenes bestehendes
+  // Rezept soll keinen unnoetigen Autosave/Toast ausloesen.
+  const initialSnapshot = existing ? JSON.stringify({
+    name: existing.name, servings: existing.servings, note: existing.note,
+    ingredients: ingredients.map(({ _id, ...rest }) => rest),
+  }) : null;
+  let finalized = false; // true nach explizitem Speichern oder Loeschen - Autosave beim Schliessen dann ueberfluessig
+
+  const handle = openModal(content(), { center: true, onClose: autosaveDraftIfNeeded });
   renderIngredients();
   updateSummary();
   renderRecurringSection();
   wireStatic();
+
+  /** Rettet ein unfertiges Rezept (z.B. Name getippt, aber noch keine
+   *  Zutaten) beim Schliessen ueber X/Overlay-Klick statt es stillschweigend
+   *  zu verwerfen - anders als der explizite Speichern-Button verlangt das
+   *  KEINEN Namen und KEINE Zutaten, reine "nichts verlieren"-Absicherung. */
+  function autosaveDraftIfNeeded() {
+    if (finalized) return;
+    const name = handle.sheet.querySelector('#recipe-name')?.value.trim() || '';
+    const servings = Number(handle.sheet.querySelector('#recipe-servings')?.value) || existing?.servings || 1;
+    const note = handle.sheet.querySelector('#recipe-note')?.value.trim() || '';
+    const cleanIngredients = ingredients
+      .filter((i) => i.foodName && i.grams > 0)
+      .map((i) => ({ foodName: i.foodName, grams: i.grams }));
+    const hasContent = name || note || cleanIngredients.length > 0;
+    if (!hasContent) return;
+    if (existing) {
+      const snapshot = JSON.stringify({ name: name || existing.name, servings, note, ingredients: cleanIngredients.length ? cleanIngredients : existing.ingredients });
+      if (snapshot === initialSnapshot) return; // nichts geaendert
+      saveRecipe({ ...existing, name: name || existing.name, servings, note, ingredients: cleanIngredients.length ? cleanIngredients : existing.ingredients });
+    } else {
+      createRecipe({ name: name || 'Unbenanntes Rezept', servings, note, ingredients: cleanIngredients });
+    }
+    toast('Entwurf gespeichert');
+    onSaved?.();
+  }
 
   function wireStatic() {
     handle.sheet.querySelector('#ingredient-add').addEventListener('click', () => {
@@ -162,8 +222,16 @@ function openRecipeModal(existing, onSaved) {
           <input class="input" data-food-input value="${escapeHtml(ing.foodName)}" placeholder="Zutat suchen …" autocomplete="off">
           <div class="food-suggest__list" hidden></div>
         </div>
-        <input class="input input-grams" type="number" min="0" step="1" data-grams value="${ing.grams}" placeholder="g">
+        <input class="input input-grams" type="number" min="0" step="0.1" data-amount value="${ing.displayAmount}" placeholder="Menge">
         <button class="icon-btn" data-remove aria-label="Entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+      </div>
+      <div class="row" style="margin:-6px 0 6px;padding-left:2px;gap:8px;align-items:center">
+        <div class="chip-row" data-unit-row style="gap:4px">
+          <button type="button" class="chip ${ing.unit === 'g' ? 'active' : ''}" data-unit="g">g</button>
+          <button type="button" class="chip ${ing.unit === 'ml' ? 'active' : ''}" data-unit="ml">ml</button>
+          <button type="button" class="chip ${ing.unit === 'stueck' ? 'active' : ''}" data-unit="stueck">Stück</button>
+        </div>
+        ${ing.unit === 'stueck' ? `<input class="input" type="number" min="1" step="1" data-grams-per-piece value="${ing.gramsPerPiece}" placeholder="≈g/Stück" style="width:100px">` : ''}
       </div>
       <div class="row" style="margin:-6px 0 10px;padding-left:2px">
         <span class="faint" style="flex-shrink:0">Preis/100g</span>
@@ -178,11 +246,23 @@ function openRecipeModal(existing, onSaved) {
     const ing = ingredients.find((i) => i._id === id);
     const foodInput = row.querySelector('[data-food-input]');
     const suggestList = row.querySelector('.food-suggest__list');
-    const gramsInput = row.querySelector('[data-grams]');
-    const priceInput = row.nextElementSibling?.querySelector('[data-price]');
+    const amountInput = row.querySelector('[data-amount]');
+    const unitRow = row.nextElementSibling;
+    const priceInput = unitRow?.nextElementSibling?.querySelector('[data-price]');
     priceInput?.addEventListener('change', () => {
       if (!ing.foodName) { toast('Bitte zuerst eine Zutat wählen'); priceInput.value = ''; return; }
       setIngredientPrice(ing.foodName, priceInput.value);
+      updateSummary();
+    });
+    unitRow?.querySelectorAll('[data-unit]').forEach((b) => b.addEventListener('click', () => {
+      ing.unit = b.dataset.unit;
+      recomputeGrams(ing);
+      renderIngredients();
+      updateSummary();
+    }));
+    unitRow?.querySelector('[data-grams-per-piece]')?.addEventListener('input', (e) => {
+      ing.gramsPerPiece = Number(e.target.value) || 0;
+      recomputeGrams(ing);
       updateSummary();
     });
 
@@ -216,8 +296,9 @@ function openRecipeModal(existing, onSaved) {
     });
     foodInput.addEventListener('blur', () => setTimeout(() => { suggestList.hidden = true; }, 150));
 
-    gramsInput.addEventListener('input', () => {
-      ing.grams = Number(gramsInput.value) || 0;
+    amountInput.addEventListener('input', () => {
+      ing.displayAmount = Number(amountInput.value) || 0;
+      recomputeGrams(ing);
       updateSummary();
     });
 
@@ -250,8 +331,9 @@ function openRecipeModal(existing, onSaved) {
     const note = handle.sheet.querySelector('#recipe-note').value.trim();
     const cleanIngredients = ingredients
       .filter((i) => i.foodName && i.grams > 0)
-      .map((i) => ({ foodName: i.foodName, grams: i.grams }));
+      .map((i) => ({ foodName: i.foodName, grams: i.grams, unit: i.unit, displayAmount: i.displayAmount, gramsPerPiece: i.gramsPerPiece }));
     if (!cleanIngredients.length) { toast('Bitte mindestens eine Zutat angeben'); return; }
+    finalized = true;
     if (existing) {
       saveRecipe({ ...existing, name, servings, note, ingredients: cleanIngredients });
     } else {
@@ -265,6 +347,7 @@ function openRecipeModal(existing, onSaved) {
   async function onDelete() {
     const ok = await confirmDialog('Rezept löschen?', 'Geplante Mahlzeiten mit diesem Rezept werden aus dem Wochenplan entfernt.');
     if (!ok) return;
+    finalized = true;
     deleteRecipe(existing.id);
     toast('Gelöscht');
     handle.close();

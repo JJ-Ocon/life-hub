@@ -500,6 +500,37 @@ export function adjustPantryQuantity(id, delta) {
   return savePantryItem({ ...item, quantity: Math.max(0, item.quantity + delta) });
 }
 
+/** Heuristische Zeilenerkennung fuer Kassenbon-Fotos (E63) - bewusst nur
+ *  Produktnamen-Kandidaten, KEINE Mengen-/Einheiten-Erkennung (auf deutschen
+ *  Kassenbons zu uneinheitlich formatiert, um das zuverlaessig zu raten).
+ *  Eine Zeile gilt als Produktkandidat, wenn sie mit einem typischen
+ *  Preis-Muster endet und nicht zu den bekannten Nicht-Produkt-Zeilen
+ *  (Summe, MwSt, Kartenzahlung, ...) gehoert - der Preis selbst wird
+ *  verworfen, nur der Name links davon ist relevant. Ergebnis ist immer nur
+ *  ein Vorschlag zum Abhaken, keine automatische Buchung. */
+const RECEIPT_NON_ITEM = /summe|gesamt|zwischensumme|total|zu\s*zahlen|betrag|mwst|ust\b|steuer|\bbar\b|ec-?karte|kartenzahlung|rückgeld|geg\.|kassenbon|bon-?nr|datum|uhrzeit|kunden|filiale|tel\.?:|www\.|kassierer|rabatt|pfand/i;
+// Das optionale Steuerkategorie-Kuerzel (A/B) steht je nach Kassensystem vor
+// ODER nach dem Preis (z.B. "2,49 A" oder "A 2,49") - beide Positionen erlaubt.
+const RECEIPT_ITEM_LINE = /^(.{2,40}?)\s+[A-Za-z]?\s*(\d{1,3}[.,]\d{2})\s*(?:€|eur)?\s*[A-Za-z]?\s*$/i;
+
+export function extractReceiptItemCandidates(rawText) {
+  const seen = new Set();
+  const out = [];
+  for (const rawLine of rawText.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || RECEIPT_NON_ITEM.test(line)) continue;
+    const m = line.match(RECEIPT_ITEM_LINE);
+    if (!m) continue;
+    const name = m[1].trim().replace(/\s{2,}/g, ' ');
+    if (!name || /^\d+$/.test(name) || name.length < 2) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name });
+  }
+  return out;
+}
+
 export function deletePantryItem(id) {
   write(KEYS.pantry, read(KEYS.pantry, []).filter((p) => p.id !== id));
 }
