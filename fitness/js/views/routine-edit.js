@@ -1,7 +1,7 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
   getRoutineById, saveRoutine, deleteRoutine, getExerciseById, getSettings, CARDIO_FIELDS, cardioFieldDef,
-  getRotations, getRotationById, createRotation, addRoutineToRotation, removeRoutineFromRotation,
+  rotationsContainingRoutine,
   ensureSlotAlternatives, syncSlotMirror, addSlotAlternative, removeSlotAlternative,
 } from '../db.js';
 import { openExercisePicker } from './exercise-picker.js';
@@ -63,61 +63,20 @@ export function render({ id }) {
     `;
   }
 
+  /** Nur noch schreibgeschuetzte Anzeige - Zugehoerigkeit (auch mehrfach
+   *  innerhalb derselben Rotation moeglich seit E68) wird ausschliesslich in
+   *  der Rotation selbst (Trainingsplan-Ansicht) bearbeitet. */
   function rotationCardHtml() {
-    const rotation = routine.rotationId ? getRotationById(routine.rotationId) : null;
-    const pos = rotation ? rotation.sequence.indexOf(routine.id) : -1;
+    const memberships = rotationsContainingRoutine(routine.id);
+    if (!memberships.length) return '';
     return `
-      <div class="card row row--between">
-        <div class="col grow">
-          <h3>Rotation</h3>
-          <p class="faint">${rotation
-            ? `Teil von "${escapeHtml(rotation.name)}" · Position ${pos + 1}/${rotation.sequence.length}`
-            : 'Nicht Teil einer Rotation – wird nach fixem Wochenplan-Slot verplant'}</p>
-        </div>
-        <button class="btn btn-ghost btn-sm" id="rotation-edit">${rotation ? 'Ändern' : 'Zuweisen'}</button>
+      <div class="card">
+        <h3>Rotation</h3>
+        <p class="faint">${memberships.map(({ rotation, count }) =>
+          `Teil von "${escapeHtml(rotation.name)}"${count > 1 ? ` (${count}×)` : ''}`
+        ).join(' · ')}</p>
       </div>
     `;
-  }
-
-  function openRotationPicker() {
-    const rotations = getRotations();
-    const handle = openModal(`
-      <h3 class="modal-title">Rotation zuweisen</h3>
-      <p class="faint" style="margin-bottom:14px">
-        Eine Rotation ist eine Reihenfolge von Routinen (z.B. A → C → B → C), die im Wochenplan
-        einem Rotations-Slot zugewiesen wird. Verpasst du einen Termin, rutscht die Reihenfolge
-        automatisch nach, statt eine Routine zu überspringen.
-      </p>
-      <div class="stack">
-        <button class="btn ${!routine.rotationId ? 'btn-primary' : 'btn-ghost'}" data-rotation="">Keine Rotation</button>
-        ${rotations.map((r) => `
-          <button class="btn ${routine.rotationId === r.id ? 'btn-primary' : 'btn-ghost'}" data-rotation="${r.id}">
-            ${escapeHtml(r.name)} <span class="faint">(${r.sequence.length} Routinen)</span>
-          </button>
-        `).join('')}
-        <button class="btn btn-ghost" id="rotation-new">+ Neue Rotation</button>
-      </div>
-    `, { center: true });
-
-    handle.sheet.querySelectorAll('[data-rotation]').forEach((b) => b.addEventListener('click', () => {
-      const rotationId = b.dataset.rotation;
-      if (routine.rotationId && routine.rotationId !== rotationId) {
-        removeRoutineFromRotation(routine.rotationId, routine.id);
-      }
-      if (rotationId) addRoutineToRotation(rotationId, routine.id);
-      handle.close();
-      draw();
-    }));
-    handle.sheet.querySelector('#rotation-new').addEventListener('click', async () => {
-      const name = await promptDialog('Name der Rotation', { placeholder: 'z.B. Kraft A/B/C', confirmLabel: 'Anlegen' });
-      if (!name) return;
-      const rotation = createRotation(name);
-      if (routine.rotationId) removeRoutineFromRotation(routine.rotationId, routine.id);
-      addRoutineToRotation(rotation.id, routine.id);
-      handle.close();
-      toast('Rotation angelegt');
-      draw();
-    });
   }
 
   function modeBadge(re) {
@@ -131,7 +90,6 @@ export function render({ id }) {
   }
 
   function wire() {
-    document.getElementById('rotation-edit').addEventListener('click', openRotationPicker);
     document.getElementById('add-exercise').addEventListener('click', () => {
       openExercisePicker((exerciseId) => {
         routine.exercises.push({

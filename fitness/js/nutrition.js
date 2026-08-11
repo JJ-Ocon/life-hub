@@ -9,7 +9,7 @@
 
 import {
   getSettings, getWeeklyPlan, getExerciseById, projectPlanDays,
-  getLatestWeight, hasCompleteProfile, DAILY_ACTIVITY_LEVELS,
+  getLatestWeight, hasCompleteProfile, DAILY_ACTIVITY_LEVELS, effectiveCycleLength,
 } from './db.js';
 import { ageFromBirthDate } from './utils.js';
 import { publishCalorieNeeds } from '../../shared/body-data.js';
@@ -96,7 +96,7 @@ export function estimateRoutineLoad(routine, weightKg) {
  *            weeklyKcal:number, weeklyMinutes:number, dailyKcal:number, sessions:number}}
  */
 export function weeklyTrainingLoad(weightKg, plan = getWeeklyPlan()) {
-  const cycleDays = plan.cycleLength || 7;
+  const cycleDays = effectiveCycleLength(plan);
   const projected = projectPlanDays(plan, plan.anchorDate, cycleDays);
   const weeks = cycleDays / 7;
 

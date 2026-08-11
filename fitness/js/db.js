@@ -1185,18 +1185,40 @@ export function isSickWeek(anyDateInWeek) {
 }
 
 /* =========================================================
-   Rotationen – geordnete Routinen-Warteschlangen
-   Der Zeiger (cursor) rueckt NUR vor, wenn ein Workout aus der Rotation
-   tatsaechlich abgeschlossen wird (advanceRotationIfNeeded). Wird ein
-   geplanter Rotations-Termin verpasst, bleibt der Zeiger stehen -> beim
-   naechsten Trainingstag dieser Rotation kommt automatisch dieselbe
-   Routine dran, und alles Nachfolgende rutscht mit. Das ergibt die
-   "Verpasst-Kaskade" ganz ohne Sonderfall-Code.
+   Rotationen – ein Tagesmuster von bis zu 4 Wochen (28 Tagen)
+   Jeder Slot ist entweder eine Routine (beliebig oft wiederholbar) oder ein
+   Ruhetag - Ruhetage sind damit Teil der Rotation selbst, nicht mehr eine
+   separate Zuweisung im Wochenplan-Raster. Die Rotation ist "self-contained
+   und taeglich wiederkehrend": sie haengt an einem festen anchorDate und
+   wiederholt sich ab da im eigenen Takt (Tag N seit anchorDate -> Slot
+   N % sequence.length), unabhaengig vom Wochenplan-Zyklus. Das ersetzt das
+   fruehere Zeiger/Warteschlangen-Modell (cursor, nur bei tatsaechlichem
+   Abschluss vorruecken) bewusst: mit Ruhetagen als Slots gaebe es sonst
+   keinen Trigger, der den Zeiger je ueber einen Ruhetag hinaus bewegt -
+   ein rein datumsbasiertes Modell ist hier die einzig robuste Loesung.
+   Dafuer entfaellt die alte "Verpasst-Kaskade" (ein getauschtes/verpasstes
+   Workout wird nicht mehr nachgeholt) - eine aktive Rotation verhaelt sich
+   jetzt wie ein fester Kalender-Tagesplan, genau wie eine feste Einzel-
+   Routine an einem Wochenplan-Tag es schon immer tat.
    ========================================================= */
-// Rotation: { id, name, sequence: [routineId,...], cursor: number, createdAt }
+// Rotation: { id, name, sequence: [{type:'routine',routineId}|{type:'rest'}], anchorDate, createdAt }
+export const ROTATION_MAX_SLOTS = 28;
+
+function migrateRotationShape(rotation) {
+  if (!rotation) return rotation;
+  let changed = false;
+  if (rotation.sequence.some((s) => typeof s === 'string')) {
+    rotation.sequence = rotation.sequence.map((s) => (typeof s === 'string' ? { type: 'routine', routineId: s } : s));
+    changed = true;
+  }
+  if (!rotation.anchorDate) { rotation.anchorDate = todayDateKey(); changed = true; }
+  if ('cursor' in rotation) { delete rotation.cursor; changed = true; }
+  if (changed) saveRotation(rotation);
+  return rotation;
+}
 
 export function getRotations() {
-  return read(KEYS.rotations, []);
+  return read(KEYS.rotations, []).map(migrateRotationShape);
 }
 
 export function getRotationById(id) {
@@ -1204,7 +1226,7 @@ export function getRotationById(id) {
 }
 
 export function saveRotation(rotation) {
-  const list = getRotations();
+  const list = read(KEYS.rotations, []);
   const idx = list.findIndex((r) => r.id === rotation.id);
   if (idx >= 0) list[idx] = rotation; else list.push(rotation);
   write(KEYS.rotations, list);
@@ -1212,43 +1234,35 @@ export function saveRotation(rotation) {
 }
 
 export function createRotation(name) {
-  return saveRotation({ id: uid(), name: (name || 'Rotation').trim(), sequence: [], cursor: 0, createdAt: nowIso() });
+  return saveRotation({ id: uid(), name: (name || 'Rotation').trim(), sequence: [], anchorDate: todayDateKey(), createdAt: nowIso() });
 }
 
 export function deleteRotation(id) {
-  write(KEYS.rotations, getRotations().filter((r) => r.id !== id));
-  // Betroffene Routinen von der geloeschten Rotation loesen
-  for (const routine of getRoutines()) {
-    if (routine.rotationId === id) { delete routine.rotationId; saveRoutine(routine); }
-  }
-  // Zyklus-Slots, die auf diese Rotation zeigten, zu Ruhetagen machen
+  write(KEYS.rotations, read(KEYS.rotations, []).filter((r) => r.id !== id));
   const plan = getWeeklyPlan();
-  let changed = false;
-  plan.days.forEach((slot) => {
-    if (slot.type === 'rotation' && slot.rotationId === id) { slot.type = 'rest'; delete slot.rotationId; changed = true; }
-  });
-  if (changed) saveWeeklyPlan(plan);
+  if (plan.activeRotationId === id) {
+    plan.activeRotationId = null;
+    saveWeeklyPlan(plan);
+  }
 }
 
-/** Fuegt eine Routine ans Ende der Rotation an und markiert sie entsprechend. */
-export function addRoutineToRotation(rotationId, routineId) {
+/** Haengt einen Slot (Routine oder Ruhetag) ans Ende der Sequenz an - bewusst
+ *  ohne Dopplungs-Pruefung, dieselbe Routine darf beliebig oft vorkommen.
+ *  @returns {boolean} false, wenn das 28-Tage-Limit bereits erreicht ist. */
+export function addRotationSlot(rotationId, slot) {
   const rotation = getRotationById(rotationId);
-  if (!rotation) return null;
-  if (!rotation.sequence.includes(routineId)) rotation.sequence.push(routineId);
+  if (!rotation) return false;
+  if (rotation.sequence.length >= ROTATION_MAX_SLOTS) return false;
+  rotation.sequence.push(slot);
   saveRotation(rotation);
-  const routine = getRoutineById(routineId);
-  if (routine) { routine.rotationId = rotationId; saveRoutine(routine); }
-  return rotation;
+  return true;
 }
 
-export function removeRoutineFromRotation(rotationId, routineId) {
+export function removeRotationSlot(rotationId, index) {
   const rotation = getRotationById(rotationId);
   if (!rotation) return null;
-  rotation.sequence = rotation.sequence.filter((id) => id !== routineId);
-  if (rotation.cursor >= rotation.sequence.length) rotation.cursor = 0;
+  rotation.sequence.splice(index, 1);
   saveRotation(rotation);
-  const routine = getRoutineById(routineId);
-  if (routine?.rotationId === rotationId) { delete routine.rotationId; saveRoutine(routine); }
   return rotation;
 }
 
@@ -1260,25 +1274,50 @@ export function reorderRotation(rotationId, newSequence) {
   return rotation;
 }
 
-/** Rueckt den Zeiger einer Rotation genau dann um eins vor, wenn die
- *  abgeschlossene Routine auch die laut Zeiger aktuell faellige war –
- *  aufrufen, wenn eine Session beendet wird.
- *  Wichtig: NICHT ueber sequence.indexOf(routineId) springen – das wuerde
- *  bei einer Ad-hoc-/Nachhol-Session einer ANDEREN Routine aus derselben
- *  Rotation (z.B. nach einem verpassten Termin) den Zeiger auf eine falsche
- *  Position setzen und die Reihenfolge der noch offenen Routine durcheinander
- *  bringen. Passt die completed Routine nicht zum Zeiger, bleibt er stehen –
- *  die eigentlich faellige Routine bleibt so korrekt weiterhin offen. */
-export function advanceRotationIfNeeded(routineId) {
-  let changed = false;
-  for (const rotation of getRotations()) {
-    if (!rotation.sequence.length) continue;
-    if (rotation.sequence[rotation.cursor] !== routineId) continue;
-    rotation.cursor = (rotation.cursor + 1) % rotation.sequence.length;
-    saveRotation(rotation);
-    changed = true;
-  }
-  return changed;
+/** Setzt diese Rotation als aktiven Plan (ersetzt die manuelle Tag-fuer-Tag-
+ *  Zuweisung im Wochenplan-Raster komplett) und startet ihren Takt neu ab
+ *  heute - "Aktivieren" bedeutet also immer "ab heute gilt Tag 1". */
+export function activateRotation(rotationId) {
+  const rotation = getRotationById(rotationId);
+  if (!rotation) return null;
+  rotation.anchorDate = todayDateKey();
+  saveRotation(rotation);
+  const plan = getWeeklyPlan();
+  plan.activeRotationId = rotationId;
+  saveWeeklyPlan(plan);
+  return rotation;
+}
+
+export function deactivateRotation() {
+  const plan = getWeeklyPlan();
+  plan.activeRotationId = null;
+  saveWeeklyPlan(plan);
+  return plan;
+}
+
+function rotationDayIndex(rotation, dateKey) {
+  const len = rotation.sequence.length;
+  if (!len) return 0;
+  const diff = daysBetweenDateKeys(rotation.anchorDate, dateKey);
+  return ((diff % len) + len) % len;
+}
+
+/** Loest eine Rotation fuer ein Datum zu einer Routine auf (oder null bei
+ *  einem Ruhetags-Slot) - rein anhand des festen Taktes seit anchorDate. */
+export function resolveRotationForDate(rotation, dateKey) {
+  if (!rotation || !rotation.sequence.length) return null;
+  const slot = rotation.sequence[rotationDayIndex(rotation, dateKey)];
+  if (slot.type === 'routine' && slot.routineId) return getRoutineById(slot.routineId);
+  return null;
+}
+
+/** Alle Rotationen, in deren Sequenz diese Routine vorkommt, mit Anzahl der
+ *  Vorkommen - fuer die schreibgeschuetzte Zugehoerigkeits-Anzeige im
+ *  Routine-Editor (Bearbeiten passiert bewusst nur an der Rotation selbst). */
+export function rotationsContainingRoutine(routineId) {
+  return getRotations()
+    .map((r) => ({ rotation: r, count: r.sequence.filter((s) => s.type === 'routine' && s.routineId === routineId).length }))
+    .filter((x) => x.count > 0);
 }
 
 /* =========================================================
@@ -1288,8 +1327,12 @@ export function advanceRotationIfNeeded(routineId) {
    Dient zwei Zwecken: (1) traegt sich automatisch in den Kalender ein,
    (2) liefert den Trainingsumfang fuer den Kalorienbedarf.
    ========================================================= */
-// Plan: { anchorDate, cycleLength, days: [ {type:'rest'} | {type:'routine',routineId} |
-//         {type:'rotation',rotationId}, ...cycleLength x ], autoFill: bool, weeksAhead: number }
+// Plan: { anchorDate, cycleLength, days: [ {type:'rest'} | {type:'routine',routineId},
+//         ...cycleLength x ], autoFill: bool, weeksAhead: number, activeRotationId: string|null }
+// Ist activeRotationId gesetzt, wird das Tages-Raster (days/cycleLength) komplett
+// ignoriert - die Rotation selbst (siehe oben) bestimmt jeden Tag direkt ueber
+// ihren eigenen anchorDate-Takt. Das Raster bleibt fuer den einfacheren
+// Anwendungsfall (feste Einzel-Routinen ohne Rotation) unveraendert nutzbar.
 
 export const WEEKDAY_LABELS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 
@@ -1307,6 +1350,7 @@ function emptyPlan() {
     autoFill: true,
     weeksAhead: 8,
     days: Array.from({ length: 7 }, () => ({ type: 'rest' })),
+    activeRotationId: null,
   };
 }
 
@@ -1326,14 +1370,30 @@ export function getWeeklyPlan() {
         const d = stored.days?.[i];
         return d?.type === 'workout' && d.routineId ? { type: 'routine', routineId: d.routineId } : { type: 'rest' };
       }),
+      activeRotationId: null,
     };
     write(KEYS.weeklyPlan, converted);
     return converted;
   }
 
   const base = emptyPlan();
-  const days = Array.from({ length: stored.cycleLength }, (_, i) => stored.days?.[i] || { type: 'rest' });
-  return { ...base, ...stored, days };
+  let days = Array.from({ length: stored.cycleLength }, (_, i) => stored.days?.[i] || { type: 'rest' });
+  let activeRotationId = stored.activeRotationId ?? null;
+
+  // Altes Modell (E68): einzelne Tage konnten direkt auf eine Rotation zeigen.
+  // Die erste gefundene wird zur global aktiven Rotation, alle Tage werden
+  // (nicht mehr benoetigt, siehe oben) zu Ruhetagen.
+  if (!activeRotationId) {
+    const legacySlot = days.find((d) => d.type === 'rotation' && d.rotationId);
+    if (legacySlot) activeRotationId = legacySlot.rotationId;
+  }
+  if (days.some((d) => d.type === 'rotation')) {
+    days = days.map((d) => (d.type === 'rotation' ? { type: 'rest' } : d));
+  }
+
+  const merged = { ...base, ...stored, days, activeRotationId };
+  if (JSON.stringify(merged) !== JSON.stringify(stored)) write(KEYS.weeklyPlan, merged);
+  return merged;
 }
 
 export function saveWeeklyPlan(plan) {
@@ -1342,11 +1402,23 @@ export function saveWeeklyPlan(plan) {
 }
 
 export function weeklyPlanHasWorkouts(plan = getWeeklyPlan()) {
-  return plan.days.some((slot) => {
-    if (slot.type === 'routine') return !!slot.routineId;
-    if (slot.type === 'rotation') return !!getRotationById(slot.rotationId)?.sequence.length;
-    return false;
-  });
+  if (plan.activeRotationId) {
+    const rotation = getRotationById(plan.activeRotationId);
+    return !!rotation?.sequence.some((s) => s.type === 'routine' && s.routineId);
+  }
+  return plan.days.some((slot) => slot.type === 'routine' && !!slot.routineId);
+}
+
+/** Tatsaechliche Musterlaenge in Tagen - bei aktiver Rotation deren eigene
+ *  Sequenzlaenge, sonst das klassische Raster-cycleLength. Fuer jeden Code,
+ *  der eine Periodenlaenge braucht (z.B. den Wochendurchschnitt fuer den
+ *  Kalorienbedarf), NIE plan.cycleLength direkt lesen, sondern diese Funktion. */
+export function effectiveCycleLength(plan = getWeeklyPlan()) {
+  if (plan.activeRotationId) {
+    const rotation = getRotationById(plan.activeRotationId);
+    return rotation?.sequence.length || 1;
+  }
+  return plan.cycleLength || 7;
 }
 
 function cycleDayIndex(dateKey, plan) {
@@ -1355,41 +1427,30 @@ function cycleDayIndex(dateKey, plan) {
   return ((diff % len) + len) % len;
 }
 
-/**
- * Loest einen einzelnen Zyklus-Tag zu einer Routine auf. rotationOffsets
- * zaehlt fuer die Vorschau/Projektion mit, das wievielte Mal eine Rotation
- * seit dem Ausgangspunkt "dran" war (0 = der naechste anstehende Termin).
- */
-function resolvePlanDay(plan, dateKey, rotationOffsets) {
+/** Loest einen einzelnen Plan-Tag zu einer Routine auf (oder null bei Ruhetag) -
+ *  entweder ueber die aktive Rotation (deren eigener Takt) oder, ohne aktive
+ *  Rotation, ueber das klassische Tages-Raster. */
+function resolvePlanDay(plan, dateKey) {
+  if (plan.activeRotationId) {
+    return resolveRotationForDate(getRotationById(plan.activeRotationId), dateKey);
+  }
   const slot = plan.days[cycleDayIndex(dateKey, plan)];
-  if (!slot) return null;
-  if (slot.type === 'routine' && slot.routineId) {
-    return getRoutineById(slot.routineId);
-  }
-  if (slot.type === 'rotation' && slot.rotationId) {
-    const rotation = getRotationById(slot.rotationId);
-    if (!rotation || !rotation.sequence.length) return null;
-    const offset = rotationOffsets.get(slot.rotationId) || 0;
-    rotationOffsets.set(slot.rotationId, offset + 1);
-    return getRoutineById(rotation.sequence[(rotation.cursor + offset) % rotation.sequence.length]);
-  }
+  if (slot?.type === 'routine' && slot.routineId) return getRoutineById(slot.routineId);
   return null;
 }
 
 /**
  * Projiziert die kommenden geplanten Einheiten ab einem Datum (rein lesend,
- * fuer die Vorschau im Editor). Rotations-Termine gehen davon aus, dass alle
- * Termine bis dahin planmaessig absolviert werden.
+ * fuer die Vorschau im Editor).
  * @returns {{date:string, routine:object}[]}
  */
 export function projectPlanDays(plan = getWeeklyPlan(), fromDate = null, totalDays = 60) {
   if (!plan.autoFill || !plan.cycleLength) return [];
   const start = fromDate || todayDateKey();
-  const rotationOffsets = new Map();
   const out = [];
   for (let i = 0; i < totalDays; i++) {
     const date = addDaysToDateKey(start, i);
-    const routine = resolvePlanDay(plan, date, rotationOffsets);
+    const routine = resolvePlanDay(plan, date);
     if (routine) out.push({ date, routine });
   }
   return out;
@@ -1430,8 +1491,8 @@ export function syncWeeklyPlanToCalendar(plan = getWeeklyPlan(), fromDate = null
  * durchgefuehrt wurden - ein verpasster Tag soll nicht fuer immer als
  * "geplant" stehen bleiben, sondern das Kalenderfeld wird leer. Betrifft
  * sowohl automatisch (weeklyPlan) als auch manuell angelegte Eintraege.
- * Der Rotations-Zeiger selbst haengt NICHT an diesen Eintraegen (siehe
- * advanceRotationIfNeeded) - die Kaskade bleibt also unberuehrt davon.
+ * Eine aktive Rotation ist seit E68 datumsfest (siehe resolveRotationForDate)
+ * und muss hier nicht gesondert behandelt werden.
  */
 export function clearMissedPlannedEntries(today = todayDateKey()) {
   if (!getSettings().autoRemoveMissed) return 0;
@@ -1452,7 +1513,7 @@ export function clearMissedPlannedEntries(today = todayDateKey()) {
  *  Kalender-Eintraege verwenden (getCalendarEntriesForDate) – die
  *  beruecksichtigen die Projektion inkl. aller Rotationen korrekt. */
 export function plannedForDate(dateKey, plan = getWeeklyPlan()) {
-  const routine = resolvePlanDay(plan, dateKey, new Map());
+  const routine = resolvePlanDay(plan, dateKey);
   return routine ? { routine } : null;
 }
 

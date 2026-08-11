@@ -2,7 +2,7 @@ import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
   getActiveSession, setActiveSession, clearActiveSession, saveFinishedSession, allSetsForExercise,
   sessionVolume, getSettings, getCalendarEntriesForDate, deleteCalendarEntry, getExerciseById, getExercises,
-  advanceRotationIfNeeded, syncWeeklyPlanToCalendar, refreshSharedCalendarMirror,
+  syncWeeklyPlanToCalendar, refreshSharedCalendarMirror,
   RPE_SCALE, RECOVERY_LEVELS, cardioFieldDef, cardioRecords,
 } from '../db.js';
 import { analyzeExercise, platesForWeight, warmupSets } from '../coach.js';
@@ -727,18 +727,10 @@ export function render() {
       .filter((e) => e.type === 'workout')
       .forEach((e) => deleteCalendarEntry(e.id));
 
-    // Gehoert die Routine zu einer Rotation, ruecke den Zeiger vor (nur wenn
-    // die absolvierte Routine auch die laut Zeiger faellige war) und
-    // aktualisiere DANACH IMMER die Kalender-Projektion - das ist die
-    // "Verpasst-Kaskade": wurde statt der faelligen Routine A eine andere
-    // Routine B trainiert (z.B. bewusster Tausch), rueckt der Zeiger bewusst
-    // NICHT vor, A bleibt offen. Genau in diesem Fall muss die Projektion
-    // trotzdem neu berechnet werden, sonst zeigt der Kalender fuer die
-    // naechsten Termine weiterhin die alte, vor dem Tausch erstellte
-    // Reihenfolge (z.B. faelschlich B statt weiterhin A) - der Bugfix bestand
-    // frueher aus einem "nur bei tatsaechlichem Fortschritt aktualisieren"-
-    // Gate, das den Kalender in genau diesem Tausch-Fall nie neu berechnet hat.
-    advanceRotationIfNeeded(session.routineId);
+    // Seit E68 ist eine aktive Rotation datumsfest (Tag N seit ihrem eigenen
+    // anchorDate), kein Zeiger/Warteschlange mehr - ein Tausch oder verpasster
+    // Tag muss hier also nichts mehr "vorruecken", die Projektion fuer die
+    // naechsten Tage ergibt sich rein aus dem Kalenderdatum.
     // Ab dem Tag NACH der Session neu projizieren, nicht ab heute - heute
     // wurde gerade unconditional oben geleert (Zeile 696), eine sofortige
     // Neuprojektion ab heute wuerde sonst faelschlich wieder einen Eintrag
