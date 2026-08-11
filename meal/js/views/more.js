@@ -2,9 +2,10 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getSettings, saveSettings, exportAllData, importAllData, resetAllData,
   getActiveDiet, dietStatusForDate, startDiet, stopDiet,
+  getCustomFoods, updateCustomFood, deleteCustomFood,
 } from '../db.js';
 import { applyTheme } from '../theme.js';
-import { confirmDialog, toast, promptDialog } from '../ui.js';
+import { openModal, confirmDialog, toast, promptDialog } from '../ui.js';
 import { download, readFileAsText, todayKey, formatNum, escapeHtml } from '../utils.js';
 import { getSharedCalorieNeeds } from '../../../shared/body-data.js';
 
@@ -14,6 +15,82 @@ const THEMES = [
   { key: 'dark', label: 'Dark', dot: '#11151c' },
   { key: 'colored', label: 'Colored', dot: 'accent' },
 ];
+
+/** Eigene, waehrend der Rezeptbearbeitung angelegte Zutaten (E43) waren
+ *  bisher nicht nachtraeglich korrigierbar - hier lassen sie sich nun
+ *  einsehen, bearbeiten (inkl. Name, siehe updateCustomFood's Umbenennungs-
+ *  Kaskade in Rezepten) und loeschen. */
+function customFoodsSectionHtml() {
+  const foods = getCustomFoods();
+  if (!foods.length) return '';
+  return `
+    <div class="section-title">Eigene Zutaten</div>
+    <div class="card stack">
+      ${foods.map((f) => `
+        <div class="row row--between" data-food-row="${f.id}" style="cursor:pointer">
+          <div class="col grow" style="min-width:0">
+            <span class="truncate">${escapeHtml(f.name)}</span>
+            <span class="faint">${formatNum(f.kcal_100g)} kcal · ${formatNum(f.protein_100g)}g E · ${formatNum(f.carbs_100g)}g KH · ${formatNum(f.fat_100g)}g F (pro 100g)</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function openEditCustomFoodModal(food, onSaved) {
+  const handle = openModal(`
+    <h3 class="modal-title">Eigene Zutat bearbeiten</h3>
+    <div class="field">
+      <label>Name</label>
+      <input class="input" id="ecf-name" value="${escapeHtml(food.name)}">
+    </div>
+    <p class="faint" style="margin-bottom:10px">Nährwerte pro 100g/ml:</p>
+    <div class="grid-2">
+      <div class="field">
+        <label>Kalorien (kcal)</label>
+        <input class="input" type="number" min="0" step="0.1" id="ecf-kcal" value="${food.kcal_100g}">
+      </div>
+      <div class="field">
+        <label>Eiweiß (g)</label>
+        <input class="input" type="number" min="0" step="0.1" id="ecf-protein" value="${food.protein_100g}">
+      </div>
+      <div class="field">
+        <label>Kohlenhydrate (g)</label>
+        <input class="input" type="number" min="0" step="0.1" id="ecf-carbs" value="${food.carbs_100g}">
+      </div>
+      <div class="field">
+        <label>Fett (g)</label>
+        <input class="input" type="number" min="0" step="0.1" id="ecf-fat" value="${food.fat_100g}">
+      </div>
+    </div>
+    <button class="btn btn-primary" id="ecf-save" style="margin-top:10px">Speichern</button>
+    <button class="btn btn-danger" id="ecf-delete" style="margin-top:10px">Löschen</button>
+  `, { center: true });
+
+  handle.sheet.querySelector('#ecf-save').addEventListener('click', () => {
+    const name = handle.sheet.querySelector('#ecf-name').value.trim();
+    if (!name) { toast('Bitte einen Namen eingeben'); return; }
+    updateCustomFood(food.id, {
+      name,
+      kcal_100g: handle.sheet.querySelector('#ecf-kcal').value,
+      protein_100g: handle.sheet.querySelector('#ecf-protein').value,
+      carbs_100g: handle.sheet.querySelector('#ecf-carbs').value,
+      fat_100g: handle.sheet.querySelector('#ecf-fat').value,
+    });
+    toast('Gespeichert');
+    handle.close();
+    onSaved();
+  });
+  handle.sheet.querySelector('#ecf-delete').addEventListener('click', async () => {
+    const ok = await confirmDialog('Zutat löschen?', 'Rezepte, die diese Zutat verwenden, verlieren dafür ihre Nährwertangabe.', 'Löschen', true);
+    if (!ok) return;
+    deleteCustomFood(food.id);
+    toast('Gelöscht');
+    handle.close();
+    onSaved();
+  });
+}
 
 function dietSectionHtml() {
   const diet = getActiveDiet();
@@ -95,6 +172,8 @@ export function render() {
       ${dietSectionHtml()}
     </div>
 
+    ${customFoodsSectionHtml()}
+
     <div class="section-title">Daten</div>
     <div class="card stack">
       <button class="btn btn-ghost" id="export-json">Backup exportieren (JSON)</button>
@@ -131,6 +210,11 @@ export function render() {
     saveSettings({ targetKcal: Number(b.dataset.takeKcal) });
     toast('Übernommen');
     render();
+  }));
+
+  document.querySelectorAll('[data-food-row]').forEach((el) => el.addEventListener('click', () => {
+    const food = getCustomFoods().find((f) => f.id === el.dataset.foodRow);
+    if (food) openEditCustomFoodModal(food, render);
   }));
 
   document.getElementById('diet-start')?.addEventListener('click', () => {

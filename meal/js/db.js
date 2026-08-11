@@ -74,6 +74,42 @@ export function createCustomFood(fields) {
   return food;
 }
 
+/** Aendert der Name sich, werden bestehende Rezept-Zutaten mitgezogen (siehe
+ *  recipeNutrition: ingredients[].foodName ist ein Namens-, kein ID-Verweis -
+ *  ohne diese Kaskade wuerden bestehende Rezepte die umbenannte Zutat sonst
+ *  stillschweigend nicht mehr finden und mit 0 Naehrwerten rechnen). */
+export function updateCustomFood(id, fields) {
+  const list = getCustomFoods();
+  const idx = list.findIndex((f) => f.id === id);
+  if (idx === -1) return null;
+  const oldName = list[idx].name;
+  const updated = {
+    ...list[idx],
+    name: fields.name !== undefined ? fields.name.trim() : list[idx].name,
+    kcal_100g: fields.kcal_100g !== undefined ? Number(fields.kcal_100g) || 0 : list[idx].kcal_100g,
+    protein_100g: fields.protein_100g !== undefined ? Number(fields.protein_100g) || 0 : list[idx].protein_100g,
+    carbs_100g: fields.carbs_100g !== undefined ? Number(fields.carbs_100g) || 0 : list[idx].carbs_100g,
+    fat_100g: fields.fat_100g !== undefined ? Number(fields.fat_100g) || 0 : list[idx].fat_100g,
+  };
+  list[idx] = updated;
+  write(KEYS.customFoods, list);
+  if (updated.name && updated.name !== oldName) renameFoodInRecipes(oldName, updated.name);
+  return updated;
+}
+
+function renameFoodInRecipes(oldName, newName) {
+  let changed = false;
+  const recipes = getRecipes().map((r) => {
+    const ingredients = r.ingredients.map((ing) => {
+      if (ing.foodName !== oldName) return ing;
+      changed = true;
+      return { ...ing, foodName: newName };
+    });
+    return { ...r, ingredients };
+  });
+  if (changed) write(KEYS.recipes, recipes);
+}
+
 export function deleteCustomFood(id) {
   write(KEYS.customFoods, getCustomFoods().filter((f) => f.id !== id));
 }
