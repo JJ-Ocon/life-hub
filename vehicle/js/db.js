@@ -244,6 +244,7 @@ export async function refreshSharedCalendarMirror() {
       if (!vehicle) continue;
       events.push(createCalendarEvent({
         id: `vehicle-${t.id}`, title: `${t.title}: ${vehicle.name}`, start: maintenanceNextDue(t), source: 'vehicle',
+        link: `#/vehicle/${vehicle.id}`,
       }));
     }
     await replaceSourceEvents('vehicle', events);

@@ -277,11 +277,11 @@ export async function refreshSharedCalendarMirror() {
   try {
     const events = [];
     for (const t of read(KEYS.trips, [])) {
-      events.push(createCalendarEvent({ id: `travel-start-${t.id}`, title: `Reise: ${t.name} beginnt`, start: t.startDate, source: 'travel' }));
-      events.push(createCalendarEvent({ id: `travel-end-${t.id}`, title: `Reise: ${t.name} endet`, start: t.endDate, source: 'travel' }));
+      events.push(createCalendarEvent({ id: `travel-start-${t.id}`, title: `Reise: ${t.name} beginnt`, start: t.startDate, source: 'travel', link: `#/trip/${t.id}` }));
+      events.push(createCalendarEvent({ id: `travel-end-${t.id}`, title: `Reise: ${t.name} endet`, start: t.endDate, source: 'travel', link: `#/trip/${t.id}` }));
     }
     for (const i of read(KEYS.itinerary, [])) {
-      events.push(createCalendarEvent({ id: `travel-itin-${i.id}`, title: i.title, start: i.date, source: 'travel' }));
+      events.push(createCalendarEvent({ id: `travel-itin-${i.id}`, title: i.title, start: i.date, source: 'travel', link: `#/trip/${i.tripId}` }));
     }
     await replaceSourceEvents('travel', events);
   } catch {

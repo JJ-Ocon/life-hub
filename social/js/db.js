@@ -54,6 +54,7 @@ export async function refreshBirthdayCalendarMirror() {
         start: p.birthday,
         source: 'social',
         recurrence: 'yearly',
+        link: `#/person/${p.id}`,
       }));
     await replaceSourceEvents('social', events);
   } catch {

@@ -16,6 +16,9 @@
  * @property {string} [end]        ISO-Datum/-Zeit, optional bei ganztaegigen Eintraegen
  * @property {string} source       Kurzname der Quell-App, z.B. 'fitness', 'budget'
  * @property {string} [recurrence] z.B. 'weekly', 'monthly' - frei je App interpretiert
+ * @property {string} [link]       Hash-Pfad innerhalb der Quell-App (z.B. '#/session/abc') fuer
+ *                                  die "Zur App wechseln?"-Weiterleitung im Hub-Kalender (E67+).
+ *                                  Fehlt er, verlinkt der Hub nur auf die App-Startseite.
  */
 
 /** @param {Partial<CalendarEvent>} fields */
@@ -30,6 +33,7 @@ export function createCalendarEvent(fields) {
     end: fields.end ?? null,
     source: fields.source,
     recurrence: fields.recurrence ?? null,
+    link: fields.link ?? null,
   };
 }
 

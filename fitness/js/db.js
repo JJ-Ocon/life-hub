@@ -1085,6 +1085,7 @@ export async function refreshSharedCalendarMirror() {
         start: s.startedAt,
         end: s.endedAt,
         source: 'fitness',
+        link: `#/history/${s.id}`,
       }));
     }
     for (const e of getCalendarEntries()) {
@@ -1094,6 +1095,7 @@ export async function refreshSharedCalendarMirror() {
           title: e.routineName || 'Workout geplant',
           start: e.date,
           source: 'fitness',
+          link: '#/calendar',
         }));
       } else if (e.type === 'deload') {
         events.push(createCalendarEvent({
@@ -1101,6 +1103,7 @@ export async function refreshSharedCalendarMirror() {
           title: 'Deload-Woche',
           start: e.date,
           source: 'fitness',
+          link: '#/calendar',
         }));
       }
     }

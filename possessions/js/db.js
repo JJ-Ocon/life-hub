@@ -225,7 +225,7 @@ export async function refreshSharedCalendarMirror() {
       if (!i.warrantyExpiryDate) continue;
       events.push(createCalendarEvent({
         id: `possessions-${i.id}`, title: `Garantie läuft ab: ${i.name}`,
-        start: i.warrantyExpiryDate, source: 'possessions',
+        start: i.warrantyExpiryDate, source: 'possessions', link: `#/items?open=${i.id}`,
       }));
     }
     await replaceSourceEvents('possessions', events);

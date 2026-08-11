@@ -267,14 +267,14 @@ export async function refreshSharedCalendarMirror() {
   try {
     const events = [];
     for (const t of getMaintenanceTasks()) {
-      events.push(createCalendarEvent({ id: `household-maint-${t.id}`, title: t.title, start: maintenanceNextDue(t), source: 'household' }));
+      events.push(createCalendarEvent({ id: `household-maint-${t.id}`, title: t.title, start: maintenanceNextDue(t), source: 'household', link: '#/manage' }));
     }
     for (const c of getContracts()) {
-      events.push(createCalendarEvent({ id: `household-contract-${c.id}`, title: `Kündigungsfrist ${c.provider}`, start: contractReminderDate(c), source: 'household' }));
+      events.push(createCalendarEvent({ id: `household-contract-${c.id}`, title: `Kündigungsfrist ${c.provider}`, start: contractReminderDate(c), source: 'household', link: '#/manage' }));
     }
     for (const p of getPets()) {
       const due = petNextVetDue(p);
-      if (due) events.push(createCalendarEvent({ id: `household-pet-${p.id}`, title: `${p.name}: Tierarzt`, start: due, source: 'household' }));
+      if (due) events.push(createCalendarEvent({ id: `household-pet-${p.id}`, title: `${p.name}: Tierarzt`, start: due, source: 'household', link: '#/garden' }));
     }
     await replaceSourceEvents('household', events);
   } catch {

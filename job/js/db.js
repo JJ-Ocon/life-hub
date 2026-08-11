@@ -138,6 +138,7 @@ export async function refreshSharedCalendarMirror() {
       title: a.done ? `✓ ${a.title}` : a.title,
       start: a.date,
       source: 'job',
+      link: '#/appointments',
     }));
     await replaceSourceEvents('job', events);
   } catch {

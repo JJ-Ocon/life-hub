@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'trainingslog-v19';
+const CACHE_VERSION = 'trainingslog-v20';
 
 const ASSETS = [
   './',

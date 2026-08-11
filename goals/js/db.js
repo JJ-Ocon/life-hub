@@ -237,17 +237,18 @@ export async function refreshSharedCalendarMirror() {
         title: t.done ? `✓ ${t.title}` : t.title,
         start: t.dueDate,
         source: 'goals',
+        link: '#/',
       }));
     for (const s of read(KEYS.skills, [])) {
       if (s.type === 'course' && s.deadlineDate) {
-        events.push(createCalendarEvent({ id: `goals-course-${s.id}`, title: `Kurs-Deadline: ${s.name}`, start: s.deadlineDate, source: 'goals' }));
+        events.push(createCalendarEvent({ id: `goals-course-${s.id}`, title: `Kurs-Deadline: ${s.name}`, start: s.deadlineDate, source: 'goals', link: `#/learning` }));
       }
     }
     for (const plan of read(KEYS.learningPlans, [])) {
       const skill = getSkillById(plan.skillId);
       if (!skill) continue;
       for (const dateKey of upcomingLearningPlanDates(plan)) {
-        events.push(createCalendarEvent({ id: `goals-learnplan-${plan.id}-${dateKey}`, title: `📚 ${skill.name}`, start: dateKey, source: 'goals' }));
+        events.push(createCalendarEvent({ id: `goals-learnplan-${plan.id}-${dateKey}`, title: `📚 ${skill.name}`, start: dateKey, source: 'goals', link: '#/calendar' }));
       }
     }
     await replaceSourceEvents('goals', events);

@@ -175,10 +175,14 @@ function onEventTap(calendarEventId) {
     if (hubEvent) openEventModal(hubEvent);
     return;
   }
-  openReadOnlyInfo(event);
+  openForwardDialog(event);
 }
 
-function openReadOnlyInfo(event) {
+/** Termine aus anderen Apps verwaltet der Hub bewusst nicht selbst (siehe
+ *  App-Architektur) - stattdessen wird angeboten, direkt zur Quell-App und,
+ *  falls die App beim Spiegeln einen link mitgegeben hat (siehe
+ *  calendar-schema.js), zur genauen Stelle des Termins weiterzuleiten. */
+function openForwardDialog(event) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -186,12 +190,18 @@ function openReadOnlyInfo(event) {
       <button class="modal-close" data-close type="button"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       <div class="modal-title">${escapeHtml(event.title)}</div>
       <p class="empty-hint">Aus: ${escapeHtml(getSourceLabel(event.source))}</p>
-      <p class="empty-hint">Diese App verwaltet ihre eigenen Termine selbst - Bearbeiten ist nur direkt dort möglich.</p>
+      <p style="margin:10px 0 16px">Zur ${escapeHtml(getSourceLabel(event.source))}-App und zum Ort dieses Termins wechseln?</p>
+      <button type="button" class="btn btn-primary" id="forward-go">Weiterleiten</button>
+      <button type="button" class="btn btn-ghost" id="forward-cancel" style="margin-top:8px">Abbrechen</button>
     </div>`;
   document.body.appendChild(overlay);
   const close = () => overlay.remove();
   overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
   overlay.querySelector('[data-close]').addEventListener('click', close);
+  overlay.querySelector('#forward-cancel').addEventListener('click', close);
+  overlay.querySelector('#forward-go').addEventListener('click', () => {
+    location.href = `../${event.source}/${event.link || ''}`;
+  });
 }
 
 function openEventModal(existing) {

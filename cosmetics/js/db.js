@@ -244,7 +244,7 @@ export async function refreshSharedCalendarMirror() {
     for (const p of read(KEYS.products, [])) {
       const expiry = computeExpiry(p);
       if (!expiry) continue;
-      events.push(createCalendarEvent({ id: `cosmetics-${p.id}`, title: `Verfällt: ${p.name}`, start: expiry, source: 'cosmetics' }));
+      events.push(createCalendarEvent({ id: `cosmetics-${p.id}`, title: `Verfällt: ${p.name}`, start: expiry, source: 'cosmetics', link: `#/products?open=${p.id}` }));
     }
     await replaceSourceEvents('cosmetics', events);
   } catch {
