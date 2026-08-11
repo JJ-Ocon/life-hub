@@ -370,6 +370,10 @@ textarea.input { resize: vertical; min-height: 60px; }
 .chart-wrap { width: 100%; overflow-x: auto; }
 .chart-svg { width: 100%; height: auto; display: block; }
 .chart-svg text { font-size: 9px; fill: var(--text-faint); }
+/* Kompakt formatierte Y-Achsen-Zahlen (E65, z.B. "43,5k") brauchen etwas mehr
+   als die generischen 9px, sonst bleiben sie trotz kompakter Schreibweise
+   knapp/schwer lesbar in der schmalen Achsen-Spalte. */
+.chart-axis-num { font-size: 10px; }
 .chart-svg--large text { font-size: 12px; }
 .chart-svg--large .axis-label { font-size: 12px; }
 .chart-svg--large .chart-value { font-size: 11px; font-weight: 700; fill: var(--text-dim); }

@@ -13,6 +13,10 @@ import { formatDuration, estimate1RM, formatNum, nowIso, escapeHtml, todayKey, a
 let restTimer = null; // { remaining, total, intervalId, exerciseName }
 let tickHandle = null;
 let openNotes = new Set(); // Indizes der Uebungen mit sichtbarem Notizfeld
+// Eingeklappte Uebungsbloecke (E65) - Default: alle eingeklappt (siehe render()),
+// eingeklappt zeigt nur Name + Supersatz-Badge + Fortschritt, ein Klick oeffnet/
+// schliesst wieder. Haelt bei vielen Uebungen die Session-Ansicht uebersichtlich.
+let collapsedExercises = new Set();
 let cueDismissed = false; // Atmung/Bracing-Banner fuer diesen Besuch ausgeblendet?
 // Empfehlungen werden einmal beim Oeffnen berechnet, nicht bei jedem Neuzeichnen
 let adviceByExercise = new Map();
@@ -34,6 +38,7 @@ export function render() {
   session.comment = session.comment || '';
   session.exercises.forEach((ex) => { ex.note = ex.note || ''; ex.comment = ex.comment || ''; });
   openNotes = new Set();
+  collapsedExercises = new Set(session.exercises.map((_, i) => i));
   cueDismissed = false;
   liveCheckHandled = new Set();
 
@@ -127,6 +132,23 @@ export function render() {
   function exerciseBlockHtml(ex, i, session) {
     const grouped = !!ex.groupId;
     const sameAsPrev = i > 0 && session.exercises[i - 1].groupId === ex.groupId && grouped;
+    const collapsed = collapsedExercises.has(i);
+    const doneCount = ex.sets.filter((s) => s.done).length;
+
+    if (collapsed) {
+      return `
+        <div class="card card--tap" style="${sameAsPrev ? 'margin-top:-6px' : ''}" data-toggle-collapse="${i}">
+          <div class="row row--between">
+            <div class="col grow" style="min-width:0">
+              ${grouped ? `<div class="badge badge--accent" style="margin-bottom:6px">🔁 Zirkel/Supersatz</div>` : ''}
+              <h3 class="truncate" style="margin-bottom:0">${escapeHtml(ex.exerciseName)}</h3>
+            </div>
+            <span class="faint" style="flex-shrink:0">${doneCount}/${ex.sets.length} Sätze</span>
+          </div>
+        </div>
+      `;
+    }
+
     const noteOpen = openNotes.has(i);
     const advice = adviceByExercise.get(ex.exerciseId);
     const showRpe = settings.trackRpe && ex.mode === 'reps';
@@ -139,7 +161,7 @@ export function render() {
       <div class="card" style="${sameAsPrev ? 'margin-top:-6px' : ''}" data-swipe-area="${i}">
         ${grouped ? `<div class="badge badge--accent" style="margin-bottom:8px">🔁 Zirkel/Supersatz</div>` : ''}
         <div class="row row--between">
-          <h3 style="margin-bottom:2px">${escapeHtml(ex.exerciseName)}</h3>
+          <h3 style="margin-bottom:2px;cursor:pointer" data-toggle-collapse="${i}">${escapeHtml(ex.exerciseName)}</h3>
           <div class="row" style="gap:0">
             ${ex.mode === 'reps' ? `<button class="icon-btn" data-tools="${i}" aria-label="Scheiben & Aufwärmen">
               <svg viewBox="0 0 24 24"><path d="M4 9v6"/><path d="M8 6v12"/><path d="M12 8v8"/><path d="M16 6v12"/><path d="M20 9v6"/></svg>
@@ -327,6 +349,13 @@ export function render() {
       btn.addEventListener('click', () => {
         const i = +btn.dataset.toggleNote;
         if (openNotes.has(i)) openNotes.delete(i); else openNotes.add(i);
+        draw();
+      });
+    });
+    document.querySelectorAll('[data-toggle-collapse]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const i = +el.dataset.toggleCollapse;
+        if (collapsedExercises.has(i)) collapsedExercises.delete(i); else collapsedExercises.add(i);
         draw();
       });
     });

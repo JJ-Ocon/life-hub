@@ -178,6 +178,18 @@ export function aggregateSeries(points, granularity = 'day') {
     .map((b) => ({ date: b.date, value: b.sum / b.count, count: b.count }));
 }
 
+/** Kompakte Achsen-Zahl (z.B. "43,5k" statt "43526") - E65: fuenfstellige
+ *  Rohzahlen in der schmalen Y-Achsen-Spalte eines Balkendiagramms lasen sich
+ *  bei 9px SVG-Text kaum lesbar/"verschwommen" (siehe screenshot-basierte
+ *  Diagnose, urspruenglich in E49 als offener Punkt vermerkt) - liegt nicht
+ *  an echtem Rendering-Unschaerfe, sondern schlicht zu wenig Platz fuer zu
+ *  viele Ziffern. Kompakte Formatierung behebt das direkt an der Wurzel. */
+export function formatAxisNum(n) {
+  const abs = Math.abs(n);
+  if (abs >= 1000) return `${(n / 1000).toLocaleString('de-DE', { maximumFractionDigits: 1 })}k`;
+  return Math.round(n).toLocaleString('de-DE');
+}
+
 /** Achsenbeschriftung passend zur Granularitaet. */
 export function formatAxisLabel(dateKey, granularity) {
   const [y, m, d] = dateKey.split('-').map(Number);

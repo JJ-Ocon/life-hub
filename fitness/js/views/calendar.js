@@ -2,6 +2,7 @@ import { setTitle, setActions, setBack } from '../router.js';
 import {
   getSessions, getRoutines, getActiveSession, startSessionFromRoutine, startRetroactiveSession, sessionVolume, getSettings,
   getCalendarEntriesForDate, saveCalendarEntry, deleteCalendarEntry, deleteCalendarGroup, createDeloadWeek,
+  createSickDay, createSickWeek,
   getWeeklyPlan, syncWeeklyPlanToCalendar, getCalendarColor, clearMissedPlannedEntries, refreshSharedCalendarMirror,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
@@ -93,8 +94,9 @@ function dayInfo(dateKey) {
   const sessions = getSessions().filter((s) => s.endedAt && todayKey(new Date(s.startedAt)) === dateKey);
   const entries = getCalendarEntriesForDate(dateKey);
   const deloadEntry = entries.find((e) => e.type === 'deload');
-  const planned = entries.filter((e) => e.type !== 'deload');
-  return { sessions, planned, deloadEntry };
+  const sickEntry = entries.find((e) => e.type === 'sick');
+  const planned = entries.filter((e) => e.type !== 'deload' && e.type !== 'sick');
+  return { sessions, planned, deloadEntry, sickEntry };
 }
 
 /* ---------- Monatsansicht ---------- */
@@ -112,12 +114,14 @@ function monthGridHtml() {
   for (let i = 0; i < 42; i++) {
     const dateKey = addDaysToDateKey(gridStart, i);
     const inMonth = dateKey.startsWith(monthPrefix);
-    const { sessions, planned, deloadEntry } = dayInfo(dateKey);
+    const { sessions, planned, deloadEntry, sickEntry } = dayInfo(dateKey);
     const dayNum = Number(dateKey.slice(8, 10));
     const deloadColor = getCalendarColor('deload');
+    const sickColor = getCalendarColor('sick');
+    const highlightColor = sickEntry ? sickColor : (deloadEntry ? deloadColor : null);
     cells += `
       <div class="cal-cell ${inMonth ? '' : 'cal-cell--muted'} ${dateKey === today ? 'cal-cell--today' : ''}" data-day="${dateKey}"
-        ${deloadEntry ? `style="background:color-mix(in srgb, ${deloadColor} 20%, var(--bg-card)); border-color:${deloadColor}"` : ''}>
+        ${highlightColor ? `style="background:color-mix(in srgb, ${highlightColor} 20%, var(--bg-card)); border-color:${highlightColor}"` : ''}>
         <span class="cal-cell__num">${dayNum}</span>
         <span class="cal-dots">
           ${sessions.length ? `<span class="cal-dot" style="background:${getCalendarColor('done')}"></span>` : ''}
@@ -150,6 +154,7 @@ function legendHtml() {
       <span class="cal-dot" style="background:${getCalendarColor('done')}"></span><span class="faint">Absolviert</span>
       <span class="cal-dot" style="background:${getCalendarColor('planned')}"></span><span class="faint">Geplant</span>
       <span class="cal-legend__deload" style="background:${getCalendarColor('deload')}"></span><span class="faint">Deload</span>
+      <span class="cal-legend__deload" style="background:${getCalendarColor('sick')}"></span><span class="faint">Krank</span>
     </div>
   `;
 }
@@ -165,11 +170,12 @@ function weekListHtml() {
   return `
     <div class="stack">
       ${days.map((dateKey) => {
-        const { sessions, planned, deloadEntry } = dayInfo(dateKey);
+        const { sessions, planned, deloadEntry, sickEntry } = dayInfo(dateKey);
         return `
           <div class="card card--tap ${dateKey === today ? 'cal-week-row--today' : ''}" data-day="${dateKey}">
             <div class="row row--between">
               <h3>${formatDateKey(dateKey, { withWeekday: true })}</h3>
+              ${sickEntry ? `<span class="badge" style="background:${getCalendarColor('sick')};color:#1a1400">Krank</span>` : ''}
               ${deloadEntry ? `<span class="badge" style="background:${getCalendarColor('deload')};color:#1a1400">Deload</span>` : ''}
             </div>
             ${sessions.length === 0 && planned.length === 0 ? `<p class="faint" style="margin-top:6px">–</p>` : ''}
@@ -209,9 +215,15 @@ function openDayModal(dateKey) {
   const settings = getSettings();
 
   function content() {
-    const { sessions, planned, deloadEntry } = dayInfo(dateKey);
+    const { sessions, planned, deloadEntry, sickEntry } = dayInfo(dateKey);
     return `
       <h3 class="modal-title">${formatDateKey(dateKey, { withWeekday: true, withYear: true })}</h3>
+      ${sickEntry ? `
+        <div class="row row--between" style="margin-bottom:14px">
+          <span class="badge" style="background:${getCalendarColor('sick')};color:#1a1400">Krank</span>
+          <button class="btn btn-ghost btn-sm" id="cal-unset-sick">Aufheben</button>
+        </div>
+      ` : ''}
       ${deloadEntry ? `
         <div class="row row--between" style="margin-bottom:14px">
           <span class="badge" style="background:${getCalendarColor('deload')};color:#1a1400">Deload-Woche</span>
@@ -258,6 +270,8 @@ function openDayModal(dateKey) {
       <div class="stack" style="margin-top:16px">
         ${dateKey <= todayKey() ? `<button class="btn btn-primary" id="cal-log-retro" ${getActiveSession() ? 'disabled' : ''}>✓ Workout nachtragen (bereits absolviert)</button>` : ''}
         <button class="btn btn-ghost" id="cal-add-entry">+ Workout / Notiz planen</button>
+        ${!sickEntry ? `<button class="btn btn-ghost" id="cal-set-sick-day">Diesen Tag als krank markieren</button>` : ''}
+        ${!sickEntry ? `<button class="btn btn-ghost" id="cal-set-sick-week">Diese Woche als krank markieren</button>` : ''}
         ${!deloadEntry ? `<button class="btn btn-ghost" id="cal-set-deload">Diese Woche als Deload markieren</button>` : ''}
       </div>
     `;
@@ -299,6 +313,25 @@ function openDayModal(dateKey) {
       if (!ok) return;
       createDeloadWeek(dateKey);
       toast('Deload-Woche markiert');
+      refresh(h);
+    });
+    h.sheet.querySelector('#cal-unset-sick')?.addEventListener('click', async () => {
+      const { sickEntry } = dayInfo(dateKey);
+      const ok = await confirmDialog('Krank-Markierung aufheben?', 'Die Markierung wird für den gesamten zusammenhängenden Zeitraum entfernt.');
+      if (!ok || !sickEntry) return;
+      deleteCalendarGroup(sickEntry.groupId);
+      refresh(h);
+    });
+    h.sheet.querySelector('#cal-set-sick-day')?.addEventListener('click', () => {
+      createSickDay(dateKey);
+      toast('Als krank markiert');
+      refresh(h);
+    });
+    h.sheet.querySelector('#cal-set-sick-week')?.addEventListener('click', async () => {
+      const ok = await confirmDialog('Woche als krank markieren?', 'Die ganze Woche (Mo–So) wird als krank markiert.', 'Markieren', false);
+      if (!ok) return;
+      createSickWeek(dateKey);
+      toast('Woche als krank markiert');
       refresh(h);
     });
     h.sheet.querySelector('#cal-add-entry')?.addEventListener('click', () => {

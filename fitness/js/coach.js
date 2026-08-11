@@ -15,7 +15,7 @@
              ca. halbes Volumen/Last/Wiederholungen setzen.
    ========================================================= */
 
-import { exerciseHistory, getSettings, getExerciseById, getExercises, RECOVERY_LEVELS, isDeloadWeek } from './db.js';
+import { exerciseHistory, getSettings, getExerciseById, getExercises, RECOVERY_LEVELS, isDeloadWeek, isSickWeek } from './db.js';
 import { estimate1RM, daysBetween } from './utils.js';
 
 /** Bestes geschaetztes 1RM einer Einheit. */
@@ -98,9 +98,23 @@ export function analyzeExercise(exerciseId) {
     };
   }
 
-  // Fuer die Trendanalyse zaehlen vergangene Deload-Wochen nicht mit - sonst wirkt
-  // die erste normale Einheit danach faelschlich wie ein Leistungseinbruch.
-  const history = historyRaw.filter((h) => !isDeloadWeek(h.date.slice(0, 10)));
+  // Eine krankheitsbedingte Pause ist ebenfalls kein Ermuedungssignal - gleiche
+  // Behandlung wie Deload, nur ohne die absichtliche Gewichtsreduktion (E65).
+  if (isSickWeek(historyRaw[0].date.slice(0, 10))) {
+    const exerciseName = getExerciseById(exerciseId)?.name || 'Übung';
+    return {
+      ...empty,
+      status: 'progressing',
+      headline: `${exerciseName}: Krankheitspause`,
+      reasons: ['Aktuelle Woche ist als krank markiert - eine Trainingspause ist hier beabsichtigt, keine Ermüdung.'],
+      lastWeight: Math.max(...historyRaw[0].sets.map((s) => Number(s.weight) || 0)),
+    };
+  }
+
+  // Fuer die Trendanalyse zaehlen vergangene Deload-Wochen UND krankheitsbedingte
+  // Wochen nicht mit - sonst wirkt die erste normale Einheit danach faelschlich
+  // wie ein Leistungseinbruch.
+  const history = historyRaw.filter((h) => !isDeloadWeek(h.date.slice(0, 10)) && !isSickWeek(h.date.slice(0, 10)));
   if (history.length === 0) return empty;
 
   const last = history[0];

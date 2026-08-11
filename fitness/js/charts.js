@@ -1,5 +1,5 @@
 // Minimalistische SVG-Diagramme ohne externe Bibliotheken.
-import { formatDateShort, formatAxisLabel, formatNum, addDaysToDateKey } from './utils.js';
+import { formatDateShort, formatAxisLabel, formatAxisNum, formatNum, addDaysToDateKey } from './utils.js';
 
 /**
  * Liniendiagramm mit Flaechenfuellung und Punkten.
@@ -188,7 +188,10 @@ export function hBarChart(rows, { unit = '', decimals = 0 } = {}) {
  */
 export function barChart(bars, { width = 296, height = 148, unit = '' } = {}) {
   if (!bars.length) return `<div class="empty"><p>Noch keine Daten</p></div>`;
-  const padL = 34, padR = 8, padT = 14, padB = 22;
+  // padL etwas breiter als frueher (28 statt 34 reichte fuer 5-stellige Werte
+  // bei 9px SVG-Text kaum, siehe formatAxisNum-Kommentar) - jetzt kombiniert
+  // mit kompakter "43,5k"-Formatierung statt roher 5-stelliger Zahlen.
+  const padL = 30, padR = 8, padT = 14, padB = 22;
   const w = width - padL - padR;
   const h = height - padT - padB;
   const max = Math.max(...bars.map((b) => b.value), 1);
@@ -212,7 +215,7 @@ export function barChart(bars, { width = 296, height = 148, unit = '' } = {}) {
     const gy = padT + (h / gridLines) * i;
     const val = max - (max / gridLines) * i;
     grid += `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${width - padR}" y2="${gy.toFixed(1)}" />`;
-    grid += `<text x="2" y="${(gy + 3).toFixed(1)}">${Math.round(val)}${unit}</text>`;
+    grid += `<text class="chart-axis-num" x="2" y="${(gy + 3).toFixed(1)}">${formatAxisNum(val)}${unit}</text>`;
   }
 
   return `

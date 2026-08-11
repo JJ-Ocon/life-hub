@@ -842,6 +842,7 @@ const DEFAULT_SETTINGS = {
       rest: '#5b6672',
       note: '#8a6fd8',
       deload: '#e0a63a',
+      sick: '#e5876b',
     },
   },
 };
@@ -913,6 +914,7 @@ export const CALENDAR_ENTRY_TYPES = [
   { key: 'rest', label: 'Ruhetag' },
   { key: 'note', label: 'Notiz' },
   { key: 'deload', label: 'Deload-Woche' },
+  { key: 'sick', label: 'Krank' },
 ];
 
 export function getCalendarColor(type, source = 'fitness') {
@@ -1147,6 +1149,39 @@ export function createDeloadWeek(anyDateInWeek, note = 'Deload-Woche') {
 export function isDeloadWeek(anyDateInWeek) {
   const monday = mondayOfWeekKey(anyDateInWeek);
   return getCalendarEntriesForDate(monday).some((e) => e.type === 'deload');
+}
+
+/* =========================================================
+   Krankheitstage (E65) - mirrort das Deload-Muster, aber sowohl fuer
+   einzelne Tage als auch fuer eine ganze Woche markierbar (Deload gibt es
+   bewusst nur wochenweise, Krankheit kommt aber auch mal fuer nur 1-2 Tage
+   vor). Wird bei der Fatigue-Analyse (coach.js) und beim Wochen-Streak
+   (stats.js) beruecksichtigt, damit eine krankheitsbedingte Pause weder als
+   echter Leistungsabfall noch als gebrochener Streak gewertet wird.
+   ========================================================= */
+
+export function createSickDay(dateKey, note = 'Krank') {
+  return saveCalendarEntry({ type: 'sick', date: dateKey, note, groupId: uid() });
+}
+
+export function createSickWeek(anyDateInWeek, note = 'Krank') {
+  const monday = mondayOfWeekKey(anyDateInWeek);
+  const groupId = uid();
+  const created = [];
+  for (let i = 0; i < 7; i++) {
+    created.push(saveCalendarEntry({ type: 'sick', date: addDaysToDateKey(monday, i), note, groupId }));
+  }
+  return created;
+}
+
+export function isSickDay(dateKey) {
+  return getCalendarEntriesForDate(dateKey).some((e) => e.type === 'sick');
+}
+
+export function isSickWeek(anyDateInWeek) {
+  const monday = mondayOfWeekKey(anyDateInWeek);
+  return Array.from({ length: 7 }, (_, i) => addDaysToDateKey(monday, i))
+    .some((d) => getCalendarEntriesForDate(d).some((e) => e.type === 'sick'));
 }
 
 /* =========================================================

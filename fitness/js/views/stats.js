@@ -3,7 +3,7 @@ import {
   getSessions, getExercises, sessionVolume, allSetsForExercise, getSettings,
   cardioExerciseIds, cardioRecords, cardioFieldDef, getExerciseById,
   dailyTrainingLoad, volumeByMuscleGroup, planAdherence,
-  getDismissedAdvice, dismissAdvice,
+  getDismissedAdvice, dismissAdvice, isSickWeek,
 } from '../db.js';
 import { exercisesNeedingAttention } from '../coach.js';
 import { unlockedAchievements, nextAchievements } from '../achievements.js';
@@ -32,9 +32,16 @@ export function render() {
     let cursor = new Date();
     for (;;) {
       const key = isoWeekKey(cursor);
-      if (!sessions.some((s) => isoWeekKey(new Date(s.startedAt)) === key)) break;
-      streak++;
-      cursor = addDays(cursor, -7);
+      const hasSession = sessions.some((s) => isoWeekKey(new Date(s.startedAt)) === key);
+      if (hasSession) {
+        streak++;
+        cursor = addDays(cursor, -7);
+        continue;
+      }
+      // Eine krankheitsbedingt trainingsfreie Woche bricht den Streak nicht,
+      // zaehlt aber auch nicht als trainierte Woche mit (E65).
+      if (isSickWeek(todayKey(cursor))) { cursor = addDays(cursor, -7); continue; }
+      break;
     }
   }
 
