@@ -1,7 +1,10 @@
 import { setTitle, setActions, setBack } from '../router.js';
-import { getItems, getItemById, createItem, saveItem, deleteItem, categoryLabel, CATEGORIES, shuffleOutfit, getStyleRules } from '../db.js';
+import {
+  getItems, getItemById, createItem, saveItem, deleteItem, categoryLabel, getAllCategories, createCustomCategory,
+  shuffleOutfit, getStyleRules, LAYERS, layerLabel, incrementDaysWorn, resetDaysWorn,
+} from '../db.js';
 import { getNotesForApp, updateAssignedNoteContent, unassignNote } from '../../../shared/notes-bridge.js';
-import { openModal, confirmDialog, toast } from '../ui.js';
+import { openModal, confirmDialog, toast, promptDialog } from '../ui.js';
 import { escapeHtml, compressImageFile } from '../utils.js';
 
 let activeCategory = 'alle';
@@ -35,7 +38,7 @@ function draw() {
     ${getItems().length > 0 ? `<button class="btn btn-primary" id="wd-shuffle" style="margin-bottom:14px">🎲 Outfit mischen</button>` : ''}
     <div class="chip-row" style="margin-bottom:14px" id="wd-filters">
       <div class="chip ${activeCategory === 'alle' ? 'active' : ''}" data-cat="alle">Alle</div>
-      ${CATEGORIES.map((c) => `<div class="chip ${activeCategory === c.key ? 'active' : ''}" data-cat="${c.key}">${escapeHtml(c.label)}</div>`).join('')}
+      ${getAllCategories().map((c) => `<div class="chip ${activeCategory === c.key ? 'active' : ''}" data-cat="${c.key}">${escapeHtml(c.label)}</div>`).join('')}
     </div>
     ${items.length === 0 ? `
       <div class="empty">
@@ -178,6 +181,12 @@ function openOutfitModal() {
 function openItemModal(existing, onSaved) {
   const isNew = !existing?.id;
   let photoData = existing?.photo || null;
+  let layer = existing?.layer || null;
+
+  function categoryOptionsHtml() {
+    return getAllCategories().map((c) => `<option value="${c.key}" ${existing?.category === c.key ? 'selected' : ''}>${escapeHtml(c.label)}</option>`).join('')
+      + `<option value="__new__">+ Neue Kategorie…</option>`;
+  }
 
   const handle = openModal(`
     <h3 class="modal-title">${isNew ? 'Kleidungsstück anlegen' : 'Kleidungsstück bearbeiten'}</h3>
@@ -187,9 +196,7 @@ function openItemModal(existing, onSaved) {
     </div>
     <div class="field">
       <label>Kategorie</label>
-      <select class="input" id="w-category">
-        ${CATEGORIES.map((c) => `<option value="${c.key}" ${existing?.category === c.key ? 'selected' : ''}>${c.label}</option>`).join('')}
-      </select>
+      <select class="input" id="w-category">${categoryOptionsHtml()}</select>
     </div>
     <div class="grid-2">
       <div class="field">
@@ -206,6 +213,25 @@ function openItemModal(existing, onSaved) {
       <input type="color" class="color-input" id="w-color-hex" value="${existing?.colorHex || '#888888'}">
     </div>
     <div class="field">
+      <label>Schicht (optional, fürs Layering beim Outfit-Mischen)</label>
+      <div class="chip-row" id="w-layer-row">
+        <button type="button" class="chip ${!layer ? 'active' : ''}" data-layer="">Keine Angabe</button>
+        ${LAYERS.map((l) => `<button type="button" class="chip ${layer === l.key ? 'active' : ''}" data-layer="${l.key}">${l.label}</button>`).join('')}
+      </div>
+    </div>
+    ${!isNew ? `
+      <div class="field">
+        <label>Getragen</label>
+        <div class="row row--between">
+          <span id="w-wear-count">${existing.daysWorn || 0} Tage getragen</span>
+          <div class="row" style="gap:8px">
+            <button type="button" class="btn btn-ghost btn-sm" id="w-wear" style="width:auto">+1 Heute getragen</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="w-wear-reset" style="width:auto">Zurücksetzen</button>
+          </div>
+        </div>
+      </div>
+    ` : ''}
+    <div class="field">
       <label>Notiz (optional)</label>
       <textarea class="input" id="w-note">${escapeHtml(existing?.note || '')}</textarea>
     </div>
@@ -220,6 +246,26 @@ function openItemModal(existing, onSaved) {
     </div>
   `, { center: true });
 
+  handle.sheet.querySelector('#w-layer-row').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-layer]');
+    if (!btn) return;
+    layer = btn.dataset.layer || null;
+    handle.sheet.querySelectorAll('[data-layer]').forEach((b) => b.classList.toggle('active', (b.dataset.layer || null) === layer));
+  });
+
+  handle.sheet.querySelector('#w-category').addEventListener('change', async (e) => {
+    if (e.target.value !== '__new__') return;
+    const name = await promptDialog('Neue Kategorie', { placeholder: 'z.B. Sportbekleidung' });
+    if (!name) { e.target.value = existing?.category || getAllCategories()[0].key; return; }
+    const created = createCustomCategory(name);
+    const select = handle.sheet.querySelector('#w-category');
+    const opt = document.createElement('option');
+    opt.value = created.key;
+    opt.textContent = created.label;
+    select.insertBefore(opt, select.lastElementChild);
+    select.value = created.key;
+  });
+
   handle.sheet.querySelector('#w-photo').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -227,15 +273,30 @@ function openItemModal(existing, onSaved) {
     handle.sheet.querySelector('#w-photo-preview').innerHTML = `<img src="${photoData}" style="max-width:100%;border-radius:10px">`;
   });
 
+  handle.sheet.querySelector('#w-wear')?.addEventListener('click', () => {
+    const updated = incrementDaysWorn(existing.id);
+    handle.sheet.querySelector('#w-wear-count').textContent = `${updated.daysWorn} Tage getragen`;
+    toast('Getragen erfasst');
+  });
+  handle.sheet.querySelector('#w-wear-reset')?.addEventListener('click', async () => {
+    const ok = await confirmDialog('Tragezähler zurücksetzen?', 'Setzt den Zähler auf 0 zurück.', 'Zurücksetzen', false);
+    if (!ok) return;
+    const updated = resetDaysWorn(existing.id);
+    handle.sheet.querySelector('#w-wear-count').textContent = `${updated.daysWorn} Tage getragen`;
+    toast('Zurückgesetzt');
+  });
+
   handle.sheet.querySelector('#w-save').addEventListener('click', () => {
     const name = handle.sheet.querySelector('#w-name').value.trim();
     if (!name) { toast('Bitte einen Namen eingeben'); return; }
+    const categoryVal = handle.sheet.querySelector('#w-category').value;
     const fields = {
       name,
-      category: handle.sheet.querySelector('#w-category').value,
+      category: categoryVal === '__new__' ? 'sonstiges' : categoryVal,
       color: handle.sheet.querySelector('#w-color').value.trim(),
       colorHex: handle.sheet.querySelector('#w-color-hex').value,
       size: handle.sheet.querySelector('#w-size').value.trim(),
+      layer,
       note: handle.sheet.querySelector('#w-note').value.trim(),
       photo: photoData,
     };

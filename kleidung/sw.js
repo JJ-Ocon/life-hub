@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'kleidung-v3';
+const CACHE_VERSION = 'kleidung-v4';
 
 const ASSETS = [
   './',
@@ -16,6 +16,7 @@ const ASSETS = [
   './js/theme.js',
   './js/views/wardrobe.js',
   './js/views/style.js',
+  './js/views/wishlist.js',
   './js/views/more.js',
   './icons/icon.svg',
   '../shared/body-data.js',

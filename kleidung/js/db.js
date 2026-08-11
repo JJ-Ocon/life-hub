@@ -8,6 +8,8 @@ const KEYS = {
   settings: 'kl_settings_v1',
   styleRules: 'kl_style_rules_v1',
   palette: 'kl_palette_v1',
+  customCategories: 'kl_custom_categories_v1',
+  wishlist: 'kl_wishlist_v1',
 };
 
 function read(key, fallback) {
@@ -34,14 +36,57 @@ export const CATEGORIES = [
   { key: 'sonstiges', label: 'Sonstiges' },
 ];
 
+/** Frei anlegbare zusaetzliche Kategorien (E64), oben drauf auf die
+ *  eingebauten - die eingebauten Keys ('oberteile', 'hosen', ...) bleiben
+ *  bewusst fest, weil shuffleOutfit() sich strukturell auf sie verlaesst
+ *  (Kleid- vs. Oberteil+Hose-Basis, Jacke/Schuhe/Accessoires als Ergaenzung).
+ *  Neue Kategorien sind reine Zusatz-Schubladen fuer Dinge, die in kein
+ *  eingebautes Fach passen, tragen aber selbst keine Shuffle-Logik. */
+export function getCustomCategories() {
+  return read(KEYS.customCategories, []);
+}
+
+export function createCustomCategory(label) {
+  const list = getCustomCategories();
+  const cat = { key: uid(), label: label.trim(), custom: true };
+  write(KEYS.customCategories, [...list, cat]);
+  return cat;
+}
+
+export function deleteCustomCategory(key) {
+  write(KEYS.customCategories, getCustomCategories().filter((c) => c.key !== key));
+  const items = read(KEYS.items, []).map((i) => (i.category === key ? { ...i, category: 'sonstiges' } : i));
+  write(KEYS.items, items);
+}
+
+export function getAllCategories() {
+  return [...CATEGORIES, ...getCustomCategories()];
+}
+
 export function categoryLabel(key) {
-  return CATEGORIES.find((c) => c.key === key)?.label || 'Sonstiges';
+  return getAllCategories().find((c) => c.key === key)?.label || 'Sonstiges';
+}
+
+/** Layering (E64): Basis-/Mittel-/Aussenschicht, aktuell nur bei Oberteilen
+ *  sinnvoll abgefragt (siehe wardrobe.js) - shuffleOutfit() kombiniert bei
+ *  vorhandenen unterschiedlichen Schichten optional mehrere Oberteile statt
+ *  nur eines, siehe dortige Doku. */
+export const LAYERS = [
+  { key: 'base', label: 'Basisschicht' },
+  { key: 'mid', label: 'Mittelschicht' },
+  { key: 'outer', label: 'Außenschicht' },
+];
+
+export function layerLabel(key) {
+  return LAYERS.find((l) => l.key === key)?.label || '';
 }
 
 /* =========================================================
    Kleiderschrank – Kleidungsstücke, die ich besitze.
    ========================================================= */
-// WardrobeItem: { id, name, category, color, colorHex (#rrggbb|null), size, note, photo (dataURL|null), createdAt, updatedAt }
+// WardrobeItem: { id, name, category, color, colorHex (#rrggbb|null), size,
+//                 layer (LAYERS-Key|null), daysWorn, note, photo (dataURL|null),
+//                 createdAt, updatedAt }
 
 export function getItems() {
   return read(KEYS.items, []).sort((a, b) => a.name.localeCompare(b.name, 'de'));
@@ -64,12 +109,26 @@ export function createItem(fields) {
   return saveItem({
     id: uid(), name: fields.name, category: fields.category || 'sonstiges',
     color: fields.color || '', colorHex: fields.colorHex || null, size: fields.size || '', note: fields.note || '',
-    photo: fields.photo || null, createdAt: nowIso(),
+    photo: fields.photo || null, layer: fields.layer || null, daysWorn: 0, createdAt: nowIso(),
   });
 }
 
 export function deleteItem(id) {
   write(KEYS.items, read(KEYS.items, []).filter((i) => i.id !== id));
+}
+
+/** "Heute getragen" (E64) - erhoeht den Tragezaehler um eins; Reset setzt
+ *  ihn auf 0 zurueck (z.B. nach dem Waschen oder zu Saisonbeginn). */
+export function incrementDaysWorn(id) {
+  const item = getItemById(id);
+  if (!item) return null;
+  return saveItem({ ...item, daysWorn: (item.daysWorn || 0) + 1 });
+}
+
+export function resetDaysWorn(id) {
+  const item = getItemById(id);
+  if (!item) return null;
+  return saveItem({ ...item, daysWorn: 0 });
 }
 
 export function itemCounts() {
@@ -110,13 +169,28 @@ export function shuffleOutfit() {
   if (useDress) {
     outfit.push(randomFrom(dresses));
   } else {
-    outfit.push(randomFrom(tops), randomFrom(bottoms));
+    outfit.push(...pickLayeredTops(tops), randomFrom(bottoms));
   }
   for (const key of ['jacken', 'schuhe', 'accessoires']) {
     const pool = byCategory(key);
     if (pool.length) outfit.push(randomFrom(pool));
   }
   return outfit;
+}
+
+/** Waehlt ein oder mehrere Oberteile fuer den Shuffle (E64, Layering).
+ *  Sind Oberteile mit unterschiedlichen Schichten (Basis/Mittel/Aussen)
+ *  getaggt, kombiniert der Shuffler mit 50% Chance eine Basisschicht mit
+ *  einer Mittel- oder Aussenschicht statt nur ein einzelnes Oberteil zu
+ *  waehlen. Ohne Schicht-Tags (Altbestand, oder bewusst nicht eingeordnet)
+ *  bleibt es beim bisherigen Verhalten: genau ein zufaelliges Oberteil. */
+function pickLayeredTops(tops) {
+  const base = tops.filter((t) => t.layer === 'base');
+  const outer = tops.filter((t) => t.layer === 'mid' || t.layer === 'outer');
+  if (base.length && outer.length && Math.random() < 0.5) {
+    return [randomFrom(base), randomFrom(outer)];
+  }
+  return [randomFrom(tops)];
 }
 
 /* =========================================================
@@ -161,6 +235,55 @@ export function addToPalette(hex) {
 
 export function removeFromPalette(hex) {
   write(KEYS.palette, read(KEYS.palette, []).filter((h) => h !== hex));
+}
+
+/* =========================================================
+   Wunschliste (E64) – Dinge, die (noch) nicht im Kleiderschrank sind.
+   "Gekauft" verschiebt den Eintrag in den echten Kleiderschrank (createItem)
+   statt ihn nur zu loeschen, damit nichts doppelt erfasst werden muss.
+   ========================================================= */
+// WishlistItem: { id, name, category, note, link (URL|null), photo (dataURL|null), createdAt }
+
+export function getWishlistItems() {
+  return read(KEYS.wishlist, []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function getWishlistItemById(id) {
+  return read(KEYS.wishlist, []).find((i) => i.id === id) || null;
+}
+
+function saveWishlistItem(item) {
+  const list = read(KEYS.wishlist, []);
+  const idx = list.findIndex((i) => i.id === item.id);
+  if (idx >= 0) list[idx] = item; else list.push(item);
+  write(KEYS.wishlist, list);
+  return item;
+}
+
+export function createWishlistItem(fields) {
+  return saveWishlistItem({
+    id: uid(), name: fields.name, category: fields.category || 'sonstiges',
+    note: fields.note || '', link: fields.link || null, photo: fields.photo || null, createdAt: nowIso(),
+  });
+}
+
+export function updateWishlistItem(id, fields) {
+  const existing = getWishlistItemById(id);
+  if (!existing) return null;
+  return saveWishlistItem({ ...existing, ...fields });
+}
+
+export function deleteWishlistItem(id) {
+  write(KEYS.wishlist, read(KEYS.wishlist, []).filter((i) => i.id !== id));
+}
+
+/** Verschiebt einen Wunschlisten-Eintrag in den echten Kleiderschrank. */
+export function buyWishlistItem(id) {
+  const item = getWishlistItemById(id);
+  if (!item) return null;
+  const created = createItem({ name: item.name, category: item.category, note: item.note, photo: item.photo });
+  deleteWishlistItem(id);
+  return created;
 }
 
 /* =========================================================
@@ -211,6 +334,8 @@ export function exportAllData() {
     settings: getSettings(),
     styleRules: read(KEYS.styleRules, []),
     palette: read(KEYS.palette, []),
+    customCategories: getCustomCategories(),
+    wishlist: read(KEYS.wishlist, []),
   };
 }
 
@@ -219,6 +344,8 @@ export function importAllData(data) {
   if (data.settings) write(KEYS.settings, data.settings);
   if (data.styleRules) write(KEYS.styleRules, data.styleRules);
   if (data.palette) write(KEYS.palette, data.palette);
+  if (data.customCategories) write(KEYS.customCategories, data.customCategories);
+  if (data.wishlist) write(KEYS.wishlist, data.wishlist);
 }
 
 export function resetAllData() {
@@ -226,4 +353,6 @@ export function resetAllData() {
   localStorage.removeItem(KEYS.settings);
   localStorage.removeItem(KEYS.styleRules);
   localStorage.removeItem(KEYS.palette);
+  localStorage.removeItem(KEYS.customCategories);
+  localStorage.removeItem(KEYS.wishlist);
 }
