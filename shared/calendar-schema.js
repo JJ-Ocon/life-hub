@@ -48,6 +48,7 @@ const SOURCE_META = {
   learning: { label: 'Lernen', color: '#7c5cff' },
   vehicle: { label: 'Fahrzeug', color: '#c9524a' },
   social: { label: 'Social', color: '#dc3c71' },
+  hub: { label: 'Eigene Termine', color: '#f2b134' },
 };
 const COLOR_OVERRIDES_KEY = 'hub_source_colors_v1';
 

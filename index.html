@@ -16,109 +16,200 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header>
-    <div>
-      <h1>Life Hub</h1>
-      <p class="subtitle">Deine Apps an einem Ort</p>
-    </div>
-    <div class="header-actions">
-      <a class="header-link" href="backup.html" aria-label="Backup">
-        <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-      </a>
-      <a class="header-link" href="calendar.html" aria-label="Kalender">
-        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/></svg>
-      </a>
-    </div>
-  </header>
+  <div class="hub-pager" id="hub-pager">
 
-  <div class="app-grid">
-    <a class="app-card" href="fitness/">
-      <img class="app-card__icon" src="fitness/icons/icon-192.png" alt="">
-      <div class="app-card__name">Trainingslog</div>
-      <div class="app-card__desc">Training</div>
-    </a>
-    <a class="app-card" href="budget/">
-      <img class="app-card__icon" src="budget/icons/icon.svg" alt="">
-      <div class="app-card__name">Budget</div>
-      <div class="app-card__desc">Ausgaben</div>
-    </a>
-    <a class="app-card" href="meal/">
-      <img class="app-card__icon" src="meal/icons/icon.svg" alt="">
-      <div class="app-card__name">Meal Planning</div>
-      <div class="app-card__desc">Ernährung</div>
-    </a>
-    <a class="app-card" href="notes/">
-      <img class="app-card__icon" src="notes/icons/icon.svg" alt="">
-      <div class="app-card__name">Notizen</div>
-      <div class="app-card__desc">Inbox</div>
-    </a>
-    <a class="app-card" href="goals/">
-      <img class="app-card__icon" src="goals/icons/icon.svg" alt="">
-      <div class="app-card__name">Ziele, Todo &amp; Lernen</div>
-      <div class="app-card__desc">Fortschritt</div>
-    </a>
-    <a class="app-card" href="social/">
-      <img class="app-card__icon" src="social/icons/icon.svg" alt="">
-      <div class="app-card__name">Social</div>
-      <div class="app-card__desc">Kontakte</div>
-    </a>
-    <a class="app-card" href="job/">
-      <img class="app-card__icon" src="job/icons/icon.svg" alt="">
-      <div class="app-card__name">Job</div>
-      <div class="app-card__desc">Karriere</div>
-    </a>
-    <a class="app-card" href="household/">
-      <img class="app-card__icon" src="household/icons/icon.svg" alt="">
-      <div class="app-card__name">Haushalt</div>
-      <div class="app-card__desc">Zuhause</div>
-    </a>
-    <a class="app-card" href="safety/">
-      <img class="app-card__icon" src="safety/icons/icon.svg" alt="">
-      <div class="app-card__name">Digitaler Safe</div>
-      <div class="app-card__desc">Dokumente</div>
-    </a>
-    <a class="app-card" href="possessions/">
-      <img class="app-card__icon" src="possessions/icons/icon.svg" alt="">
-      <div class="app-card__name">Inventar</div>
-      <div class="app-card__desc">Besitz</div>
-    </a>
-    <a class="app-card" href="travel/">
-      <img class="app-card__icon" src="travel/icons/icon.svg" alt="">
-      <div class="app-card__name">Reisen</div>
-      <div class="app-card__desc">Reisen</div>
-    </a>
-    <a class="app-card" href="cosmetics/">
-      <img class="app-card__icon" src="cosmetics/icons/icon.svg" alt="">
-      <div class="app-card__name">Kosmetik</div>
-      <div class="app-card__desc">Pflege</div>
-    </a>
-    <a class="app-card" href="diary/">
-      <img class="app-card__icon" src="diary/icons/icon.svg" alt="">
-      <div class="app-card__name">Tagebuch</div>
-      <div class="app-card__desc">Stimmung</div>
-    </a>
-    <a class="app-card" href="music/">
-      <img class="app-card__icon" src="music/icons/icon.svg" alt="">
-      <div class="app-card__name">Musik</div>
-      <div class="app-card__desc">Musik</div>
-    </a>
-    <a class="app-card" href="vehicle/">
-      <img class="app-card__icon" src="vehicle/icons/icon.svg" alt="">
-      <div class="app-card__name">Fahrzeug</div>
-      <div class="app-card__desc">Mobilität</div>
-    </a>
-    <a class="app-card" href="kleidung/">
-      <img class="app-card__icon" src="kleidung/icons/icon.svg" alt="">
-      <div class="app-card__name">Kleidung</div>
-      <div class="app-card__desc">Garderobe</div>
-    </a>
+    <section class="hub-page" id="page-calendar">
+      <header>
+        <div>
+          <h1>Life Hub</h1>
+          <p class="subtitle">Kalender</p>
+        </div>
+        <div class="header-actions">
+          <button class="header-link" id="go-apps" aria-label="Apps">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          </button>
+          <a class="header-link" href="backup.html" aria-label="Backup">
+            <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+          </a>
+        </div>
+      </header>
+
+      <div id="month-view">
+        <div class="row cal-nav" style="display:flex; justify-content:space-between">
+          <button class="icon-btn" id="cal-prev" aria-label="Zurück"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+          <h3 id="cal-title"></h3>
+          <button class="icon-btn" id="cal-next" aria-label="Weiter"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+        </div>
+
+        <div class="cal-grid cal-grid--headers">
+          <div class="cal-weekday">Mo</div><div class="cal-weekday">Di</div><div class="cal-weekday">Mi</div>
+          <div class="cal-weekday">Do</div><div class="cal-weekday">Fr</div><div class="cal-weekday">Sa</div><div class="cal-weekday">So</div>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <div class="day-view" id="day-view" hidden>
+        <div class="day-view__nav">
+          <button class="icon-btn" id="day-back" aria-label="Zurück zum Monat"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+          <h3 id="day-view-title"></h3>
+          <button class="icon-btn" id="day-add" aria-label="Termin hinzufügen"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
+        </div>
+        <div class="day-allday" id="day-allday"></div>
+        <div class="day-scroll" id="day-scroll">
+          <div class="day-timeline" id="day-timeline">
+            <div class="day-timeline__hours" id="day-hours"></div>
+            <div class="day-timeline__grid" id="day-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <button class="fab" id="cal-fab" aria-label="Termin hinzufügen">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      </button>
+    </section>
+
+    <section class="hub-page" id="page-apps">
+      <header>
+        <div>
+          <h1>Apps</h1>
+          <p class="subtitle">Deine Apps an einem Ort</p>
+        </div>
+        <div class="header-actions">
+          <button class="header-link" id="go-calendar" aria-label="Kalender">
+            <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/></svg>
+          </button>
+          <a class="header-link" href="backup.html" aria-label="Backup">
+            <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+          </a>
+        </div>
+      </header>
+
+      <div class="app-grid">
+        <a class="app-card" href="fitness/">
+          <img class="app-card__icon" src="fitness/icons/icon-192.png" alt="">
+          <div class="app-card__name">Trainingslog</div>
+          <div class="app-card__desc">Training</div>
+        </a>
+        <a class="app-card" href="budget/">
+          <img class="app-card__icon" src="budget/icons/icon.svg" alt="">
+          <div class="app-card__name">Budget</div>
+          <div class="app-card__desc">Ausgaben</div>
+        </a>
+        <a class="app-card" href="meal/">
+          <img class="app-card__icon" src="meal/icons/icon.svg" alt="">
+          <div class="app-card__name">Meal Planning</div>
+          <div class="app-card__desc">Ernährung</div>
+        </a>
+        <a class="app-card" href="notes/">
+          <img class="app-card__icon" src="notes/icons/icon.svg" alt="">
+          <div class="app-card__name">Notizen</div>
+          <div class="app-card__desc">Inbox</div>
+        </a>
+        <a class="app-card" href="goals/">
+          <img class="app-card__icon" src="goals/icons/icon.svg" alt="">
+          <div class="app-card__name">Ziele, Todo &amp; Lernen</div>
+          <div class="app-card__desc">Fortschritt</div>
+        </a>
+        <a class="app-card" href="social/">
+          <img class="app-card__icon" src="social/icons/icon.svg" alt="">
+          <div class="app-card__name">Social</div>
+          <div class="app-card__desc">Kontakte</div>
+        </a>
+        <a class="app-card" href="job/">
+          <img class="app-card__icon" src="job/icons/icon.svg" alt="">
+          <div class="app-card__name">Job</div>
+          <div class="app-card__desc">Karriere</div>
+        </a>
+        <a class="app-card" href="household/">
+          <img class="app-card__icon" src="household/icons/icon.svg" alt="">
+          <div class="app-card__name">Haushalt</div>
+          <div class="app-card__desc">Zuhause</div>
+        </a>
+        <a class="app-card" href="safety/">
+          <img class="app-card__icon" src="safety/icons/icon.svg" alt="">
+          <div class="app-card__name">Digitaler Safe</div>
+          <div class="app-card__desc">Dokumente</div>
+        </a>
+        <a class="app-card" href="possessions/">
+          <img class="app-card__icon" src="possessions/icons/icon.svg" alt="">
+          <div class="app-card__name">Inventar</div>
+          <div class="app-card__desc">Besitz</div>
+        </a>
+        <a class="app-card" href="travel/">
+          <img class="app-card__icon" src="travel/icons/icon.svg" alt="">
+          <div class="app-card__name">Reisen</div>
+          <div class="app-card__desc">Reisen</div>
+        </a>
+        <a class="app-card" href="cosmetics/">
+          <img class="app-card__icon" src="cosmetics/icons/icon.svg" alt="">
+          <div class="app-card__name">Kosmetik</div>
+          <div class="app-card__desc">Pflege</div>
+        </a>
+        <a class="app-card" href="diary/">
+          <img class="app-card__icon" src="diary/icons/icon.svg" alt="">
+          <div class="app-card__name">Tagebuch</div>
+          <div class="app-card__desc">Stimmung</div>
+        </a>
+        <a class="app-card" href="music/">
+          <img class="app-card__icon" src="music/icons/icon.svg" alt="">
+          <div class="app-card__name">Musik</div>
+          <div class="app-card__desc">Musik</div>
+        </a>
+        <a class="app-card" href="vehicle/">
+          <img class="app-card__icon" src="vehicle/icons/icon.svg" alt="">
+          <div class="app-card__name">Fahrzeug</div>
+          <div class="app-card__desc">Mobilität</div>
+        </a>
+        <a class="app-card" href="kleidung/">
+          <img class="app-card__icon" src="kleidung/icons/icon.svg" alt="">
+          <div class="app-card__name">Kleidung</div>
+          <div class="app-card__desc">Garderobe</div>
+        </a>
+      </div>
+    </section>
+
   </div>
 
+  <div class="pager-dots" id="pager-dots">
+    <span class="pager-dot pager-dot--active" data-page="0"></span>
+    <span class="pager-dot" data-page="1"></span>
+  </div>
+
+  <script type="module" src="hub-calendar.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js').catch(() => {});
       });
+    }
+
+    const pager = document.getElementById('hub-pager');
+    const dots = [...document.querySelectorAll('.pager-dot')];
+    function updateDots(i) {
+      dots.forEach((d) => d.classList.toggle('pager-dot--active', Number(d.dataset.page) === i));
+    }
+    function goToPage(i, behavior = 'smooth') {
+      pager.scrollTo({ left: i * window.innerWidth, behavior });
+      updateDots(i);
+    }
+    document.getElementById('go-apps').addEventListener('click', () => goToPage(1));
+    document.getElementById('go-calendar').addEventListener('click', () => goToPage(0));
+    dots.forEach((d) => d.addEventListener('click', () => goToPage(Number(d.dataset.page))));
+    let scrollTimer;
+    pager.addEventListener('scroll', () => {
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => updateDots(Math.round(pager.scrollLeft / window.innerWidth)), 80);
+    });
+
+    if (location.hash === '#apps') {
+      // Doppeltes rAF: robust gegen den ersten Layout-/Paint-Zyklus, in dem ein
+      // direktes scrollLeft-Setzen auf manchen Engines noch verworfen wird.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        pager.scrollLeft = window.innerWidth;
+      }));
+      updateDots(1);
     }
   </script>
 </body>

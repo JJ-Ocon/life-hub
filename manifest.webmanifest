@@ -15,6 +15,6 @@
     { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ],
   "shortcuts": [
-    { "name": "Kalender", "url": "./calendar.html" }
+    { "name": "Apps", "url": "./index.html#apps" }
   ]
 }
