@@ -5,7 +5,7 @@
 // neuen Auth-Token/Salt tragen und sich daher nicht als stabiler Cache-Key eignen.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'music-v4';
+const CACHE_VERSION = 'music-v5';
 
 const ASSETS = [
   './',
