@@ -244,4 +244,7 @@ textarea.input { resize: vertical; min-height: 60px; }
 .gcal-cell--muted { opacity: .35; }
 .gcal-cell--today { border-color: var(--accent); border-width: 2px; }
 .gcal-cell__num { font-size: .82rem; }
+.gcal-cell__dots { display: flex; gap: 3px; height: 5px; }
 .gcal-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.gcal-dot--todo { background: var(--text-dim); }
+.gcal-dot--todo-done { background: var(--text-faint); }

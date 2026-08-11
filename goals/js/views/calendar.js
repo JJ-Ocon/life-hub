@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
-import { getSkills, getSkillById, createLearningPlan, getLearningPlans, deleteLearningPlan } from '../db.js';
+import { getSkills, getSkillById, createLearningPlan, getLearningPlans, deleteLearningPlan, getTodos, toggleTodo } from '../db.js';
 import { openModal, toast, confirmDialog } from '../ui.js';
 import {
   todayKey, addDaysToDateKey, weekdayOfDateKey, daysInMonth, formatDateKey, monthLabel, weekdayLabel, escapeHtml,
@@ -39,6 +39,12 @@ function draw() {
   const today = todayKey();
   const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
   const plans = getLearningPlans();
+  const todosByDate = new Map();
+  for (const t of getTodos()) {
+    if (!t.dueDate) continue;
+    if (!todosByDate.has(t.dueDate)) todosByDate.set(t.dueDate, []);
+    todosByDate.get(t.dueDate).push(t);
+  }
 
   let cells = '';
   for (let i = 0; i < 42; i++) {
@@ -47,10 +53,16 @@ function draw() {
     const inMonth = dateKey.startsWith(monthPrefix);
     const weekday = weekdayOfDateKey(dateKey);
     const hasPlan = plans.some((p) => p.weekdays.includes((weekday + 6) % 7) && dateKey >= p.startDate);
+    const dayTodos = todosByDate.get(dateKey) || [];
+    const allTodosDone = dayTodos.length > 0 && dayTodos.every((t) => t.done);
+    const dots = [
+      hasPlan ? '<span class="gcal-dot"></span>' : '',
+      dayTodos.length ? `<span class="gcal-dot ${allTodosDone ? 'gcal-dot--todo-done' : 'gcal-dot--todo'}"></span>` : '',
+    ].join('');
     cells += `
       <div class="gcal-cell ${inMonth ? '' : 'gcal-cell--muted'} ${dateKey === today ? 'gcal-cell--today' : ''}" data-day="${dateKey}">
         <span class="gcal-cell__num">${Number(dateKey.slice(8, 10))}</span>
-        ${hasPlan ? '<span class="gcal-dot"></span>' : ''}
+        ${dots ? `<span class="gcal-cell__dots">${dots}</span>` : ''}
       </div>
     `;
   }
@@ -107,14 +119,35 @@ function draw() {
 
 function openDayModal(dateKey) {
   const skills = getSkills();
+  const dayTodos = getTodos().filter((t) => t.dueDate === dateKey);
   const handle = openModal(`
     <h3 class="modal-title">${formatDateKey(dateKey, { withWeekday: true })}</h3>
+    ${dayTodos.length ? `
+      <div class="stack" style="margin-bottom:14px">
+        ${dayTodos.map((t) => `
+          <div class="row" style="gap:10px">
+            <input type="checkbox" data-toggle-todo="${t.id}" ${t.done ? 'checked' : ''}>
+            <span class="grow ${t.done ? 'faint' : ''}" data-edit-todo="${t.id}" style="cursor:pointer">${escapeHtml(t.title)}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
     <div class="stack">
       <button class="btn btn-primary" id="dm-todo">+ Todo für diesen Tag</button>
       ${skills.length ? '<button class="btn btn-ghost" id="dm-plan">📚 Lernplan für diesen Tag</button>' : ''}
     </div>
   `, { center: true });
 
+  handle.sheet.querySelectorAll('[data-toggle-todo]').forEach((el) => el.addEventListener('change', () => {
+    toggleTodo(el.dataset.toggleTodo);
+    handle.close();
+    draw();
+  }));
+  handle.sheet.querySelectorAll('[data-edit-todo]').forEach((el) => el.addEventListener('click', () => {
+    const todo = dayTodos.find((t) => t.id === el.dataset.editTodo);
+    handle.close();
+    openTodoModal(todo, draw);
+  }));
   handle.sheet.querySelector('#dm-todo').addEventListener('click', () => {
     handle.close();
     openTodoModal({ id: null, title: '', dueDate: dateKey, goalId: null }, draw);
