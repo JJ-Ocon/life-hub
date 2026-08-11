@@ -1,4 +1,4 @@
-import { setTitle, setActions, setBack } from '../router.js';
+import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
   getActiveSession, setActiveSession, clearActiveSession, saveFinishedSession, allSetsForExercise,
   sessionVolume, getSettings, getCalendarEntriesForDate, deleteCalendarEntry, getExerciseById, getExercises,
@@ -30,7 +30,7 @@ function exerciseMuscleGroup(exerciseId) {
 export function render() {
   const session = getActiveSession();
   if (!session) {
-    location.hash = '#/';
+    navigate('#/');
     return;
   }
   const settings = getSettings();
@@ -72,7 +72,7 @@ export function render() {
 
   setBack(async () => {
     const ok = await confirmDialog('Training verlassen?', 'Dein Fortschritt bleibt gespeichert – du kannst später hier weitermachen.', 'Verlassen', false);
-    if (ok) location.hash = '#/';
+    if (ok) navigate('#/');
   });
   setTitle(session.routineName);
   setActions(`
@@ -812,12 +812,12 @@ export function render() {
         </div>
       ` : ''}
       <button class="btn btn-primary" data-close-modal style="margin-top:20px">Weiter</button>
-    `, { onClose: () => { location.hash = '#/'; } });
+    `, { onClose: () => { navigate('#/'); } });
   }
 
   document.getElementById('cancel-session')?.addEventListener('click', async () => {
     const ok = await confirmDialog('Workout abbrechen?', 'Der bisherige Fortschritt in dieser Einheit geht verloren.', 'Abbrechen', true);
-    if (ok) { stopRestTimer(false); clearActiveSession(); location.hash = '#/'; }
+    if (ok) { stopRestTimer(false); clearActiveSession(); navigate('#/'); }
   });
 
   draw();

@@ -1,4 +1,4 @@
-import { setTitle, setActions, setBack } from '../router.js';
+import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
   getWeeklyPlan, saveWeeklyPlan, syncWeeklyPlanToCalendar, projectPlanDays, getRoutines,
   getLatestWeight, weeklyPlanHasWorkouts,
@@ -14,7 +14,7 @@ const WEEKDAY_SHORT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
 export function render() {
   setTitle('Trainingsplan');
-  setBack(() => { location.hash = '#/calendar'; });
+  setBack(() => { navigate('#/calendar'); });
   setActions('');
 
   // Kaskaden-Effekt (verpasste Rotationstermine) sichtbar machen, bevor gezeichnet wird
@@ -230,7 +230,7 @@ function previewHtml(plan) {
 /* ---------- Events ---------- */
 
 function wire(plan, routines, rotations) {
-  document.getElementById('go-routines')?.addEventListener('click', () => { location.hash = '#/routines'; });
+  document.getElementById('go-routines')?.addEventListener('click', () => { navigate('#/routines'); });
 
   document.querySelectorAll('[data-weeks]').forEach((b) => b.addEventListener('click', async () => {
     const weeks = +b.dataset.weeks;

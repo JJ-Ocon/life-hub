@@ -1,4 +1,4 @@
-import { setTitle, setActions, setBack } from '../router.js';
+import { setTitle, setActions, setBack, navigate } from '../router.js';
 import { getSessions, getSessionById, deleteSession, saveFinishedSession, sessionVolume, getSettings, RECOVERY_LEVELS, cardioFieldDef } from '../db.js';
 import { formatDate, formatDuration, formatNum, escapeHtml } from '../utils.js';
 import { confirmDialog, openModal, promptDialog, toast } from '../ui.js';
@@ -30,15 +30,15 @@ export function renderList() {
     </div>
   `;
 
-  document.querySelectorAll('[data-open]').forEach((c) => c.addEventListener('click', () => location.hash = `#/history/${c.dataset.open}`));
+  document.querySelectorAll('[data-open]').forEach((c) => c.addEventListener('click', () => navigate(`#/history/${c.dataset.open}`)));
 }
 
 export function renderDetail({ id }) {
   const session = getSessionById(id);
-  if (!session) { location.hash = '#/stats'; return; }
+  if (!session) { navigate('#/stats'); return; }
   const settings = getSettings();
 
-  setBack(() => { location.hash = '#/history'; });
+  setBack(() => { navigate('#/history'); });
   setTitle(session.routineName);
   setActions(`<button class="icon-btn" id="del-session" aria-label="Löschen"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg></button>`);
 
@@ -149,7 +149,7 @@ export function renderDetail({ id }) {
 
   document.getElementById('del-session').addEventListener('click', async () => {
     const ok = await confirmDialog('Workout löschen?', 'Dieses Training wird dauerhaft aus dem Verlauf entfernt.');
-    if (ok) { deleteSession(id); location.hash = '#/history'; }
+    if (ok) { deleteSession(id); navigate('#/history'); }
   });
 
   draw();

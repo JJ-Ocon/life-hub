@@ -9,6 +9,17 @@ const tabbar = document.getElementById('tabbar');
 const routes = []; // { regex, keys, tab, load }
 let currentCleanup = null;
 let backOverride = null;
+let lastResolvedHash = location.hash;
+// Markiert einen Hash-Wechsel als von unserem eigenen Code ausgeloest (E66) -
+// noetig, weil manche Browser-Umgebungen (u.a. die hier genutzte Vorschau-
+// Sandbox) auch fuer eine simple location.hash=-Zuweisung ein popstate
+// synthetisieren, nicht nur fuer echtes Browser-Zurueck/Vorwaerts. Ohne
+// dieses Flag wuerde der eigene Zurueck-Handler unten faelschlich auch auf
+// Hash-Wechsel reagieren, die backOverride() selbst gerade ausgeloest hat -
+// das wuerde die eigene Navigation sofort wieder rueckgaengig machen und
+// backOverride() erneut aufrufen (bei einem Bestaetigungsdialog: der Dialog
+// erscheint nach "Bestaetigen" scheinbar erneut, statt die Seite zu verlassen).
+let programmaticNav = false;
 
 export function addRoute(pattern, tab, load) {
   const keys = [];
@@ -31,6 +42,7 @@ export function setBack(onClick) {
 }
 
 export function navigate(hash) {
+  programmaticNav = true;
   location.hash = hash;
 }
 
@@ -67,12 +79,31 @@ async function resolve() {
 
     const result = await r.load(params);
     if (typeof result === 'function') currentCleanup = result;
+    lastResolvedHash = location.hash;
     return;
   }
   viewEl.innerHTML = `<div class="empty"><h3>Seite nicht gefunden</h3></div>`;
 }
 
 window.addEventListener('hashchange', resolve);
+
+/** Hardware-/Geste-Zurueck (E66) soll sich exakt wie der eingebaute
+ *  Zurueck-Pfeil verhalten - insbesondere fuer Views mit eigener
+ *  Zurueck-Logik (z.B. Autosave vor dem Verlassen, oder eine Bestaetigung
+ *  bei ungesicherten Daten), die sonst beim nativen Zurueck-Sprung komplett
+ *  uebersprungen wuerde. Der Browser hat den Hash zum Zeitpunkt von
+ *  popstate schon geaendert; hier wird das per pushState rueckgaengig
+ *  gemacht und stattdessen backOverride() aufgerufen. Ist kein backOverride
+ *  gesetzt (z.B. auf einer Top-Level-Ansicht), greift ganz normal die
+ *  native Browser-Navigation - das fuehrt dort bereits korrekt zurueck zum
+ *  Hub, da keine ueberzaehligen History-Eintraege im Weg stehen. */
+window.addEventListener('popstate', () => {
+  if (programmaticNav) { programmaticNav = false; return; }
+  if (!backOverride) return;
+  programmaticNav = true;
+  history.pushState(null, '', location.pathname + lastResolvedHash);
+  backOverride();
+});
 
 export function startRouter() {
   resolve();

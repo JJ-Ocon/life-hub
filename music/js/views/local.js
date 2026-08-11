@@ -6,7 +6,7 @@
 // dem Dateinamen geraten ("Interpret - Titel.mp3") und bleiben jederzeit
 // per Umbenennen-Dialog korrigierbar.
 
-import { setTitle, setActions, setBack } from '../router.js';
+import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
   getLocalTracks, addLocalTrack, removeLocalTrack, renameLocalTrack, clearAllLocalTracks,
 } from '../db.js';
@@ -23,7 +23,7 @@ export function render() {
       <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
     </button>
   `);
-  setBack(() => { location.hash = '#/more'; });
+  setBack(() => { navigate('#/more'); });
 
   draw();
 

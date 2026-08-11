@@ -1,4 +1,4 @@
-import { setTitle, setActions, setBack } from '../router.js';
+import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
   getRoutineById, saveRoutine, deleteRoutine, getExerciseById, getSettings, CARDIO_FIELDS, cardioFieldDef,
   getRotations, getRotationById, createRotation, addRoutineToRotation, removeRoutineFromRotation,
@@ -10,10 +10,10 @@ import { uid, escapeHtml } from '../utils.js';
 
 export function render({ id }) {
   const routine = getRoutineById(id);
-  if (!routine) { location.hash = '#/routines'; return; }
+  if (!routine) { navigate('#/routines'); return; }
   const settings = getSettings();
 
-  setBack(() => { location.hash = '#/routines'; });
+  setBack(() => { navigate('#/routines'); });
   setTitle(routine.name);
   setActions(`<button class="icon-btn" id="rename-routine" aria-label="Umbenennen"><svg viewBox="0 0 24 24"><path d="M4 20h4L18 10l-4-4L4 16v4z"/></svg></button>`);
 
@@ -143,7 +143,7 @@ export function render({ id }) {
     });
     document.getElementById('delete-routine')?.addEventListener('click', async () => {
       const ok = await confirmDialog('Routine löschen?', 'Diese Routine wird dauerhaft entfernt.');
-      if (ok) { deleteRoutine(routine.id); location.hash = '#/routines'; }
+      if (ok) { deleteRoutine(routine.id); navigate('#/routines'); }
     });
     document.querySelectorAll('[data-configure]').forEach((b) => b.addEventListener('click', () => openConfigure(+b.dataset.configure)));
     document.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {

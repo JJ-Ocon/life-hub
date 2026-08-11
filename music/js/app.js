@@ -38,7 +38,11 @@ function startApp() {
 
   initPlayer();
 
-  if (!location.hash || location.hash === '#') location.hash = '#/';
+  // history.replaceState statt location.hash= (E66): letzteres wuerde einen
+  // zusaetzlichen History-Eintrag erzeugen, wodurch "Zurueck" auf der
+  // Startseite nicht direkt zum Hub fuehrt, sondern erst zu diesem
+  // Zwischenzustand mit leerem Hash.
+  if (!location.hash || location.hash === '#') history.replaceState(null, '', location.pathname + '#/');
   startRouter();
 }
 
