@@ -1,5 +1,5 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
-import { getNoteById, createNote, saveNote, deleteNote, getFolders, ASSIGNABLE_APPS } from '../db.js';
+import { getNoteById, createNote, saveNote, deleteNote, getFolders, ASSIGNABLE_APPS, archiveNote, unarchiveNote } from '../db.js';
 import { confirmDialog, toast, promptDialog } from '../ui.js';
 import { escapeHtml, uid, compressImageFile } from '../utils.js';
 
@@ -26,15 +26,27 @@ export function render(params) {
   if (pendingDrafts[draftKey]) {
     draft = pendingDrafts[draftKey];
   } else {
+    // Aus einem Ordner heraus angelegte Notizen (E61): Ordner-Vorauswahl per
+    // Query-Param, einmalig gelesen und die URL danach bereinigt (gleiches
+    // "einmal lesen, URL saeubern"-Muster wie Goals' quickAdd-Deep-Link).
+    let presetFolder = null;
+    if (!editingId) {
+      const query = new URLSearchParams(location.hash.split('?')[1] || '');
+      presetFolder = query.get('folder');
+      if (presetFolder) history.replaceState(null, '', location.pathname + '#/note/new');
+    }
     draft = existing
       ? { ...existing, items: (existing.items || []).map((i) => ({ ...i })) }
-      : { title: '', type: 'text', text: '', items: [], folder: null, photo: null, remindAt: null, archived: false, assignedApp: null };
+      : { title: '', type: 'text', text: '', items: [], folder: presetFolder || null, photo: null, remindAt: null, archived: false, assignedApp: null };
     pendingDrafts[draftKey] = draft;
   }
 
   setTitle(editingId ? 'Notiz bearbeiten' : 'Neue Notiz');
   setBack(() => { commitAutosave(); navigate('#/'); });
   setActions(editingId ? `
+    <button class="icon-btn" id="note-archive" aria-label="${existing?.archived ? 'Wiederherstellen' : 'Archivieren'}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+    </button>
     <button class="icon-btn" id="note-delete" aria-label="Löschen">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>
     </button>
@@ -193,10 +205,14 @@ function commitAutosave() {
     pendingDrafts[draftKey] = draft;
     setTitle('Notiz bearbeiten');
     setActions(`
+      <button class="icon-btn" id="note-archive" aria-label="Archivieren">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+      </button>
       <button class="icon-btn" id="note-delete" aria-label="Löschen">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>
       </button>
     `);
+    document.getElementById('note-archive')?.addEventListener('click', onArchiveClick);
     document.getElementById('note-delete')?.addEventListener('click', onDeleteClick);
   }
 }
@@ -204,6 +220,15 @@ function commitAutosave() {
 function currentPlainText() {
   if (draft.type === 'checklist') return draft.items.map((i) => i.text).filter(Boolean).join('\n');
   return draft.text;
+}
+
+function onArchiveClick() {
+  const note = getNoteById(editingId);
+  if (!note) return;
+  if (note.archived) unarchiveNote(editingId); else archiveNote(editingId);
+  draft.archived = !note.archived;
+  toast(note.archived ? 'Wiederhergestellt' : 'Archiviert');
+  navigate('#/');
 }
 
 async function onDeleteClick() {
@@ -293,5 +318,6 @@ function wire() {
     location.href = `../goals/#/?quickAdd=${encodeURIComponent(draft.title ? `${draft.title}: ${text}` : text)}`;
   });
 
+  document.getElementById('note-archive')?.addEventListener('click', onArchiveClick);
   document.getElementById('note-delete')?.addEventListener('click', onDeleteClick);
 }

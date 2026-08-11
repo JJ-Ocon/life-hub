@@ -1,6 +1,6 @@
 import { setTitle, setActions, setBack, navigate } from '../router.js';
 import {
-  getNotesSorted, getFolders, getFolderColor, getFolderCounts, getUnassignedNotes, notesInFolder,
+  getNotesSorted, getFolders, getFolderColor, setFolderColor, getFolderCounts, getUnassignedNotes, notesInFolder,
   checklistProgress, archiveNote, unarchiveNote, deleteNote,
 } from '../db.js';
 import { todayKey, formatDateKey, escapeHtml } from '../utils.js';
@@ -18,7 +18,16 @@ export function render() {
     </button>
   `);
   draw();
-  document.getElementById('note-add').addEventListener('click', () => navigate('#/note/new'));
+  document.getElementById('note-add').addEventListener('click', () => {
+    // Aus einem Ordner heraus angelegte Notizen landen automatisch in genau
+    // diesem Ordner (E61), statt danach manuell im Editor zugewiesen werden
+    // zu muessen - der Editor liest den Query-Param einmalig und uebernimmt
+    // ihn ins Draft, aendern bleibt dort jederzeit weiter moeglich.
+    const target = viewMode === 'folder' && activeFolder
+      ? `#/note/new?folder=${encodeURIComponent(activeFolder)}`
+      : '#/note/new';
+    navigate(target);
+  });
 }
 
 function draw() {
@@ -60,11 +69,18 @@ function draw() {
     view.innerHTML = `
       <div class="row" style="gap:10px;margin-bottom:16px">
         <button class="icon-btn" id="folder-back" aria-label="Zurück zu Ordnern"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
-        <h3 class="row" style="gap:8px"><span class="folder-dot" style="background:${getFolderColor(activeFolder)}"></span>${escapeHtml(activeFolder)}</h3>
+        <h3 class="row" style="gap:8px">
+          <input type="color" class="folder-color-input" id="folder-color-pick" value="${getFolderColor(activeFolder)}" aria-label="Ordnerfarbe wählen">
+          ${escapeHtml(activeFolder)}
+        </h3>
       </div>
       ${notesGridOrEmpty(notes, 'Keine Notizen in diesem Ordner.', '')}
     `;
     document.getElementById('folder-back').addEventListener('click', () => { viewMode = 'overview'; draw(); });
+    document.getElementById('folder-color-pick').addEventListener('input', (e) => {
+      setFolderColor(activeFolder, e.target.value);
+      draw();
+    });
     wireNoteCards(view, notes);
     return;
   }

@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'household-v3';
+const CACHE_VERSION = 'household-v4';
 
 const ASSETS = [
   './',
@@ -23,6 +23,7 @@ const ASSETS = [
   '../shared/event-store.js',
   '../shared/receipt-ocr.js',
   '../shared/subscriptions.js',
+  '../shared/notes-bridge.js',
 ];
 
 self.addEventListener('install', (event) => {

@@ -193,7 +193,14 @@ textarea.input { resize: vertical; min-height: 60px; }
 ::-webkit-scrollbar { width: 0; height: 0; }
 
 /* ---------- Notizen ---------- */
-.note-card { position: relative; }
+/* Ohne dies gewinnt bei textreichen Karten oft die native
+   Text-Auswahl/Callout-Geste gegen den eigenen 2-Sekunden-Halten-Timer
+   (wireCard in home.js) - der Timer wird dann durch das synthetische
+   pointercancel abgebrochen, bevor Archivieren/Loeschen ueberhaupt oeffnet.
+   Das erklaert den gemeldeten Bug "laesst sich nicht loeschen, wenn Text
+   drinsteht" (E61): karge Karten ohne viel Text loesten seltener eine
+   Textauswahl aus und funktionierten deshalb scheinbar zufaellig. */
+.note-card { position: relative; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .note-card__text { white-space: pre-wrap; font-size: .92rem; }
 .note-card__preview { font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note-card__meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
@@ -221,6 +228,7 @@ textarea.input { resize: vertical; min-height: 60px; }
 .folder-tile__count { position: absolute; top: 6px; right: 8px; font-size: .68rem; font-weight: 800; opacity: .85; }
 .folder-tile__name { font-size: .74rem; font-weight: 700; text-align: center; line-height: 1.2; word-break: break-word; }
 .folder-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.folder-color-input { width: 16px; height: 16px; border-radius: 50%; border: none; padding: 0; cursor: pointer; flex-shrink: 0; }
 
 /* ---------- Notizen-Kachel-Raster (E56) ---------- */
 .notes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

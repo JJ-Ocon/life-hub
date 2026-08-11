@@ -1,7 +1,7 @@
 // Service Worker: cached die App-Shell fuer Offline-Nutzung.
 // Bei einer neuen Version einfach CACHE_VERSION erhoehen.
 
-const CACHE_VERSION = 'social-v3';
+const CACHE_VERSION = 'social-v4';
 
 const ASSETS = [
   './',
@@ -22,6 +22,7 @@ const ASSETS = [
   '../shared/contacts.js',
   '../shared/calendar-schema.js',
   '../shared/event-store.js',
+  '../shared/notes-bridge.js',
 ];
 
 self.addEventListener('install', (event) => {

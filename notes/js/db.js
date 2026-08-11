@@ -148,6 +148,13 @@ export function getFolderColor(name) {
   return color;
 }
 
+/** Manuelle Farbwahl (E61) - ueberschreibt die automatische Zuweisung dauerhaft. */
+export function setFolderColor(name, color) {
+  const map = read(KEYS.folderColors, {});
+  map[name] = color;
+  write(KEYS.folderColors, map);
+}
+
 export function deleteNote(id) {
   write(KEYS.notes, getNotes().filter((n) => n.id !== id));
 }
