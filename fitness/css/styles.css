@@ -202,6 +202,15 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .card--tap { cursor: pointer; }
 .card--tap:active { background: var(--bg-input); }
 
+/* Auf/Zu-Pfeil fuer einklappbare Uebungs-Karten - immer sichtbar (auch im
+   eingeklappten Zustand), Richtung zeigt den jeweils anderen Zustand an
+   ("nach unten" = aufklappbar, "nach oben" = zuklappbar). */
+.collapse-chevron {
+  width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4;
+  stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; transition: transform .15s ease;
+}
+.collapse-chevron--open { transform: rotate(180deg); }
+
 .section-title {
   font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   color: var(--text-faint); margin: 20px 2px 8px;

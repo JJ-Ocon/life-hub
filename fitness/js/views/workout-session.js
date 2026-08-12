@@ -135,6 +135,15 @@ export function render() {
     const collapsed = collapsedExercises.has(i);
     const doneCount = ex.sets.filter((s) => s.done).length;
 
+    // Kleiner ^-Pfeil oben rechts zeigt IMMER (auf- oder zugeklappt) an, dass
+    // die Karte ueberhaupt umschaltbar ist - vorher gab es dafuer keinerlei
+    // sichtbaren Hinweis, nur den impliziten Tap auf den Titel.
+    const collapseChevron = `
+      <svg class="collapse-chevron ${collapsed ? '' : 'collapse-chevron--open'}" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    `;
+
     if (collapsed) {
       return `
         <div class="card card--tap" style="${sameAsPrev ? 'margin-top:-6px' : ''}" data-toggle-collapse="${i}">
@@ -143,7 +152,7 @@ export function render() {
               ${grouped ? `<div class="badge badge--accent" style="margin-bottom:6px">🔁 Zirkel/Supersatz</div>` : ''}
               <h3 class="truncate" style="margin-bottom:0">${escapeHtml(ex.exerciseName)}</h3>
             </div>
-            <span class="faint" style="flex-shrink:0">${doneCount}/${ex.sets.length} Sätze</span>
+            <span class="faint row" style="flex-shrink:0;gap:6px;align-items:center">${doneCount}/${ex.sets.length} Sätze ${collapseChevron}</span>
           </div>
         </div>
       `;
@@ -162,13 +171,14 @@ export function render() {
         ${grouped ? `<div class="badge badge--accent" style="margin-bottom:8px">🔁 Zirkel/Supersatz</div>` : ''}
         <div class="row row--between">
           <h3 style="margin-bottom:2px;cursor:pointer" data-toggle-collapse="${i}">${escapeHtml(ex.exerciseName)}</h3>
-          <div class="row" style="gap:0">
+          <div class="row" style="gap:0;align-items:center">
             ${ex.mode === 'reps' ? `<button class="icon-btn" data-tools="${i}" aria-label="Scheiben & Aufwärmen">
               <svg viewBox="0 0 24 24"><path d="M4 9v6"/><path d="M8 6v12"/><path d="M12 8v8"/><path d="M16 6v12"/><path d="M20 9v6"/></svg>
             </button>` : ''}
             <button class="icon-btn" data-toggle-note="${i}" aria-label="Notiz zur Übung" style="${ex.comment ? 'color:var(--accent)' : ''}">
               <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             </button>
+            <button class="icon-btn" data-toggle-collapse="${i}" aria-label="Einklappen">${collapseChevron}</button>
           </div>
         </div>
         ${hasAlternatives ? `
