@@ -17,6 +17,12 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/** Individuelle Termin-Farbe (E68+-Nachtrag) hat Vorrang vor der sonst
+ *  gemeinsamen Quell-Farbe - bisher nur von Hub-eigenen Terminen gesetzt. */
+function eventColor(event) {
+  return event.color || getSourceColor(event.source);
+}
+
 /** Ein Event ist ganztaegig/mehrtaegig-Balken (oben, ohne Uhrzeit), wenn sein
  *  `start` keine Uhrzeit traegt ODER `end` auf ein anderes Kalenderdatum faellt. */
 function hasTime(iso) { return iso.length > 10; }
@@ -62,7 +68,7 @@ function renderMonthGrid() {
     const inMonth = d.getMonth() === month;
     const dayEvents = eventsForDay(dateKey);
     const bars = dayEvents.slice(0, MAX_BARS_PER_CELL)
-      .map((e) => `<div class="cal-bar" style="background:${getSourceColor(e.source)}"></div>`).join('');
+      .map((e) => `<div class="cal-bar" style="background:${eventColor(e)}"></div>`).join('');
     const overflow = dayEvents.length - MAX_BARS_PER_CELL;
     cells += `
       <div class="cal-cell ${inMonth ? '' : 'cal-cell--muted'} ${dateKey === todayKey ? 'cal-cell--today' : ''} ${dateKey === selectedDay ? 'cal-cell--selected' : ''}" data-day="${dateKey}">
@@ -115,7 +121,7 @@ function renderDayView() {
   const alldayEl = document.getElementById('day-allday');
   alldayEl.innerHTML = allDayEvents.length
     ? allDayEvents.map((e) => `
-        <div class="day-allday-bar" data-event="${e.id}" style="background:${getSourceColor(e.source)}">
+        <div class="day-allday-bar" data-event="${e.id}" style="background:${eventColor(e)}">
           ${escapeHtml(e.title)}
         </div>`).join('')
     : '';
@@ -148,7 +154,7 @@ function renderDayView() {
     const left = `calc(${(100 / totalCols) * col}% + 3px)`;
     const timeLabel = `${e.start.slice(11, 16)}${e.end && hasTime(e.end) ? '–' + e.end.slice(11, 16) : ''}`;
     return `
-      <div class="day-event-bar" data-event="${e.id}" style="top:${top}px; height:${height}px; left:${left}; width:${width}; background:${getSourceColor(e.source)}">
+      <div class="day-event-bar" data-event="${e.id}" style="top:${top}px; height:${height}px; left:${left}; width:${width}; background:${eventColor(e)}">
         <div class="day-event-bar__title">${escapeHtml(e.title)}</div>
         <div class="day-event-bar__time">${timeLabel}</div>
       </div>`;
@@ -200,7 +206,19 @@ function openForwardDialog(event) {
   overlay.querySelector('[data-close]').addEventListener('click', close);
   overlay.querySelector('#forward-cancel').addEventListener('click', close);
   overlay.querySelector('#forward-go').addEventListener('click', () => {
-    location.href = `../${event.source}/${event.link || ''}`;
+    // Bewusst ein echtes <a>-Element mit target="_blank" statt location.href:
+    // eine reine Skript-Navigation bleibt auf Android innerhalb des Hub-PWA-
+    // Fensters haengen, selbst wenn das Ziel im Scope einer ANDEREN
+    // installierten, verwandten PWA liegt - ein echter Link-Klick wird vom
+    // System dagegen als eigenstaendige Navigation erkannt und kann in die
+    // Ziel-App (statt in einen Browser-Tab) weitergeleitet werden.
+    const a = document.createElement('a');
+    a.href = `../${event.source}/${event.link || ''}`;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   });
 }
 
@@ -211,6 +229,7 @@ function openEventModal(existing) {
   const allDay = existing ? existing.allDay : false;
   const timeStart = existing?.timeStart || '09:00';
   const timeEnd = existing?.timeEnd || '10:00';
+  const color = existing?.color || getSourceColor('hub');
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -241,6 +260,10 @@ function openEventModal(existing) {
             <input class="input" name="timeEnd" type="time" value="${timeEnd}">
           </div>
         </div>
+        <div class="field">
+          <label>Farbe</label>
+          <input class="color-input" name="color" type="color" value="${color}">
+        </div>
         <button type="submit" class="btn btn-primary">Speichern</button>
         ${isEdit ? '<button type="button" class="btn btn-ghost btn-danger" id="event-delete">Löschen</button>' : ''}
       </form>
@@ -270,6 +293,7 @@ function openEventModal(existing) {
       allDay: allDayState,
       timeStart: data.get('timeStart'),
       timeEnd: data.get('timeEnd'),
+      color: data.get('color'),
     };
     if (!fields.title) return;
     if (isEdit) await updateHubEvent(existing.id, fields);

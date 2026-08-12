@@ -19,6 +19,9 @@
  * @property {string} [link]       Hash-Pfad innerhalb der Quell-App (z.B. '#/session/abc') fuer
  *                                  die "Zur App wechseln?"-Weiterleitung im Hub-Kalender (E67+).
  *                                  Fehlt er, verlinkt der Hub nur auf die App-Startseite.
+ * @property {string} [color]      Individuelle Farbe fuer GENAU diesen Termin (Hex), ueberschreibt
+ *                                  im Hub-Kalender die sonst gemeinsame Farbe der Quelle. Bisher nur
+ *                                  von shared/hub-events.js genutzt (E68+-Nachtrag).
  */
 
 /** @param {Partial<CalendarEvent>} fields */
@@ -34,6 +37,7 @@ export function createCalendarEvent(fields) {
     source: fields.source,
     recurrence: fields.recurrence ?? null,
     link: fields.link ?? null,
+    color: fields.color ?? null,
   };
 }
 

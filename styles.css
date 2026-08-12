@@ -193,6 +193,11 @@ p.subtitle { color: var(--text-dim); margin: 0; font-size: .9rem; }
   border-radius: 999px; padding: 7px 14px; font-size: .82rem; font-weight: 600; cursor: pointer;
 }
 .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.color-input {
+  width: 44px; height: 34px; border-radius: 8px; border: 1px solid var(--border); background: none; padding: 2px; cursor: pointer;
+}
+.color-input::-webkit-color-swatch-wrapper { padding: 0; }
+.color-input::-webkit-color-swatch { border: none; border-radius: 5px; }
 
 /* ---------- Backup ---------- */
 .backup-card {

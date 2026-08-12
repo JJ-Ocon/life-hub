@@ -28,6 +28,7 @@ function syncToStore(list) {
     start: e.allDay ? e.dateStart : `${e.dateStart}T${e.timeStart}`,
     end: e.allDay ? e.dateEnd : `${e.dateEnd}T${e.timeEnd}`,
     source: 'hub',
+    color: e.color || null,
   }));
   return replaceSourceEvents('hub', events).catch(() => {});
 }
@@ -54,6 +55,7 @@ export async function createHubEvent(fields) {
     allDay: !!fields.allDay,
     timeStart: fields.allDay ? null : (fields.timeStart || '09:00'),
     timeEnd: fields.allDay ? null : (fields.timeEnd || '10:00'),
+    color: fields.color || null,
   };
   if (entry.dateEnd < entry.dateStart) entry.dateEnd = entry.dateStart;
   list.push(entry);
