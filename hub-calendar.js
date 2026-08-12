@@ -212,8 +212,14 @@ function openForwardDialog(event) {
     // installierten, verwandten PWA liegt - ein echter Link-Klick wird vom
     // System dagegen als eigenstaendige Navigation erkannt und kann in die
     // Ziel-App (statt in einen Browser-Tab) weitergeleitet werden.
+    // ./ statt ../: die Hub-Seite selbst liegt (anders als jede Unter-App,
+    // die eine Ebene tiefer liegt) direkt im Repo-Wurzelverzeichnis. Lokal
+    // faellt das nicht auf (../ am Origin-Root ist dort ein No-op), aber auf
+    // GitHub Pages liegt der Hub unter /life-hub/ - ../ ging dort faelschlich
+    // eine Ebene ÜBER die ganze Seite hinaus (per Screenshot bestaetigt: 404
+    // auf der nackten Domain-Wurzel statt der Ziel-App).
     const a = document.createElement('a');
-    a.href = `../${event.source}/${event.link || ''}`;
+    a.href = `./${event.source}/${event.link || ''}`;
     a.target = '_blank';
     a.rel = 'noopener';
     document.body.appendChild(a);
