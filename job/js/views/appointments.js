@@ -139,8 +139,8 @@ export function openApptModal(existing, onSaved, presetDate) {
     const personId = handle.sheet.querySelector('#a-person')?.value || null;
     const note = handle.sheet.querySelector('#a-note').value.trim();
     if (repeat?.freq === 'custom') repeat.intervalDays = Math.max(1, Number(handle.sheet.querySelector('#repeat-days').value) || 1);
-    if (date !== existing?.date) {
-      const conflicts = await findConflictingEvents(date, 'job').catch(() => []);
+    if (date !== existing?.date || time !== existing?.time) {
+      const conflicts = time ? await findConflictingEvents(date, 'job', { startTime: time }).catch(() => []) : [];
       if (conflicts.length) {
         const names = [...new Set(conflicts.map((c) => getSourceLabel(c.source)))].join(', ');
         const ok = await confirmDialog(

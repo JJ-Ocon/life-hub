@@ -126,9 +126,13 @@ export function goalProgress(goalId) {
 /* =========================================================
    Todos
    ========================================================= */
-// Todo: { id, title, dueDate (YYYY-MM-DD|null), done, goalId (optional),
+// Todo: { id, title, dueDate (YYYY-MM-DD|null), startTime (HH:MM|null), endTime (HH:MM|null),
+//         done, goalId (optional),
 //         repeat ({freq:'daily'|'weekly'|'monthly'|'yearly'|'custom', intervalDays?} | null),
 //         createdAt }
+// startTime/endTime sind bewusst nur bei gesetztem dueDate sinnvoll und optional -
+// ein Todo ohne Uhrzeit gilt automatisch als flexibel (siehe shared/event-store.js's
+// findConflictingEvents) und wird nie als Terminkonflikt markiert.
 
 export const REPEAT_FREQUENCIES = [
   { key: 'daily', label: 'Täglich' },
@@ -192,6 +196,8 @@ export function createTodo(fields) {
     id: uid(),
     title: fields.title,
     dueDate: fields.dueDate || null,
+    startTime: fields.dueDate ? (fields.startTime || null) : null,
+    endTime: fields.dueDate ? (fields.endTime || null) : null,
     done: false,
     goalId: fields.goalId || null,
     repeat: fields.repeat || null,
@@ -235,7 +241,8 @@ export async function refreshSharedCalendarMirror() {
       .map((t) => createCalendarEvent({
         id: `goals-todo-${t.id}`,
         title: t.done ? `✓ ${t.title}` : t.title,
-        start: t.dueDate,
+        start: t.startTime ? `${t.dueDate}T${t.startTime}` : t.dueDate,
+        end: t.endTime ? `${t.dueDate}T${t.endTime}` : null,
         source: 'goals',
         link: '#/',
       }));

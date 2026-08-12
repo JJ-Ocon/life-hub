@@ -38,11 +38,52 @@ function handleQuickAddParam() {
   }
 }
 
+// Welche Abschnitte aufgeklappt sind (E68+-Nachtrag: die Startseite war eine
+// einzige endlos scrollende Liste, inkl. fuer immer angesammelter erledigter
+// Todos). "Ohne Termin" und "Erledigt" sind die eigentlichen Ansammlungs-
+// treiber und starten deshalb eingeklappt; ueberfaellig/heute/demnaechst
+// bleiben immer offen, da die gerade relevanten Todos nicht extra
+// aufgeklappt werden sollen. Zurueckgesetzt bei jedem Laden der View.
+let expandedSections = new Set();
+
+function todoRowHtml(t, today) {
+  const overdue = t.dueDate && t.dueDate < today && !t.done;
+  const timeLabel = t.startTime ? `${t.startTime}${t.endTime ? '–' + t.endTime : ''} · ` : '';
+  return `
+    <div class="todo-row ${t.done ? 'done' : ''}">
+      <span class="set-check ${t.done ? 'done' : ''}" data-toggle="${t.id}">
+        <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+      </span>
+      <span class="todo-row__title" data-open="${t.id}">${escapeHtml(t.title)}</span>
+      ${t.dueDate ? `<span class="todo-row__due ${overdue ? 'todo-row__due--overdue' : ''}">${t.repeat ? `🔁 ${repeatLabel(t.repeat)} · ` : ''}${timeLabel}${formatDateKey(t.dueDate)}</span>` : ''}
+    </div>
+  `;
+}
+
+function sectionHtml(key, label, todos, today, collapsedByDefault) {
+  if (!todos.length) return '';
+  const expanded = expandedSections.has(key) || !collapsedByDefault;
+  return `
+    <div class="section-title row row--between" data-section-toggle="${key}" style="cursor:pointer">
+      <span>${label} (${todos.length})</span>
+      <span class="faint">${expanded ? '▾' : '▸'}</span>
+    </div>
+    ${expanded ? `<div class="card">${todos.map((t) => todoRowHtml(t, today)).join('')}</div>` : ''}
+  `;
+}
+
 function draw() {
   const view = document.getElementById('view');
   const todos = getTodosSorted();
   const today = todayKey();
   const assignedNotes = getNotesForApp('goals');
+
+  const open = todos.filter((t) => !t.done);
+  const done = todos.filter((t) => t.done);
+  const overdue = open.filter((t) => t.dueDate && t.dueDate < today);
+  const dueToday = open.filter((t) => t.dueDate === today);
+  const upcoming = open.filter((t) => t.dueDate && t.dueDate > today);
+  const noDate = open.filter((t) => !t.dueDate);
 
   view.innerHTML = `
     <div class="quick-add">
@@ -68,20 +109,11 @@ function draw() {
         <p class="faint">Alles erledigt, oder noch nichts erfasst.</p>
       </div>
     ` : `
-      <div class="card">
-        ${todos.map((t) => {
-          const overdue = t.dueDate && t.dueDate < today && !t.done;
-          return `
-            <div class="todo-row ${t.done ? 'done' : ''}">
-              <span class="set-check ${t.done ? 'done' : ''}" data-toggle="${t.id}">
-                <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-              </span>
-              <span class="todo-row__title" data-open="${t.id}">${escapeHtml(t.title)}</span>
-              ${t.dueDate ? `<span class="todo-row__due ${overdue ? 'todo-row__due--overdue' : ''}">${t.repeat ? `🔁 ${repeatLabel(t.repeat)} · ` : ''}${formatDateKey(t.dueDate)}</span>` : ''}
-            </div>
-          `;
-        }).join('')}
-      </div>
+      ${sectionHtml('overdue', '⚠️ Überfällig', overdue, today, false)}
+      ${sectionHtml('today', 'Heute', dueToday, today, false)}
+      ${sectionHtml('upcoming', 'Demnächst', upcoming, today, false)}
+      ${sectionHtml('nodate', 'Ohne Termin', noDate, today, true)}
+      ${sectionHtml('done', 'Erledigt', done, today, true)}
     `}
   `;
 
@@ -91,6 +123,13 @@ function draw() {
     if (!title) return;
     createTodo({ title });
     draw();
+  });
+  view.querySelectorAll('[data-section-toggle]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.sectionToggle;
+      if (expandedSections.has(key)) expandedSections.delete(key); else expandedSections.add(key);
+      draw();
+    });
   });
   view.querySelectorAll('[data-toggle]').forEach((el) => {
     el.addEventListener('click', () => { toggleTodo(el.dataset.toggle); draw(); });
@@ -181,6 +220,14 @@ export function openTodoModal(todo, onSaved) {
       <label>Fällig am (optional)</label>
       <input class="input" type="date" id="todo-due" value="${todo.dueDate || ''}">
     </div>
+    <div class="field" id="time-wrap" style="${todo.dueDate ? '' : 'display:none'}">
+      <label>Uhrzeit (optional)</label>
+      <div class="input-row">
+        <input class="input" type="time" id="todo-start-time" value="${todo.startTime || ''}">
+        <input class="input" type="time" id="todo-end-time" value="${todo.endTime || ''}">
+      </div>
+      <p class="faint" style="margin:2px 0 0">Ohne Uhrzeit gilt das Todo als flexibel und wird nie als Terminkonflikt markiert.</p>
+    </div>
     <div class="field" id="repeat-wrap" style="${todo.dueDate ? '' : 'display:none'}">
       <label>Wiederholung (optional)</label>
       <div class="chip-row">
@@ -210,6 +257,7 @@ export function openTodoModal(todo, onSaved) {
 
   handle.sheet.querySelector('#todo-due').addEventListener('change', (e) => {
     handle.sheet.querySelector('#repeat-wrap').style.display = e.target.value ? '' : 'none';
+    handle.sheet.querySelector('#time-wrap').style.display = e.target.value ? '' : 'none';
   });
   handle.sheet.querySelectorAll('[data-repeat]').forEach((b) => b.addEventListener('click', () => {
     const key = b.dataset.repeat;
@@ -222,12 +270,14 @@ export function openTodoModal(todo, onSaved) {
     const title = handle.sheet.querySelector('#todo-title').value.trim();
     if (!title) { toast('Bitte einen Titel eingeben'); return; }
     const dueDate = handle.sheet.querySelector('#todo-due').value || null;
+    const startTime = dueDate ? (handle.sheet.querySelector('#todo-start-time').value || null) : null;
+    const endTime = dueDate ? (handle.sheet.querySelector('#todo-end-time').value || null) : null;
     const goalId = handle.sheet.querySelector('#todo-goal')?.value || null;
     if (repeat?.freq === 'custom') repeat.intervalDays = Math.max(1, Number(handle.sheet.querySelector('#repeat-days').value) || 1);
     // Wiederholung braucht ein Faelligkeitsdatum als Anker - ohne Datum ergibt sie keinen Sinn.
     const finalRepeat = dueDate ? repeat : null;
-    if (dueDate && dueDate !== todo.dueDate) {
-      const conflicts = await findConflictingEvents(dueDate, 'goals').catch(() => []);
+    if (dueDate && startTime && (dueDate !== todo.dueDate || startTime !== todo.startTime || endTime !== todo.endTime)) {
+      const conflicts = await findConflictingEvents(dueDate, 'goals', { startTime, endTime }).catch(() => []);
       if (conflicts.length) {
         const names = [...new Set(conflicts.map((c) => getSourceLabel(c.source)))].join(', ');
         const ok = await confirmDialog(
@@ -239,9 +289,9 @@ export function openTodoModal(todo, onSaved) {
       }
     }
     if (isNew) {
-      createTodo({ title, dueDate, goalId, repeat: finalRepeat });
+      createTodo({ title, dueDate, startTime, endTime, goalId, repeat: finalRepeat });
     } else {
-      saveTodo({ ...todo, title, dueDate, goalId, repeat: finalRepeat });
+      saveTodo({ ...todo, title, dueDate, startTime, endTime, goalId, repeat: finalRepeat });
     }
     toast('Gespeichert');
     handle.close();
