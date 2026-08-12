@@ -1,6 +1,7 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
-  getRecipes, getRecipeById, getMealPlanForDate, setMealSlot, dayNutrition, MEALS, getSettings,
+  getRecipes, getRecipeById, getMealPlanForDate, addMealSlotEntry, setMealSlotEntryServings, removeMealSlotEntry,
+  dayNutrition, MEALS, getSettings,
   targetKcalForDate, getActiveDiet, dietStatusForDate, costForRange, applyRecurringRules, getSharedGroceryComparison,
 } from '../db.js';
 import { openModal, toast } from '../ui.js';
@@ -30,13 +31,17 @@ async function draw() {
       : '';
 
     const slots = MEALS.map((m) => {
-      const entry = entries.find((e) => e.meal === m.key);
-      const recipe = entry ? getRecipeById(entry.recipeId) : null;
+      const slotEntries = entries.filter((e) => e.meal === m.key);
+      const names = slotEntries.map((e) => {
+        const recipe = getRecipeById(e.recipeId);
+        const name = recipe ? escapeHtml(recipe.name) : 'Gelöschtes Rezept';
+        return e.servings > 1 ? `${name} ×${e.servings}` : name;
+      });
       return `
         <div class="meal-slot" data-day="${date}" data-meal="${m.key}">
           <span class="meal-slot__label">${m.label}</span>
           <span class="meal-slot__content">
-            ${recipe ? escapeHtml(recipe.name) : '<span class="meal-slot__empty">+ Rezept wählen</span>'}
+            ${names.length ? names.join(', ') : '<span class="meal-slot__empty">+ Rezept wählen</span>'}
           </span>
         </div>
       `;
@@ -104,6 +109,11 @@ function dietBannerHtml(diet) {
   `;
 }
 
+/** Ein Slot kann mehrere Rezepte tragen (E68+-Nachtrag) - bestehende Eintraege
+ *  lassen sich per Mengen-Stepper anpassen (0 entfernt den Eintrag) oder
+ *  einzeln entfernen, darunter eine Liste aller Rezepte zum Hinzufuegen
+ *  (fuegt dasselbe Rezept erneut hinzu -> erhoeht nur dessen Menge, siehe
+ *  addMealSlotEntry). */
 function openSlotModal(date, meal) {
   const recipes = getRecipes();
   const mealLabel = MEALS.find((m) => m.key === meal)?.label || meal;
@@ -115,20 +125,50 @@ function openSlotModal(date, meal) {
 
   const handle = openModal(`
     <h3 class="modal-title">${mealLabel} · ${formatDateKey(date, { withWeekday: true })}</h3>
+    <div class="stack" id="slot-entries" style="margin-bottom:14px"></div>
+    <div class="section-title" style="margin-top:0">Rezept hinzufügen</div>
     <div class="stack">
       ${recipes.map((r) => `<button class="btn btn-ghost" data-pick="${r.id}">${escapeHtml(r.name)}</button>`).join('')}
-      <button class="btn btn-danger" data-clear>Slot leeren</button>
     </div>
   `, { center: true });
 
+  function drawEntries() {
+    const entries = getMealPlanForDate(date).filter((e) => e.meal === meal);
+    const wrap = handle.sheet.querySelector('#slot-entries');
+    wrap.innerHTML = entries.length ? entries.map((e) => {
+      const recipe = getRecipeById(e.recipeId);
+      return `
+        <div class="row row--between">
+          <span class="grow truncate">${escapeHtml(recipe?.name || 'Gelöschtes Rezept')}</span>
+          <div class="row" style="gap:0">
+            <button type="button" class="icon-btn" data-qty="${e.id}:-1" aria-label="Weniger"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+            <span style="min-width:22px;text-align:center">${e.servings}</span>
+            <button type="button" class="icon-btn" data-qty="${e.id}:1" aria-label="Mehr"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
+            <button type="button" class="icon-btn" data-remove="${e.id}" aria-label="Entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          </div>
+        </div>
+      `;
+    }).join('') : '<p class="faint">Noch nichts geplant.</p>';
+
+    wrap.querySelectorAll('[data-qty]').forEach((b) => b.addEventListener('click', () => {
+      const [entryId, delta] = b.dataset.qty.split(':');
+      const entry = getMealPlanForDate(date).find((e) => e.id === entryId);
+      if (!entry) return;
+      setMealSlotEntryServings(entryId, entry.servings + Number(delta));
+      drawEntries();
+      draw();
+    }));
+    wrap.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
+      removeMealSlotEntry(b.dataset.remove);
+      drawEntries();
+      draw();
+    }));
+  }
+  drawEntries();
+
   handle.sheet.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => {
-    setMealSlot(date, meal, b.dataset.pick, 1);
-    handle.close();
+    addMealSlotEntry(date, meal, b.dataset.pick, 1);
+    drawEntries();
     draw();
   }));
-  handle.sheet.querySelector('[data-clear]').addEventListener('click', () => {
-    setMealSlot(date, meal, null);
-    handle.close();
-    draw();
-  });
 }

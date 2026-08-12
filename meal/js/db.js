@@ -8,6 +8,7 @@ import { getSharedGrocerySpend } from '../../shared/grocery-cost.js';
 
 const KEYS = {
   recipes: 'ml_recipes_v1',
+  recipeCategories: 'ml_recipe_categories_v1',
   mealPlan: 'ml_meal_plan_v1',
   settings: 'ml_settings_v1',
   shoppingChecked: 'ml_shopping_checked_v1',
@@ -175,10 +176,31 @@ export async function getFoodByName(name) {
 /* =========================================================
    Rezepte
    ========================================================= */
-// Recipe: { id, name, servings, ingredients: [{foodName, grams}], note, createdAt }
+// Recipe: { id, name, servings, ingredients: [{foodName, grams}], note,
+//           categoryIds: string[], createdAt }
+// RecipeCategory: { id, name, createdAt } - frei erstellbar, ein Rezept kann
+// mehreren Kategorien zugeordnet sein (E68+-Nachtrag).
+
+export function getRecipeCategories() {
+  return read(KEYS.recipeCategories, []);
+}
+
+export function createRecipeCategory(name) {
+  const category = { id: uid(), name: (name || '').trim(), createdAt: nowIso() };
+  if (!category.name) return null;
+  write(KEYS.recipeCategories, [...getRecipeCategories(), category]);
+  return category;
+}
+
+export function deleteRecipeCategory(id) {
+  write(KEYS.recipeCategories, getRecipeCategories().filter((c) => c.id !== id));
+  // Zuordnungen bei betroffenen Rezepten mit entfernen, statt verwaiste IDs stehen zu lassen.
+  const recipes = getRecipes().map((r) => ({ ...r, categoryIds: (r.categoryIds || []).filter((cid) => cid !== id) }));
+  write(KEYS.recipes, recipes);
+}
 
 export function getRecipes() {
-  return read(KEYS.recipes, []);
+  return read(KEYS.recipes, []).map((r) => ({ categoryIds: [], ...r }));
 }
 
 export function getRecipeById(id) {
@@ -186,7 +208,7 @@ export function getRecipeById(id) {
 }
 
 export function saveRecipe(recipe) {
-  const list = getRecipes();
+  const list = read(KEYS.recipes, []);
   const idx = list.findIndex((r) => r.id === recipe.id);
   if (idx >= 0) list[idx] = recipe; else list.push(recipe);
   write(KEYS.recipes, list);
@@ -200,6 +222,7 @@ export function createRecipe(fields) {
     servings: fields.servings || 1,
     ingredients: fields.ingredients || [],
     note: fields.note || '',
+    categoryIds: fields.categoryIds || [],
     createdAt: nowIso(),
   };
   return saveRecipe(recipe);
@@ -424,7 +447,7 @@ export function applyRecurringRules(weekStartMonday) {
     const date = addDaysToDateKey(weekStartMonday, rule.weekday);
     const existing = getMealPlanForDate(date).find((e) => e.meal === rule.meal);
     if (existing) continue;
-    setMealSlot(date, rule.meal, rule.recipeId, rule.servings);
+    addMealSlotEntry(date, rule.meal, rule.recipeId, rule.servings);
     filled++;
   }
   return filled;
@@ -454,18 +477,31 @@ export function getMealPlanForRange(startDate, endDate) {
   return getMealPlanEntries().filter((e) => e.date >= startDate && e.date <= endDate);
 }
 
-/** Setzt (oder loescht, wenn recipeId null ist) das Rezept fuer einen Mahlzeit-Slot. */
-export function setMealSlot(date, meal, recipeId, servings = 1) {
+/** Fuegt ein Rezept zu einem Mahlzeit-Slot hinzu - ein Slot kann mehrere
+ *  Rezepte tragen (E68+-Nachtrag). Ist dasselbe Rezept im selben Slot schon
+ *  vorhanden, wird stattdessen dessen Menge erhoeht statt eine zweite,
+ *  identische Zeile anzulegen ("Multiples vom selben Rezept"). */
+export function addMealSlotEntry(date, meal, recipeId, servings = 1) {
   const list = getMealPlanEntries();
-  const idx = list.findIndex((e) => e.date === date && e.meal === meal);
-  if (!recipeId) {
-    if (idx >= 0) list.splice(idx, 1);
-  } else if (idx >= 0) {
-    list[idx] = { ...list[idx], recipeId, servings };
+  const idx = list.findIndex((e) => e.date === date && e.meal === meal && e.recipeId === recipeId);
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], servings: list[idx].servings + servings };
   } else {
     list.push({ id: uid(), date, meal, recipeId, servings, createdAt: nowIso() });
   }
   write(KEYS.mealPlan, list);
+}
+
+export function setMealSlotEntryServings(entryId, servings) {
+  const list = getMealPlanEntries();
+  const idx = list.findIndex((e) => e.id === entryId);
+  if (idx === -1) return;
+  if (servings <= 0) { list.splice(idx, 1); } else { list[idx] = { ...list[idx], servings }; }
+  write(KEYS.mealPlan, list);
+}
+
+export function removeMealSlotEntry(entryId) {
+  write(KEYS.mealPlan, getMealPlanEntries().filter((e) => e.id !== entryId));
 }
 
 /** Naehrwert-Summe eines Tages ueber alle geplanten Mahlzeiten. */
@@ -689,6 +725,7 @@ export function exportAllData() {
   return {
     exportedAt: nowIso(),
     recipes: getRecipes(),
+    recipeCategories: getRecipeCategories(),
     mealPlan: getMealPlanEntries(),
     customFoods: getCustomFoods(),
     settings: getSettings(),
@@ -702,6 +739,7 @@ export function exportAllData() {
 
 export function importAllData(data) {
   if (data.recipes) write(KEYS.recipes, data.recipes);
+  if (data.recipeCategories) write(KEYS.recipeCategories, data.recipeCategories);
   if (data.mealPlan) write(KEYS.mealPlan, data.mealPlan);
   if (data.customFoods) write(KEYS.customFoods, data.customFoods);
   if (data.settings) write(KEYS.settings, data.settings);
@@ -714,6 +752,7 @@ export function importAllData(data) {
 
 export function resetAllData() {
   localStorage.removeItem(KEYS.recipes);
+  localStorage.removeItem(KEYS.recipeCategories);
   localStorage.removeItem(KEYS.mealPlan);
   localStorage.removeItem(KEYS.settings);
   localStorage.removeItem(KEYS.shoppingChecked);

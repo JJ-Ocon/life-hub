@@ -3,9 +3,12 @@ import {
   getRecipes, getRecipeById, saveRecipe, createRecipe, deleteRecipe, recipeNutrition, searchFoods, createCustomFood,
   getIngredientPrice, setIngredientPrice, recipeCost, MEALS,
   getRecurringRulesForRecipe, createRecurringRule, deleteRecurringRule,
+  getRecipeCategories, createRecipeCategory,
 } from '../db.js';
-import { openModal, confirmDialog, toast } from '../ui.js';
+import { openModal, confirmDialog, toast, promptDialog } from '../ui.js';
 import { escapeHtml, formatNum, formatMoney, uid, weekdayLabel } from '../utils.js';
+
+let activeCategoryFilter = null; // null = alle
 
 export async function render() {
   setTitle('Rezepte');
@@ -20,16 +23,30 @@ export async function render() {
 }
 
 async function draw() {
-  const recipes = getRecipes();
+  const allRecipes = getRecipes();
+  const categories = getRecipeCategories();
+  const recipes = activeCategoryFilter ? allRecipes.filter((r) => r.categoryIds.includes(activeCategoryFilter)) : allRecipes;
   const view = document.getElementById('view');
 
-  if (!recipes.length) {
+  const filterRowHtml = categories.length ? `
+    <div class="chip-row" style="margin-bottom:14px">
+      <button type="button" class="chip ${!activeCategoryFilter ? 'active' : ''}" data-filter="">Alle</button>
+      ${categories.map((c) => `<button type="button" class="chip ${activeCategoryFilter === c.id ? 'active' : ''}" data-filter="${c.id}">${escapeHtml(c.name)}</button>`).join('')}
+    </div>
+  ` : '';
+
+  if (!allRecipes.length) {
     view.innerHTML = `
       <div class="empty">
         <h3>Noch keine Rezepte</h3>
         <p class="faint">Lege dein erstes Rezept über das Plus oben rechts an.</p>
       </div>
     `;
+    return;
+  }
+  if (!recipes.length) {
+    view.innerHTML = `${filterRowHtml}<p class="faint">Keine Rezepte in dieser Kategorie.</p>`;
+    view.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => { activeCategoryFilter = b.dataset.filter || null; draw(); }));
     return;
   }
 
@@ -54,7 +71,8 @@ async function draw() {
     `;
   }));
 
-  view.innerHTML = `<div class="stack">${cards.join('')}</div>`;
+  view.innerHTML = `${filterRowHtml}<div class="stack">${cards.join('')}</div>`;
+  view.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => { activeCategoryFilter = b.dataset.filter || null; draw(); }));
   view.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => openRecipeModal(getRecipeById(el.dataset.open), draw));
   });
@@ -88,6 +106,7 @@ function recomputeGrams(ing) {
 
 function openRecipeModal(existing, onSaved) {
   const ingredients = existing ? existing.ingredients.map(normalizeIngredient) : [normalizeIngredient({ foodName: '', grams: 100 })];
+  let categoryIds = existing?.categoryIds ? [...existing.categoryIds] : [];
 
   function content() {
     return `
@@ -99,6 +118,10 @@ function openRecipeModal(existing, onSaved) {
       <div class="field">
         <label>Portionen</label>
         <input class="input" type="number" min="1" step="1" id="recipe-servings" value="${existing?.servings || 2}">
+      </div>
+      <div class="field">
+        <label>Kategorien (optional)</label>
+        <div class="chip-row" id="category-row"></div>
       </div>
       <div class="field">
         <label>Zutaten</label>
@@ -177,7 +200,32 @@ function openRecipeModal(existing, onSaved) {
   renderIngredients();
   updateSummary();
   renderRecurringSection();
+  renderCategorySection();
   wireStatic();
+
+  /** Frei erstellbare Kategorien, mehrfach zuordbar (E68+-Nachtrag) - gleiches
+   *  "+ Neu"-Inline-Muster wie Notizens Ordner-Chips. */
+  function renderCategorySection() {
+    const row = handle.sheet.querySelector('#category-row');
+    const categories = getRecipeCategories();
+    row.innerHTML = `
+      ${categories.map((c) => `<button type="button" class="chip ${categoryIds.includes(c.id) ? 'active' : ''}" data-category="${c.id}">${escapeHtml(c.name)}</button>`).join('')}
+      <button type="button" class="chip" id="category-new">+ Neu</button>
+    `;
+    row.querySelectorAll('[data-category]').forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.category;
+      if (categoryIds.includes(id)) categoryIds = categoryIds.filter((c) => c !== id);
+      else categoryIds.push(id);
+      b.classList.toggle('active', categoryIds.includes(id));
+    }));
+    row.querySelector('#category-new').addEventListener('click', async () => {
+      const name = await promptDialog('Neue Kategorie', { placeholder: 'z.B. Frühstück' });
+      if (!name) return;
+      const category = createRecipeCategory(name);
+      if (category) categoryIds.push(category.id);
+      renderCategorySection();
+    });
+  }
 
   /** Rettet ein unfertiges Rezept (z.B. Name getippt, aber noch keine
    *  Zutaten) beim Schliessen ueber X/Overlay-Klick statt es stillschweigend
@@ -196,9 +244,9 @@ function openRecipeModal(existing, onSaved) {
     if (existing) {
       const snapshot = JSON.stringify({ name: name || existing.name, servings, note, ingredients: cleanIngredients.length ? cleanIngredients : existing.ingredients });
       if (snapshot === initialSnapshot) return; // nichts geaendert
-      saveRecipe({ ...existing, name: name || existing.name, servings, note, ingredients: cleanIngredients.length ? cleanIngredients : existing.ingredients });
+      saveRecipe({ ...existing, name: name || existing.name, servings, note, ingredients: cleanIngredients.length ? cleanIngredients : existing.ingredients, categoryIds });
     } else {
-      createRecipe({ name: name || 'Unbenanntes Rezept', servings, note, ingredients: cleanIngredients });
+      createRecipe({ name: name || 'Unbenanntes Rezept', servings, note, ingredients: cleanIngredients, categoryIds });
     }
     toast('Entwurf gespeichert');
     onSaved?.();
@@ -335,9 +383,9 @@ function openRecipeModal(existing, onSaved) {
     if (!cleanIngredients.length) { toast('Bitte mindestens eine Zutat angeben'); return; }
     finalized = true;
     if (existing) {
-      saveRecipe({ ...existing, name, servings, note, ingredients: cleanIngredients });
+      saveRecipe({ ...existing, name, servings, note, ingredients: cleanIngredients, categoryIds });
     } else {
-      createRecipe({ name, servings, note, ingredients: cleanIngredients });
+      createRecipe({ name, servings, note, ingredients: cleanIngredients, categoryIds });
     }
     toast('Gespeichert');
     handle.close();
