@@ -9,11 +9,23 @@ import { openModal, confirmDialog, toast } from '../ui.js';
 import { todayKey, formatDateKey, formatMoney, escapeHtml, compressImageFile } from '../utils.js';
 import { recognizeText, parseReceiptText } from '../../../shared/receipt-ocr.js';
 
+let searchOpen = false;
+let searchQuery = '';
+
 export function render() {
   setTitle('Inventar');
   setBack(null);
-  setActions('');
+  setActions(`
+    <button class="icon-btn" id="item-search" aria-label="Suchen">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    </button>
+  `);
   draw();
+  document.getElementById('item-search').addEventListener('click', () => {
+    searchOpen = !searchOpen;
+    if (!searchOpen) searchQuery = '';
+    draw();
+  });
 
   const q = new URLSearchParams((location.hash.split('?')[1] || ''));
   const openId = q.get('open');
@@ -21,6 +33,13 @@ export function render() {
     const item = getItemById(openId);
     if (item) openItemModal(item, draw);
   }
+}
+
+function matchesSearch(i) {
+  if (!searchQuery.trim()) return true;
+  const needle = searchQuery.trim().toLowerCase();
+  const haystack = [i.name, i.serialNumber, i.subcategory, categoryLabel(i.category), i.retailer, i.note].filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes(needle);
 }
 
 // Ein-/ausgeklappter Zustand je Oberkategorie und je Unterkategorie
@@ -77,16 +96,23 @@ function itemRowHtml(i) {
 function draw() {
   const view = document.getElementById('view');
   const items = getItems();
+  const searching = !!searchQuery.trim();
+  const visibleItems = searching ? items.filter(matchesSearch) : items;
   const reserve = totalSuggestedMonthlyReserve();
-  const groups = groupItems(items);
+  const groups = groupItems(visibleItems);
   view.innerHTML = `
-    ${items.length > 0 ? `
+    ${searchOpen ? `
+      <div class="field" style="margin-bottom:14px">
+        <input class="input" id="item-search-input" type="search" placeholder="Suchen …" value="${escapeHtml(searchQuery)}">
+      </div>
+    ` : ''}
+    ${items.length > 0 && !searching ? `
       <div class="stat-tile" style="margin-bottom:14px">
         <div class="stat-tile__value">${formatMoney(totalValue())}</div>
         <div class="stat-tile__label">Gesamtwert (aktueller bzw. geschätzter Wert)</div>
       </div>
     ` : ''}
-    ${reserve > 0 ? `
+    ${reserve > 0 && !searching ? `
       <div class="card" style="margin-bottom:14px">
         <div class="row row--between">
           <div class="col">
@@ -102,8 +128,13 @@ function draw() {
         <h3>Noch keine Gegenstände</h3>
         <p class="faint">Lege Elektronik, Möbel, Werkzeug oder andere Wertsachen mit Seriennummer, Kaufbeleg und Garantie an.</p>
       </div>
+    ` : visibleItems.length === 0 ? `
+      <div class="empty">
+        <h3>Keine Treffer</h3>
+        <p class="faint">Andere Suche versuchen.</p>
+      </div>
     ` : groups.map((g) => {
-      const catCollapsed = collapsedCategories.has(g.key);
+      const catCollapsed = !searching && collapsedCategories.has(g.key);
       return `
         <button type="button" class="cat-group-header" data-toggle-cat="${g.key}">
           ${collapseChevronSvg(catCollapsed)}
@@ -115,7 +146,7 @@ function draw() {
             ${g.subgroups.map(([subKey, subItems]) => {
               if (!subKey) return subItems.map(itemRowHtml).join('');
               const subCollapseKey = `${g.key}::${subKey}`;
-              const subCollapsed = collapsedSubcats.has(subCollapseKey);
+              const subCollapsed = !searching && collapsedSubcats.has(subCollapseKey);
               return `
                 <button type="button" class="subcat-group-header" data-toggle-subcat="${escapeHtml(subCollapseKey)}">
                   ${collapseChevronSvg(subCollapsed)}
@@ -153,6 +184,15 @@ function draw() {
     const params = new URLSearchParams({ envName: 'Ersatzbeschaffung', envAmount: reserve.toFixed(2) });
     location.href = `../budget/#/savings?${params.toString()}`;
   });
+  const searchInput = document.getElementById('item-search-input');
+  if (searchInput) {
+    searchInput.focus();
+    searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value;
+      draw();
+    });
+  }
 }
 
 function openItemModal(existing, onSaved) {

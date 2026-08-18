@@ -9,24 +9,57 @@ import { openModal, confirmDialog, toast, promptDialog } from '../ui.js';
 import { escapeHtml, formatNum, formatMoney, uid, weekdayLabel } from '../utils.js';
 
 let activeCategoryFilter = null; // null = alle
+let searchOpen = false;
+let searchQuery = '';
 
 export async function render() {
   setTitle('Rezepte');
   setBack(null);
   setActions(`
+    <button class="icon-btn" id="recipe-search" aria-label="Suchen">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    </button>
     <button class="icon-btn" id="recipe-add" aria-label="Rezept anlegen">
       <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
     </button>
   `);
   await draw();
+  document.getElementById('recipe-search').addEventListener('click', () => {
+    searchOpen = !searchOpen;
+    if (!searchOpen) searchQuery = '';
+    draw();
+  });
   document.getElementById('recipe-add').addEventListener('click', () => openRecipeModal(null, draw));
+}
+
+function matchesSearch(r) {
+  if (!searchQuery.trim()) return true;
+  const needle = searchQuery.trim().toLowerCase();
+  const haystack = [r.name, ...(r.ingredients || []).map((i) => i.foodName)].filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes(needle);
 }
 
 async function draw() {
   const allRecipes = getRecipes();
   const categories = getRecipeCategories();
-  const recipes = activeCategoryFilter ? allRecipes.filter((r) => r.categoryIds.includes(activeCategoryFilter)) : allRecipes;
+  const searching = !!searchQuery.trim();
+  let recipes = activeCategoryFilter ? allRecipes.filter((r) => r.categoryIds.includes(activeCategoryFilter)) : allRecipes;
+  if (searching) recipes = recipes.filter(matchesSearch);
   const view = document.getElementById('view');
+
+  const searchFieldHtml = searchOpen ? `
+    <div class="field" style="margin-bottom:14px">
+      <input class="input" id="recipe-search-input" type="search" placeholder="Rezepte oder Zutaten suchen …" value="${escapeHtml(searchQuery)}">
+    </div>
+  ` : '';
+
+  function wireSearchInput() {
+    const input = document.getElementById('recipe-search-input');
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.addEventListener('input', (e) => { searchQuery = e.target.value; draw(); });
+  }
 
   const filterRowHtml = categories.length ? `
     <div class="chip-row" style="margin-bottom:14px">
@@ -45,7 +78,8 @@ async function draw() {
     return;
   }
   if (!recipes.length) {
-    view.innerHTML = `${filterRowHtml}<p class="faint">Keine Rezepte in dieser Kategorie.</p>`;
+    view.innerHTML = `${searchFieldHtml}${filterRowHtml}<p class="faint">${searching ? 'Keine Treffer.' : 'Keine Rezepte in dieser Kategorie.'}</p>`;
+    wireSearchInput();
     view.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => { activeCategoryFilter = b.dataset.filter || null; draw(); }));
     return;
   }
@@ -71,7 +105,8 @@ async function draw() {
     `;
   }));
 
-  view.innerHTML = `${filterRowHtml}<div class="stack">${cards.join('')}</div>`;
+  view.innerHTML = `${searchFieldHtml}${filterRowHtml}<div class="stack">${cards.join('')}</div>`;
+  wireSearchInput();
   view.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => { activeCategoryFilter = b.dataset.filter || null; draw(); }));
   view.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => openRecipeModal(getRecipeById(el.dataset.open), draw));

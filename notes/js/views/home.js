@@ -21,6 +21,8 @@ let viewMode = null;
 // fest auf einen bestimmten Bereich - beide sind von jedem Hauptbereich aus erreichbar.
 let mainMode = null;
 let activeFolder = null;
+let searchOpen = false;
+let searchQuery = '';
 
 export function render() {
   // Landet beim allerersten Aufruf auf "Angepinnt", wenn es dort etwas zu
@@ -31,11 +33,19 @@ export function render() {
   setTitle('Notizen');
   setBack(null);
   setActions(`
+    <button class="icon-btn" id="note-search" aria-label="Suchen">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    </button>
     <button class="icon-btn" id="note-add" aria-label="Neue Notiz">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
     </button>
   `);
   draw();
+  document.getElementById('note-search').addEventListener('click', () => {
+    searchOpen = !searchOpen;
+    if (!searchOpen) searchQuery = '';
+    draw();
+  });
   document.getElementById('note-add').addEventListener('click', () => {
     // Aus einem Ordner heraus angelegte Notizen landen automatisch in genau
     // diesem Ordner (E61), statt danach manuell im Editor zugewiesen werden
@@ -46,6 +56,31 @@ export function render() {
       : '#/note/new';
     navigate(target);
   });
+}
+
+/** Sucht ueber ALLE Notizen (auch archivierte, ueber Ordner-/Pin-Grenzen
+ *  hinweg) - das ist gerade der Sinn einer Suche: eine Notiz wiederfinden,
+ *  ohne sich zu erinnern, in welchem Ordner/Bereich sie liegt. */
+function matchesNoteSearch(n, needle) {
+  const itemsText = (n.items || []).map((i) => i.text).join(' ');
+  const haystack = [n.title, n.text, itemsText, n.folder].filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes(needle);
+}
+
+function searchFieldHtml() {
+  return `
+    <div class="field" style="margin-bottom:14px">
+      <input class="input" id="note-search-input" type="search" placeholder="Notizen durchsuchen …" value="${escapeHtml(searchQuery)}">
+    </div>
+  `;
+}
+
+function wireSearchInput(view) {
+  const input = document.getElementById('note-search-input');
+  if (!input) return;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  input.addEventListener('input', (e) => { searchQuery = e.target.value; draw(); });
 }
 
 /** Seitliche Taskleiste (E-Notizen-Pin): schaltet zwischen den drei
@@ -84,6 +119,19 @@ function draw() {
   const view = document.getElementById('view');
   const today = todayKey();
 
+  if (searchQuery.trim()) {
+    const needle = searchQuery.trim().toLowerCase();
+    const all = [...getNotesSorted(today, { archived: false }), ...getNotesSorted(today, { archived: true })];
+    const results = all.filter((n) => matchesNoteSearch(n, needle));
+    view.innerHTML = `
+      ${searchFieldHtml()}
+      ${notesGridOrEmpty(results, 'Keine Treffer', 'Andere Suche versuchen.')}
+    `;
+    wireSearchInput(view);
+    wireNoteCards(view, results);
+    return;
+  }
+
   if (viewMode === 'pinned' || viewMode === 'folders' || viewMode === 'unassigned') {
     let sectionHtml;
     let notesForCards = [];
@@ -119,12 +167,14 @@ function draw() {
     }
 
     view.innerHTML = `
+      ${searchOpen ? searchFieldHtml() : ''}
       <div class="notes-shell">
         ${railHtml()}
         <div class="notes-shell__content">${sectionHtml}</div>
       </div>
     `;
     wireRail(view);
+    wireSearchInput(view);
     view.querySelectorAll('[data-open-folder]').forEach((el) => {
       el.addEventListener('click', () => { viewMode = 'folder'; activeFolder = el.dataset.openFolder; draw(); });
     });
