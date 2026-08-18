@@ -42,7 +42,7 @@ export function render(params) {
   }
 
   setTitle(editingId ? 'Notiz bearbeiten' : 'Neue Notiz');
-  setBack(() => { commitAutosave(); navigate('#/'); });
+  setBack(() => { commitAutosaveOnClose(); navigate('#/'); });
   setActions(editingId ? `
     <button class="icon-btn" id="note-archive" aria-label="${existing?.archived ? 'Wiederherstellen' : 'Archivieren'}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
@@ -58,9 +58,9 @@ export function render(params) {
   // der Seite ueber den Hub-Link ist eine echte Seitennavigation ausserhalb
   // des Routers, deshalb hier ein eigener Klick-Abfang; pagehide sichert
   // zusaetzlich das komplette Schliessen der App/des Tabs ab.
-  hubLinkHandler = () => commitAutosave();
+  hubLinkHandler = () => commitAutosaveOnClose();
   document.querySelector('.topbar__hub-link')?.addEventListener('click', hubLinkHandler);
-  pagehideHandler = () => commitAutosave();
+  pagehideHandler = () => commitAutosaveOnClose();
   window.addEventListener('pagehide', pagehideHandler);
   document.addEventListener('visibilitychange', pagehideHandler);
 
@@ -73,7 +73,7 @@ export function render(params) {
   adjustTextareaHeight();
 
   return function cleanup() {
-    commitAutosave();
+    commitAutosaveOnClose();
     document.querySelector('.topbar__hub-link')?.removeEventListener('click', hubLinkHandler);
     window.removeEventListener('pagehide', pagehideHandler);
     document.removeEventListener('visibilitychange', pagehideHandler);
@@ -229,6 +229,27 @@ function commitAutosave() {
   }
 }
 
+function draftHasContent(d) {
+  return d.title.trim() || (d.type === 'text' ? d.text.trim() : d.items.some((i) => i.text.trim()));
+}
+
+/** Wird an allen Stellen aufgerufen, an denen der Editor tatsaechlich
+ *  verlassen wird (Zurueck, Hub-Link, App schliessen/verstecken, Router-
+ *  Wechsel) - im Unterschied zu commitAutosave(), das auch waehrend des
+ *  Tippens/Editierens laufend feuert und dort keine Notiz loeschen darf, nur
+ *  weil sie GERADE zwischenzeitlich leer ist. Eine beim Verlassen leere
+ *  Notiz (Titel und Text/Punkte leer) wird statt als Leiche gespeichert
+ *  gleich entfernt. */
+function commitAutosaveOnClose() {
+  commitAutosave();
+  if (editingId && draft && !draftHasContent(draft)) {
+    deleteNote(editingId);
+    delete pendingDrafts[draftKey];
+    editingId = null;
+    draft = null;
+  }
+}
+
 function currentPlainText() {
   if (draft.type === 'checklist') return draft.items.map((i) => i.text).filter(Boolean).join('\n');
   return draft.text;
@@ -299,6 +320,12 @@ async function onDeleteClick() {
   deleteNote(editingId);
   delete pendingDrafts[draftKey];
   editingId = null;
+  // draft muss vor dem navigate() geleert werden: der Router ruft beim
+  // Verlassen der Editor-Ansicht cleanup() -> commitAutosave() auf, das sonst
+  // die gerade geloeschte Notiz anhand des noch vorhandenen draft-Inhalts
+  // (Titel/Text) sofort wieder neu anlegen wuerde (kein editingId mehr, aber
+  // hasContent weiterhin true).
+  draft = null;
   toast('Gelöscht');
   navigate('#/');
 }

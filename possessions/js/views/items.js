@@ -3,6 +3,7 @@ import {
   getItems, getItemById, createItem, saveItem, deleteItem, categoryLabel, CATEGORIES, totalValue,
   suggestLifespanMonths, estimatedCurrentValue, suggestedMonthlyReserve, totalSuggestedMonthlyReserve,
   getSubcategoriesForCategory, addAttachment, removeAttachment, getAttachmentUrl, attachmentsSupported,
+  addSparePart, removeSparePart, markSparePartReplaced, sparePartNextDue,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { todayKey, formatDateKey, formatMoney, escapeHtml, compressImageFile } from '../utils.js';
@@ -22,10 +23,62 @@ export function render() {
   }
 }
 
+// Ein-/ausgeklappter Zustand je Oberkategorie und je Unterkategorie
+// (E-Inventar-Verschachtelung) - Default offen, damit beim ersten Aufruf
+// nichts scheinbar "verschwunden" ist; Schluessel bleiben ueber draw()-Aufrufe
+// hinweg erhalten (Modul-Zustand), gehen nur beim vollen Reload verloren.
+const collapsedCategories = new Set();
+const collapsedSubcats = new Set(); // Schluessel: `${category}::${subcategory}`
+
+function collapseChevronSvg(collapsed) {
+  return `
+    <svg class="collapse-chevron ${collapsed ? '' : 'collapse-chevron--open'}" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 9l6 6 6-6"/>
+    </svg>
+  `;
+}
+
+/** Gruppiert Gegenstaende nach Oberkategorie (in CATEGORIES-Reihenfolge,
+ *  nur Kategorien mit mindestens einem Gegenstand) und darin nach
+ *  Unterkategorie (Gegenstaende ohne Unterkategorie zuerst, ohne eigene
+ *  Zwischenueberschrift). */
+function groupItems(items) {
+  const byCategory = new Map();
+  for (const i of items) {
+    if (!byCategory.has(i.category)) byCategory.set(i.category, new Map());
+    const subMap = byCategory.get(i.category);
+    const subKey = i.subcategory || '';
+    if (!subMap.has(subKey)) subMap.set(subKey, []);
+    subMap.get(subKey).push(i);
+  }
+  const orderedKeys = [...CATEGORIES.map((c) => c.key), ...[...byCategory.keys()].filter((k) => !CATEGORIES.some((c) => c.key === k))];
+  return orderedKeys.filter((k) => byCategory.has(k)).map((key) => ({
+    key,
+    label: categoryLabel(key),
+    subgroups: [...byCategory.get(key).entries()].sort(([a], [b]) => a.localeCompare(b, 'de')),
+    count: [...byCategory.get(key).values()].reduce((sum, arr) => sum + arr.length, 0),
+  }));
+}
+
+function itemRowHtml(i) {
+  const value = i.currentValue ?? estimatedCurrentValue(i);
+  const estimated = i.currentValue == null && value !== null;
+  return `
+    <div class="due-row" data-open="${i.id}" style="cursor:pointer">
+      <div class="col grow" style="min-width:0">
+        <p class="due-row__title truncate">${escapeHtml(i.name)}</p>
+        ${i.serialNumber ? `<p class="due-row__meta">${escapeHtml(i.serialNumber)}</p>` : ''}
+      </div>
+      ${value != null || i.purchasePrice ? `<span class="due-row__date">${estimated ? '≈ ' : ''}${formatMoney(value ?? i.purchasePrice)}</span>` : ''}
+    </div>
+  `;
+}
+
 function draw() {
   const view = document.getElementById('view');
   const items = getItems();
   const reserve = totalSuggestedMonthlyReserve();
+  const groups = groupItems(items);
   view.innerHTML = `
     ${items.length > 0 ? `
       <div class="stat-tile" style="margin-bottom:14px">
@@ -49,27 +102,51 @@ function draw() {
         <h3>Noch keine Gegenstände</h3>
         <p class="faint">Lege Elektronik, Möbel, Werkzeug oder andere Wertsachen mit Seriennummer, Kaufbeleg und Garantie an.</p>
       </div>
-    ` : `
-      <div class="card">
-        ${items.map((i) => {
-          const value = i.currentValue ?? estimatedCurrentValue(i);
-          const estimated = i.currentValue == null && value !== null;
-          return `
-          <div class="due-row" data-open="${i.id}" style="cursor:pointer">
-            <div class="col grow" style="min-width:0">
-              <p class="due-row__title truncate">${escapeHtml(i.name)}</p>
-              <p class="due-row__meta">${escapeHtml(categoryLabel(i.category))}${i.subcategory ? ' · ' + escapeHtml(i.subcategory) : ''}${i.serialNumber ? ' · ' + escapeHtml(i.serialNumber) : ''}</p>
-            </div>
-            ${value != null || i.purchasePrice ? `<span class="due-row__date">${estimated ? '≈ ' : ''}${formatMoney(value ?? i.purchasePrice)}</span>` : ''}
+    ` : groups.map((g) => {
+      const catCollapsed = collapsedCategories.has(g.key);
+      return `
+        <button type="button" class="cat-group-header" data-toggle-cat="${g.key}">
+          ${collapseChevronSvg(catCollapsed)}
+          <span class="grow" style="text-align:left">${escapeHtml(g.label)}</span>
+          <span class="faint">${g.count}</span>
+        </button>
+        ${catCollapsed ? '' : `
+          <div class="card" style="margin-bottom:14px">
+            ${g.subgroups.map(([subKey, subItems]) => {
+              if (!subKey) return subItems.map(itemRowHtml).join('');
+              const subCollapseKey = `${g.key}::${subKey}`;
+              const subCollapsed = collapsedSubcats.has(subCollapseKey);
+              return `
+                <button type="button" class="subcat-group-header" data-toggle-subcat="${escapeHtml(subCollapseKey)}">
+                  ${collapseChevronSvg(subCollapsed)}
+                  <span class="grow" style="text-align:left">${escapeHtml(subKey)}</span>
+                  <span class="faint">${subItems.length}</span>
+                </button>
+                ${subCollapsed ? '' : subItems.map(itemRowHtml).join('')}
+              `;
+            }).join('')}
           </div>
-        `;
-        }).join('')}
-      </div>
-    `}
+        `}
+      `;
+    }).join('')}
     <button class="btn btn-primary" id="item-add" style="margin-top:16px">+ Gegenstand</button>
   `;
   view.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => openItemModal(getItemById(el.dataset.open), draw));
+  });
+  view.querySelectorAll('[data-toggle-cat]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.toggleCat;
+      if (collapsedCategories.has(key)) collapsedCategories.delete(key); else collapsedCategories.add(key);
+      draw();
+    });
+  });
+  view.querySelectorAll('[data-toggle-subcat]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.toggleSubcat;
+      if (collapsedSubcats.has(key)) collapsedSubcats.delete(key); else collapsedSubcats.add(key);
+      draw();
+    });
   });
   document.getElementById('item-add').addEventListener('click', () => openItemModal(null, draw));
   document.getElementById('item-reserve-link')?.addEventListener('click', () => {
@@ -139,6 +216,17 @@ function openItemModal(existing, onSaved) {
       <label>Erinnerung — Tage vor Garantie-Ablauf</label>
       <input class="input" type="number" min="0" id="i-lead" value="${existing?.warrantyReminderLeadDays ?? 30}">
     </div>
+    ${!isNew ? `
+      <div class="field" id="i-spareparts-field">
+        <label>Ersatzteile (optional) — eigene, kürzere Nutzungsdauer als der Gegenstand selbst (z.B. Bügelbrett-Bezug alle 3-5 Jahre, Gestell 10-20 Jahre)</label>
+        <div id="i-spareparts-list"></div>
+        <div class="row" style="gap:8px;margin-top:8px">
+          <input class="input" id="i-sp-name" placeholder="Bezeichnung, z.B. Bezug" style="flex:2">
+          <input class="input" type="number" min="0" id="i-sp-months" placeholder="Monate" style="flex:1">
+          <button class="btn btn-ghost btn-sm" id="i-sp-add" type="button">+</button>
+        </div>
+      </div>
+    ` : ''}
     <div class="field">
       <label>Notiz (optional)</label>
       <textarea class="input" id="i-note">${escapeHtml(existing?.note || '')}</textarea>
@@ -209,6 +297,53 @@ function openItemModal(existing, onSaved) {
       toast('Beleg hinzugefügt');
       renderAttachments();
     });
+    renderSpareParts();
+    handle.sheet.querySelector('#i-sp-add').addEventListener('click', () => {
+      const name = handle.sheet.querySelector('#i-sp-name').value.trim();
+      const months = handle.sheet.querySelector('#i-sp-months').value;
+      if (!name || !months) { toast('Bitte Bezeichnung und Monate angeben'); return; }
+      addSparePart(existing.id, { name, lifespanMonths: Number(months) });
+      handle.sheet.querySelector('#i-sp-name').value = '';
+      handle.sheet.querySelector('#i-sp-months').value = '';
+      renderSpareParts();
+    });
+  }
+
+  function renderSpareParts() {
+    const list = handle.sheet.querySelector('#i-spareparts-list');
+    if (!list) return;
+    const current = getItemById(existing.id);
+    const parts = current?.spareParts || [];
+    list.innerHTML = parts.length === 0
+      ? `<p class="faint">Noch keine Ersatzteile hinterlegt.</p>`
+      : parts.map((p) => {
+        const due = sparePartNextDue(current, p);
+        const overdue = due && due <= todayKey();
+        return `
+          <div class="row row--between" style="padding:6px 0">
+            <div class="col grow" style="min-width:0">
+              <span class="truncate">${escapeHtml(p.name)} · alle ${p.lifespanMonths} Monate</span>
+              ${due ? `<span class="faint ${overdue ? 'due-row__date--overdue' : ''}" style="display:block">nächster Wechsel: ${formatDateKey(due)}</span>` : ''}
+            </div>
+            <div class="row" style="gap:2px;flex-shrink:0">
+              <button class="icon-btn" data-sp-replaced="${p.id}" aria-label="Als gewechselt markieren"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></button>
+              <button class="icon-btn" data-sp-del="${p.id}" aria-label="Entfernen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    list.querySelectorAll('[data-sp-replaced]').forEach((b) => b.addEventListener('click', () => {
+      markSparePartReplaced(existing.id, b.dataset.spReplaced);
+      toast('Als gewechselt markiert');
+      renderSpareParts();
+    }));
+    list.querySelectorAll('[data-sp-del]').forEach((b) => b.addEventListener('click', async () => {
+      const ok = await confirmDialog('Ersatzteil entfernen?', 'Wird unwiderruflich gelöscht.');
+      if (!ok) return;
+      removeSparePart(existing.id, b.dataset.spDel);
+      toast('Entfernt');
+      renderSpareParts();
+    }));
   }
 
   function renderAttachments() {

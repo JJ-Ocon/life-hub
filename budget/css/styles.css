@@ -101,6 +101,10 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .section-title { font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-faint); margin: 20px 2px 8px; }
 .section-title:first-child { margin-top: 2px; }
 
+/* ---------- Kontostand: Tagesgruppen (E-Budget-Tagesgruppen) ---------- */
+.day-group-header { font-size: .78rem; font-weight: 700; color: var(--text-faint); margin: 18px 2px 8px; }
+.day-group-header:first-of-type { margin-top: 2px; }
+
 .row { display: flex; align-items: center; gap: 10px; }
 .row--between { justify-content: space-between; }
 .col { display: flex; flex-direction: column; gap: 4px; }

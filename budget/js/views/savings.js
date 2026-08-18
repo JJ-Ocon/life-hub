@@ -21,6 +21,14 @@ export function render() {
 /** Deep-Link von anderen Apps (aktuell Inventar's Ersatz-Ruecklage) zum
  *  Anlegen eines vorausgefuellten Sparumschlags - gleiches Muster wie
  *  Notes' "Als Todo anlegen" -> Goals' quickAdd aus E7. */
+/** Bugfix: fruehere Version hat hier IMMER ein Objekt ohne id an
+ *  openEnvelopeModal uebergeben - jeder erneute Klick auf "Sparumschlag
+ *  anlegen" (z.B. aus der Inventar-App, deren Ersatzbeschaffungs-Ruecklage
+ *  sich mit neuen Gegenstaenden aendert) hat dadurch einen weiteren
+ *  "Ersatzbeschaffung"-Umschlag ANGELEGT statt den vorhandenen zu
+ *  aktualisieren. Sucht deshalb zuerst nach einem gleichnamigen Umschlag und
+ *  oeffnet DEN zum Bearbeiten (mit dem frisch berechneten Betrag
+ *  vorausgefuellt), statt blind eine Dublette zu erzeugen. */
 function handleQuickAddParam() {
   const query = new URLSearchParams(location.hash.split('?')[1] || '');
   const name = query.get('envName');
@@ -28,7 +36,8 @@ function handleQuickAddParam() {
   const amount = Number(query.get('envAmount')) || 0;
   history.replaceState(null, '', location.pathname + '#/savings');
   section = 'envelopes';
-  openEnvelopeModal({ name, icon: '📦', monthlyAmount: amount, targetAmount: null }, draw);
+  const existing = getEnvelopes().find((e) => e.name === name);
+  openEnvelopeModal(existing ? { ...existing, monthlyAmount: amount } : { name, icon: '📦', monthlyAmount: amount, targetAmount: null }, draw);
 }
 
 function draw() {

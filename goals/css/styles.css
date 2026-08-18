@@ -203,11 +203,23 @@ textarea.input { resize: vertical; min-height: 60px; }
 .set-check.done { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .set-check svg { width: 18px; height: 18px; }
 .todo-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
-.todo-row:last-child { border-bottom: none; }
+.todo-row-wrap:last-child .todo-row { border-bottom: none; }
 .todo-row.done .todo-row__title { text-decoration: line-through; color: var(--text-faint); }
 .todo-row__title { flex: 1; font-size: .9rem; }
 .todo-row__due { font-size: .76rem; color: var(--text-faint); flex-shrink: 0; }
 .todo-row__due--overdue { color: var(--danger); font-weight: 700; }
+.todo-row__reorder { display: flex; flex-direction: column; flex-shrink: 0; margin-left: 2px; }
+.todo-row__reorder .icon-btn { width: 26px; height: 22px; }
+.todo-row__reorder .icon-btn svg { width: 16px; height: 16px; }
+.todo-row__reorder .icon-btn:disabled { opacity: .25; }
+
+/* ---------- Untertasks (E-Todo-Subtasks) ---------- */
+.subtask-list { padding: 0 0 10px 44px; }
+.subtask-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.subtask-row .set-check { width: 24px; height: 24px; flex-shrink: 0; }
+.subtask-row .set-check svg { width: 14px; height: 14px; }
+.subtask-row__title { font-size: .84rem; }
+.subtask-row__title.done { text-decoration: line-through; color: var(--text-faint); }
 .quick-add { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 18px; }
 .quick-add textarea { flex: 1; min-height: 44px; }
 

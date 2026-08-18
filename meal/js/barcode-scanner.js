@@ -6,18 +6,29 @@
 // dieser App-Familie schon einmal als auf Android-PWAs unzuverlaessig
 // erwiesen (siehe E32-Fix in anderen Apps dieses Oekosystems).
 
+import { requestCameraAccess } from '../../shared/permissions.js';
+
 export function barcodeScanSupported() {
   return 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
 }
 
 /**
  * Startet eine Live-Kamera-Erkennung in das gegebene <video>-Element.
+ * Bugfix (E-Permissions): scheiterte getUserMedia bisher (z.B. verweigerte
+ * Berechtigung), blieb das eine unbehandelte Promise-Rejection - der
+ * Aufrufer bekam nie eine Rueckmeldung und der Scan-Dialog haengte
+ * schweigend fest. Liefert jetzt IMMER ein Ergebnis-Objekt zurueck,
+ * mit `error` gesetzt statt einer geworfenen Exception.
  * @param {HTMLVideoElement} videoEl
  * @param {(code: string) => void} onDetected Wird beim ersten Treffer genau einmal aufgerufen.
- * @returns {Promise<{stop: Function}>}
+ * @returns {Promise<{stop: Function, error: {reason:string, message:string}|null}>}
  */
 export async function startBarcodeScan(videoEl, onDetected) {
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  const access = await requestCameraAccess();
+  if (!access.ok) {
+    return { stop: () => {}, error: { reason: access.reason, message: access.message } };
+  }
+  const stream = access.stream;
   videoEl.srcObject = stream;
   await videoEl.play();
 
@@ -51,5 +62,5 @@ export async function startBarcodeScan(videoEl, onDetected) {
   }
 
   rafId = requestAnimationFrame(tick);
-  return { stop };
+  return { stop, error: null };
 }

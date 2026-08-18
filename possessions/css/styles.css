@@ -201,6 +201,20 @@ textarea.input { resize: vertical; min-height: 60px; }
 .due-row__date--overdue { color: var(--danger); font-weight: 700; }
 .kind-badge { font-size: .68rem; }
 
+/* ---------- Oberkategorie/Unterkategorie-Verschachtelung (E-Inventar-Verschachtelung) ---------- */
+.cat-group-header, .subcat-group-header {
+  display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: none; color: inherit;
+  padding: 10px 2px; cursor: pointer; font-weight: 700; text-align: left;
+}
+.cat-group-header { font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; color: var(--text-faint); margin-top: 12px; }
+.cat-group-header:first-child { margin-top: 0; }
+.subcat-group-header { font-size: .82rem; padding-left: 4px; }
+.collapse-chevron {
+  width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4;
+  stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; transition: transform .15s ease;
+}
+.collapse-chevron--open { transform: rotate(180deg); }
+
 /* ---------- Wartung/Vertraege/Rechnungen ---------- */
 .item-row { display: flex; align-items: center; gap: 10px; }
 .item-row__icon { width: 40px; height: 40px; border-radius: 10px; background: var(--bg-input); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }

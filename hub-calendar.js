@@ -173,7 +173,17 @@ function renderDayView() {
   });
 }
 
-function onEventTap(calendarEventId) {
+// Quell-Apps, die einen "getCalendarEditableEntity"/"applyCalendarEdit"-
+// Adapter fuer Inline-Bearbeitung anbieten (E-Hub-Edit-Cross-App). Nicht
+// jede Quelle eignet sich dafuer - viele gespiegelte Termine sind aus
+// anderen Feldern ABGELEITETE Erinnerungen (z.B. Haushalt-Wartungsintervalle,
+// Fitness-Sessions, Fahrzeug-Serviceintervalle), bei denen ein einzelnes
+// Datum gar keine eindeutig zurueckschreibbare Bedeutung haette. Nur Quellen
+// mit einem echten, direkt gespeicherten Titel/Datum/Zeit-Entity sind hier
+// gelistet; alles andere bleibt bewusst beim bestehenden "Weiterleiten".
+const EDITABLE_SOURCES = ['goals', 'job', 'travel'];
+
+async function onEventTap(calendarEventId) {
   const event = allEvents.find((e) => e.id === calendarEventId);
   if (!event) return;
   if (event.source === 'hub') {
@@ -181,11 +191,80 @@ function onEventTap(calendarEventId) {
     if (hubEvent) openEventModal(hubEvent);
     return;
   }
+  const adapted = await loadCrossAppEditable(event);
+  if (adapted) {
+    openCrossAppEditModal(event, adapted.entity, adapted.mod);
+    return;
+  }
   openForwardDialog(event);
 }
 
-/** Termine aus anderen Apps verwaltet der Hub bewusst nicht selbst (siehe
- *  App-Architektur) - stattdessen wird angeboten, direkt zur Quell-App und,
+/** Laedt bei Bedarf das db.js-Modul der Quell-App und fragt sie, ob dieser
+ *  konkrete Termin ein direkt editierbares Entity ist. ./ (nicht ../): der
+ *  Hub liegt selbst im Repo-Wurzelverzeichnis, siehe Kommentar bei
+ *  openForwardDialog weiter unten fuer die Begruendung dieses Unterschieds. */
+async function loadCrossAppEditable(event) {
+  if (!EDITABLE_SOURCES.includes(event.source)) return null;
+  try {
+    const mod = await import(`./${event.source}/js/db.js`);
+    if (typeof mod.getCalendarEditableEntity !== 'function') return null;
+    const entity = mod.getCalendarEditableEntity(event.id);
+    return entity ? { entity, mod } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Inline-Bearbeitung eines gespiegelten Termins fuer die Quellen aus
+ *  EDITABLE_SOURCES (E-Hub-Edit-Cross-App): schreibt ueber den Adapter der
+ *  Quell-App direkt in deren EIGENE Daten zurueck (nicht nur den Mirror),
+ *  die App aktualisiert danach selbst ihren Kalender-Mirror - der Hub kennt
+ *  dadurch weiterhin keine App-internen Datenstrukturen, nur das kleine
+ *  getCalendarEditableEntity/applyCalendarEdit-Adapter-Contract. */
+function openCrossAppEditModal(event, entity, mod) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <button class="modal-close" data-close type="button"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <div class="modal-handle"></div>
+      <div class="modal-title">Termin bearbeiten</div>
+      <p class="empty-hint">Aus: ${escapeHtml(getSourceLabel(event.source))} - Änderungen werden dort gespeichert.</p>
+      <form id="cross-edit-form">
+        <div class="field">
+          <label>Titel</label>
+          <input class="input" name="title" type="text" required value="${escapeHtml(entity.title || '')}">
+        </div>
+        <div class="field">
+          <label>Datum</label>
+          <input class="input" name="date" type="date" required value="${entity.date || ''}">
+        </div>
+        <div class="field">
+          <label>Uhrzeit (optional)</label>
+          <input class="input" name="time" type="time" value="${entity.time || ''}">
+        </div>
+        <button type="submit" class="btn btn-primary">Speichern</button>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
+  overlay.querySelector('[data-close]').addEventListener('click', close);
+
+  overlay.querySelector('#cross-edit-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const data = new FormData(ev.target);
+    const title = data.get('title').trim();
+    if (!title) return;
+    mod.applyCalendarEdit(event.id, { title, date: data.get('date'), time: data.get('time') || null, endTime: entity.endTime || null });
+    close();
+    await load();
+  });
+}
+
+/** Fallback fuer alle Quellen ohne Adapter (siehe EDITABLE_SOURCES) sowie
+ *  fuer abgeleitete Termine, bei denen Inline-Bearbeitung keine eindeutige
+ *  Bedeutung haette - stattdessen wird angeboten, direkt zur Quell-App und,
  *  falls die App beim Spiegeln einen link mitgegeben hat (siehe
  *  calendar-schema.js), zur genauen Stelle des Termins weiterzuleiten. */
 function openForwardDialog(event) {
@@ -322,5 +401,41 @@ document.getElementById('cal-next').addEventListener('click', () => { cursor = n
 document.getElementById('day-back').addEventListener('click', closeDayView);
 document.getElementById('day-add').addEventListener('click', () => openEventModal(null));
 document.getElementById('cal-fab').addEventListener('click', () => openEventModal(null));
+
+document.getElementById('ics-import-btn').addEventListener('click', () => {
+  document.getElementById('ics-import-input').click();
+});
+document.getElementById('ics-import-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const { parseICS } = await import('./shared/ics-import.js');
+  let parsed;
+  try {
+    parsed = parseICS(await file.text());
+  } catch {
+    alert('Import fehlgeschlagen: ungültige .ics-Datei.');
+    return;
+  }
+  if (!parsed.length) {
+    alert('Keine Termine in dieser Datei gefunden.');
+    return;
+  }
+  const ok = window.confirm(`${parsed.length} Termin(e) aus "${file.name}" als eigene Hub-Termine importieren?`);
+  if (!ok) return;
+  for (const ev of parsed) {
+    const allDay = !ev.start.time;
+    await createHubEvent({
+      title: ev.title,
+      dateStart: ev.start.dateKey,
+      dateEnd: ev.end?.dateKey || ev.start.dateKey,
+      allDay,
+      timeStart: ev.start.time || undefined,
+      timeEnd: ev.end?.time || undefined,
+    });
+  }
+  await load();
+  alert(`${parsed.length} Termin(e) importiert.`);
+});
 
 load();

@@ -5,9 +5,9 @@ import {
   extractReceiptItemCandidates,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
-import { escapeHtml, formatNum } from '../utils.js';
+import { escapeHtml, formatNum, todayKey } from '../utils.js';
 import { barcodeScanSupported, startBarcodeScan } from '../barcode-scanner.js';
-import { recognizeText } from '../../../shared/receipt-ocr.js';
+import { recognizeText, parseReceiptText } from '../../../shared/receipt-ocr.js';
 
 export function render() {
   setTitle('Vorrat');
@@ -126,6 +126,14 @@ function openReceiptScanModal() {
     <div id="receipt-candidates"></div>
   `, { center: true });
 
+  // Erkannte Belegsumme/-datum (E-Meal-Budget-Mapping) - der Zeilen-Parser
+  // liefert bewusst KEINE Einzelpreise (siehe Kommentar oben), aber die
+  // Gesamtsumme des Kassenbons laesst sich zuverlaessig erkennen (gleiche
+  // Heuristik wie Budgets eigener Beleg-Scanner) und wird beim Bestaetigen
+  // automatisch als eine Ausgabe unter "Lebensmittel" im Budget gebucht -
+  // spart das doppelte manuelle Erfassen (Vorrat UND Ausgabe) nach jedem Einkauf.
+  let receiptSummary = null;
+
   handle.sheet.querySelector('#receipt-photo').addEventListener('click', () => {
     handle.sheet.querySelector('#receipt-photo-input').click();
   });
@@ -143,6 +151,8 @@ function openReceiptScanModal() {
           status.textContent = `Text wird erkannt … ${Math.round(info.progress * 100)}%`;
         }
       });
+      const parsed = parseReceiptText(text);
+      receiptSummary = parsed.amount != null ? { amount: parsed.amount, merchant: parsed.merchant, date: parsed.date } : null;
       const candidates = extractReceiptItemCandidates(text);
       if (!candidates.length) {
         status.textContent = 'Keine Produktzeilen erkannt - bitte manuell eingeben.';
@@ -150,14 +160,14 @@ function openReceiptScanModal() {
         return;
       }
       status.textContent = `${candidates.length} mögliche Produkte erkannt - bitte prüfen und Menge/Einheit bei Bedarf anpassen.`;
-      renderCandidates(candidates);
+      renderCandidates(candidates, receiptSummary);
     } catch {
       status.textContent = 'Beleg konnte nicht erkannt werden - bitte manuell eingeben.';
       photoBtn.disabled = false;
     }
   });
 
-  function renderCandidates(candidates) {
+  function renderCandidates(candidates, receiptSummary) {
     const list = handle.sheet.querySelector('#receipt-candidates');
     list.innerHTML = `
       <div class="stack" style="margin-top:14px">
@@ -170,9 +180,15 @@ function openReceiptScanModal() {
           </div>
         `).join('')}
       </div>
+      ${receiptSummary ? `
+        <div class="row" style="gap:8px;align-items:center;margin-top:12px">
+          <input type="checkbox" id="rc-log-expense" checked>
+          <label for="rc-log-expense" class="faint">Beleg-Summe (${receiptSummary.amount.toFixed(2).replace('.', ',')} €) auch als Ausgabe unter „Lebensmittel" im Budget buchen</label>
+        </div>
+      ` : ''}
       <button class="btn btn-primary" id="rc-add-all" style="margin-top:14px">Ausgewählte hinzufügen</button>
     `;
-    list.querySelector('#rc-add-all').addEventListener('click', () => {
+    list.querySelector('#rc-add-all').addEventListener('click', async () => {
       let added = 0;
       candidates.forEach((c, i) => {
         if (!list.querySelector(`#rc-check-${i}`).checked) return;
@@ -183,7 +199,20 @@ function openReceiptScanModal() {
         createPantryItem({ name, quantity, unit });
         added++;
       });
-      toast(`${added} Produkt${added === 1 ? '' : 'e'} hinzugefügt`);
+      let expenseLogged = false;
+      if (receiptSummary && list.querySelector('#rc-log-expense')?.checked) {
+        try {
+          const budgetDb = await import('../../../budget/js/db.js');
+          budgetDb.createExpense({
+            merchant: receiptSummary.merchant || '',
+            amount: receiptSummary.amount,
+            categoryId: 'groceries',
+            date: receiptSummary.date || todayKey(),
+          });
+          expenseLogged = true;
+        } catch { /* Budget-App optional erreichbar - Vorrat-Erfassung bleibt trotzdem gueltig */ }
+      }
+      toast(`${added} Produkt${added === 1 ? '' : 'e'} hinzugefügt${expenseLogged ? ' · Ausgabe gebucht' : ''}`);
       handle.close();
       draw();
     });
@@ -235,11 +264,18 @@ function openScanModal() {
     <h3 class="modal-title">Barcode scannen</h3>
     <video id="scan-video" autoplay playsinline muted style="width:100%;border-radius:var(--radius-m);background:#000"></video>
     <p class="faint" id="scan-status" style="margin-top:10px">Kamera wird gestartet …</p>
+    <div id="scan-fallback" hidden style="margin-top:10px">
+      <button class="btn btn-ghost" id="scan-fallback-receipt" type="button">🧾 Stattdessen Kassenbon scannen</button>
+      <button class="btn btn-ghost" id="scan-fallback-manual" type="button" style="margin-top:8px">✏️ Stattdessen manuell eingeben</button>
+    </div>
   `, { center: true, onClose: () => scanHandle?.stop() });
 
   let scanHandle = null;
   const status = handle.sheet.querySelector('#scan-status');
   const video = handle.sheet.querySelector('#scan-video');
+
+  handle.sheet.querySelector('#scan-fallback-receipt').addEventListener('click', () => { handle.close(); openReceiptScanModal(); });
+  handle.sheet.querySelector('#scan-fallback-manual').addEventListener('click', () => { handle.close(); openManualModal(); });
 
   startBarcodeScan(video, (code) => {
     handle.close();
@@ -264,8 +300,18 @@ function openScanModal() {
     }
   }).then((h) => {
     scanHandle = h;
-    status.textContent = 'Kamera aktiv - Barcode ins Bild halten …';
+    if (h.error) {
+      status.textContent = h.error.message;
+      video.style.display = 'none';
+      handle.sheet.querySelector('#scan-fallback').hidden = false;
+    } else {
+      status.textContent = 'Kamera aktiv - Barcode ins Bild halten …';
+    }
   }).catch(() => {
-    status.textContent = 'Kamera konnte nicht gestartet werden (Berechtigung verweigert oder nicht verfügbar).';
+    // startBarcodeScan() liefert seit dem Permissions-Bugfix (E-Permissions)
+    // Fehler ueber das error-Feld statt zu werfen - dieser catch ist nur noch
+    // ein Sicherheitsnetz fuer wirklich unerwartete Fehler.
+    status.textContent = 'Kamera konnte nicht gestartet werden.';
+    handle.sheet.querySelector('#scan-fallback').hidden = false;
   });
 }

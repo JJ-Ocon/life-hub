@@ -1,8 +1,8 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
-  getExpensesForMonth, createExpense, saveExpense, deleteExpense, getExpenseById,
-  getIncomeForMonth, createIncome, saveIncome, deleteIncome, getIncomeById, monthIncomeTotal, monthTotal,
-  getCategories, getSettings, suggestCategoryForMerchant,
+  getExpenses, getExpensesForMonth, createExpense, saveExpense, deleteExpense, getExpenseById,
+  getIncome, getIncomeForMonth, createIncome, saveIncome, deleteIncome, getIncomeById, monthIncomeTotal, monthTotal,
+  getCategories, getSettings, suggestCategoryForMerchant, ensureNextRecurringOccurrence, ensureNextRecurringIncomeOccurrence,
 } from '../db.js';
 import { openModal, confirmDialog, toast } from '../ui.js';
 import { todayKey, monthKey, addMonths, monthLabel, formatDateKey, formatMoney, escapeHtml } from '../utils.js';
@@ -10,11 +10,16 @@ import { recognizeText, parseReceiptText } from '../../../shared/receipt-ocr.js'
 
 let cursor = monthKey();
 let section = 'expenses'; // 'expenses' | 'income'
+let searchOpen = false;
+let searchQuery = '';
 
 export function render() {
   setTitle('Kontostand');
   setBack(null);
   setActions(`
+    <button class="icon-btn" id="exp-search" aria-label="Suchen">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    </button>
     <button class="icon-btn" id="exp-add" aria-label="Erfassen">
       <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
     </button>
@@ -23,6 +28,11 @@ export function render() {
   document.getElementById('exp-add').addEventListener('click', () => {
     if (section === 'income') openIncomeModal(null, draw);
     else openExpenseModal(null, draw);
+  });
+  document.getElementById('exp-search').addEventListener('click', () => {
+    searchOpen = !searchOpen;
+    if (!searchOpen) searchQuery = '';
+    draw();
   });
 }
 
@@ -41,6 +51,11 @@ function draw() {
       <button class="chip ${section === 'expenses' ? 'active' : ''}" data-section="expenses">Ausgaben</button>
       <button class="chip ${section === 'income' ? 'active' : ''}" data-section="income">Einnahmen</button>
     </div>
+    ${searchOpen ? `
+      <div class="field" style="margin-top:12px">
+        <input class="input" id="exp-search-input" type="search" placeholder="Suchen …" value="${escapeHtml(searchQuery)}">
+      </div>
+    ` : ''}
     <div class="stat-tile" style="margin-bottom:14px">
       <div class="stat-tile__value">${formatMoney(net, settings.currency)}</div>
       <div class="stat-tile__label">Netto ${monthLabel(cursor)}</div>
@@ -52,41 +67,81 @@ function draw() {
   document.getElementById('exp-next').addEventListener('click', () => { cursor = addMonths(cursor, 1); draw(); });
   view.querySelectorAll('[data-section]').forEach((el) => el.addEventListener('click', () => { section = el.dataset.section; draw(); }));
 
+  const searchInput = document.getElementById('exp-search-input');
+  if (searchInput) {
+    searchInput.focus();
+    searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value;
+      if (section === 'income') drawIncomeList(); else drawExpenseList();
+    });
+  }
+
   if (section === 'income') drawIncomeList(); else drawExpenseList();
+}
+
+/** Gruppiert eine bereits absteigend nach Datum sortierte Liste in
+ *  Tagesabschnitte (Budget-Kontostand-Tagesgruppen) - Reihenfolge der Liste
+ *  bleibt erhalten, nur mit Ueberschriften je Tag versehen. */
+function groupByDay(list, dateOf) {
+  const groups = [];
+  for (const item of list) {
+    const day = dateOf(item);
+    let g = groups[groups.length - 1];
+    if (!g || g.day !== day) { g = { day, items: [] }; groups.push(g); }
+    g.items.push(item);
+  }
+  return groups;
+}
+
+function matchesSearch(text) {
+  if (!searchQuery.trim()) return true;
+  return text.toLowerCase().includes(searchQuery.trim().toLowerCase());
 }
 
 function drawExpenseList() {
   const settings = getSettings();
   const categories = getCategories();
-  const list = getExpensesForMonth(cursor);
+  const list = getExpensesForMonth(cursor).filter((e) => {
+    const cat = categories.find((c) => c.id === e.categoryId);
+    return matchesSearch(`${e.merchant || ''} ${cat?.name || ''}`);
+  });
   const content = document.getElementById('list-content');
+  const groups = groupByDay(list, (e) => e.date);
   content.innerHTML = `
     ${list.length === 0 ? `
       <div class="empty">
-        <h3>Noch keine Ausgaben</h3>
-        <p class="faint">Erfasse deine erste Ausgabe über das Plus oben rechts.</p>
+        <h3>${searchQuery.trim() ? 'Keine Treffer' : 'Noch keine Ausgaben'}</h3>
+        <p class="faint">${searchQuery.trim() ? 'Andere Suche versuchen.' : 'Erfasse deine erste Ausgabe über das Plus oben rechts.'}</p>
       </div>
-    ` : `
-      <div class="stack">
-        ${list.map((e) => {
-          const cat = categories.find((c) => c.id === e.categoryId) || categories[categories.length - 1];
-          return `
-            <div class="card card--tap" data-open="${e.id}" style="margin-bottom:0">
-              <div class="row row--between">
-                <div class="row grow" style="min-width:0">
-                  <span style="font-size:1.3rem">${cat.icon}</span>
-                  <div class="col grow" style="min-width:0">
-                    <p class="truncate">${escapeHtml(e.merchant || cat.name)}</p>
-                    <p class="faint">${formatDateKey(e.date)}${e.recurring ? ' · wiederkehrend' : ''}</p>
+    ` : groups.map((g) => {
+      const dayTotal = g.items.reduce((sum, e) => sum + e.amount, 0);
+      return `
+        <div class="row row--between day-group-header">
+          <span>${formatDateKey(g.day)}</span>
+          <span class="faint">${formatMoney(dayTotal, settings.currency)}</span>
+        </div>
+        <div class="stack" style="margin-bottom:16px">
+          ${g.items.map((e) => {
+            const cat = categories.find((c) => c.id === e.categoryId) || categories[categories.length - 1];
+            return `
+              <div class="card card--tap" data-open="${e.id}" style="margin-bottom:0">
+                <div class="row row--between">
+                  <div class="row grow" style="min-width:0">
+                    <span style="font-size:1.3rem">${cat.icon}</span>
+                    <div class="col grow" style="min-width:0">
+                      <p class="truncate">${escapeHtml(e.merchant || cat.name)}</p>
+                      ${e.recurring ? `<p class="faint">wiederkehrend</p>` : ''}
+                    </div>
                   </div>
+                  <div class="badge">${formatMoney(e.amount, settings.currency)}</div>
                 </div>
-                <div class="badge">${formatMoney(e.amount, settings.currency)}</div>
               </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `}
+            `;
+          }).join('')}
+        </div>
+      `;
+    }).join('')}
   `;
   content.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => openExpenseModal(getExpenseById(el.dataset.open), draw));
@@ -95,32 +150,40 @@ function drawExpenseList() {
 
 function drawIncomeList() {
   const settings = getSettings();
-  const list = getIncomeForMonth(cursor);
+  const list = getIncomeForMonth(cursor).filter((i) => matchesSearch(i.source || ''));
   const content = document.getElementById('list-content');
+  const groups = groupByDay(list, (i) => i.date);
   content.innerHTML = `
     ${list.length === 0 ? `
       <div class="empty">
-        <h3>Noch keine Einnahmen</h3>
-        <p class="faint">Erfasse Gehalt, Nebenjob oder andere Einnahmen über das Plus oben rechts.</p>
+        <h3>${searchQuery.trim() ? 'Keine Treffer' : 'Noch keine Einnahmen'}</h3>
+        <p class="faint">${searchQuery.trim() ? 'Andere Suche versuchen.' : 'Erfasse Gehalt, Nebenjob oder andere Einnahmen über das Plus oben rechts.'}</p>
       </div>
-    ` : `
-      <div class="stack">
-        ${list.map((i) => `
-          <div class="card card--tap" data-open="${i.id}" style="margin-bottom:0">
-            <div class="row row--between">
-              <div class="row grow" style="min-width:0">
-                <span style="font-size:1.3rem">💰</span>
-                <div class="col grow" style="min-width:0">
-                  <p class="truncate">${escapeHtml(i.source || 'Einnahme')}</p>
-                  <p class="faint">${formatDateKey(i.date)}${i.recurring ? ' · wiederkehrend' : ''}</p>
+    ` : groups.map((g) => {
+      const dayTotal = g.items.reduce((sum, i) => sum + i.amount, 0);
+      return `
+        <div class="row row--between day-group-header">
+          <span>${formatDateKey(g.day)}</span>
+          <span class="faint">${formatMoney(dayTotal, settings.currency)}</span>
+        </div>
+        <div class="stack" style="margin-bottom:16px">
+          ${g.items.map((i) => `
+            <div class="card card--tap" data-open="${i.id}" style="margin-bottom:0">
+              <div class="row row--between">
+                <div class="row grow" style="min-width:0">
+                  <span style="font-size:1.3rem">💰</span>
+                  <div class="col grow" style="min-width:0">
+                    <p class="truncate">${escapeHtml(i.source || 'Einnahme')}</p>
+                    ${i.recurring ? `<p class="faint">wiederkehrend</p>` : ''}
+                  </div>
                 </div>
+                <div class="badge">${formatMoney(i.amount, settings.currency)}</div>
               </div>
-              <div class="badge">${formatMoney(i.amount, settings.currency)}</div>
             </div>
-          </div>
-        `).join('')}
-      </div>
-    `}
+          `).join('')}
+        </div>
+      `;
+    }).join('')}
   `;
   content.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => openIncomeModal(getIncomeById(el.dataset.open), draw));
@@ -250,7 +313,7 @@ export function openExpenseModal(existing, onSaved) {
     handle.sheet.querySelector('#exp-recurring').addEventListener('change', (e) => {
       handle.sheet.querySelector('#exp-interval-wrap').style.display = e.target.checked ? '' : 'none';
     });
-    handle.sheet.querySelector('#exp-save').addEventListener('click', () => {
+    handle.sheet.querySelector('#exp-save').addEventListener('click', async () => {
       const amount = Number(handle.sheet.querySelector('#exp-amount').value);
       if (!amount || amount <= 0) { toast('Bitte einen Betrag eingeben'); return; }
       const date = handle.sheet.querySelector('#exp-date').value || todayKey();
@@ -258,11 +321,31 @@ export function openExpenseModal(existing, onSaved) {
       const note = handle.sheet.querySelector('#exp-note').value.trim();
       const recurring = handle.sheet.querySelector('#exp-recurring').checked;
       const taxRelevant = handle.sheet.querySelector('#exp-tax').checked;
-      if (existing) {
-        saveExpense({ ...existing, amount, date, categoryId, merchant, note, recurring, recurringInterval, taxRelevant });
-      } else {
-        createExpense({ amount, date, categoryId, merchant, note, recurring, recurringInterval, taxRelevant });
+      if (!existing) {
+        // Duplikat-Warnung (E-Budget-Duplikat-Warnung): faengt versehentliches
+        // Doppelt-Erfassen ab (z.B. Beleg zweimal gescannt) - bewusst nur
+        // gleicher Betrag AM GLEICHEN TAG, nicht ueberhaupt jemals, sonst
+        // wuerde jeder zufaellig gleich teure Kauf an einem anderen Tag warnen.
+        const dupes = getExpenses().filter((e) => e.date === date && e.amount === amount);
+        if (dupes.length) {
+          const names = dupes.map((e) => e.merchant || 'ohne Bezeichnung').join(', ');
+          const ok = await confirmDialog(
+            'Möglicherweise doppelt erfasst',
+            `Am ${formatDateKey(date)} gibt es bereits eine Ausgabe über ${formatMoney(amount, getSettings().currency)} (${escapeHtml(names)}). Trotzdem speichern?`,
+            'Trotzdem speichern', false
+          );
+          if (!ok) return;
+        }
       }
+      let saved;
+      if (existing) {
+        saved = saveExpense({ ...existing, amount, date, categoryId, merchant, note, recurring, recurringInterval, taxRelevant });
+      } else {
+        saved = createExpense({ amount, date, categoryId, merchant, note, recurring, recurringInterval, taxRelevant });
+      }
+      // Plant den naechsten Zyklus SOFORT vorausschauend ein (E-Budget-Recurring-Vorausplanung),
+      // statt ihn erst nachtraeglich zu erzeugen, sobald er schon faellig ist.
+      ensureNextRecurringOccurrence(saved);
       toast('Gespeichert');
       handle.close();
       onSaved?.();
@@ -311,7 +394,7 @@ export function openIncomeModal(existing, onSaved) {
     </div>
   `, { center: true });
 
-  handle.sheet.querySelector('#inc-save').addEventListener('click', () => {
+  handle.sheet.querySelector('#inc-save').addEventListener('click', async () => {
     const amount = Number(handle.sheet.querySelector('#inc-amount').value);
     if (!amount || amount <= 0) { toast('Bitte einen Betrag eingeben'); return; }
     const date = handle.sheet.querySelector('#inc-date').value || todayKey();
@@ -319,9 +402,21 @@ export function openIncomeModal(existing, onSaved) {
     const note = handle.sheet.querySelector('#inc-note').value.trim();
     const recurring = handle.sheet.querySelector('#inc-recurring').checked;
     if (isNew) {
-      createIncome({ amount, date, source, note, recurring });
+      const dupes = getIncome().filter((i) => i.date === date && i.amount === amount);
+      if (dupes.length) {
+        const names = dupes.map((i) => i.source || 'ohne Bezeichnung').join(', ');
+        const ok = await confirmDialog(
+          'Möglicherweise doppelt erfasst',
+          `Am ${formatDateKey(date)} gibt es bereits eine Einnahme über ${formatMoney(amount, getSettings().currency)} (${escapeHtml(names)}). Trotzdem speichern?`,
+          'Trotzdem speichern', false
+        );
+        if (!ok) return;
+      }
+      const saved = createIncome({ amount, date, source, note, recurring });
+      ensureNextRecurringIncomeOccurrence(saved);
     } else {
-      saveIncome({ ...existing, amount, date, source, note, recurring });
+      const saved = saveIncome({ ...existing, amount, date, source, note, recurring });
+      ensureNextRecurringIncomeOccurrence(saved);
     }
     toast('Gespeichert');
     handle.close();

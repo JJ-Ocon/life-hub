@@ -323,7 +323,12 @@ function openRecipeModal(existing, onSaved) {
         if (!query) { suggestList.hidden = true; return; }
         const matches = await searchFoods(query);
         suggestList.innerHTML =
-          matches.map((f) => `<div class="food-suggest__item" data-pick="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>`).join('')
+          matches.map((f) => `
+            <div class="food-suggest__item" data-pick="${escapeHtml(f.name)}">
+              <span>${escapeHtml(f.name)}</span>
+              <span class="faint food-suggest__nutrition">${Math.round(f.kcal_100g)} kcal · ${formatNum(f.protein_100g, 1)}g E · ${formatNum(f.carbs_100g, 1)}g K · ${formatNum(f.fat_100g, 1)}g F <span class="faint">/100g</span></span>
+            </div>
+          `).join('')
           + `<div class="food-suggest__item food-suggest__item--custom" data-create-custom>+ „${escapeHtml(query)}" als eigene Zutat anlegen</div>`;
         suggestList.hidden = false;
         suggestList.querySelectorAll('[data-pick]').forEach((item) => item.addEventListener('click', () => {

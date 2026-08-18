@@ -195,6 +195,19 @@ export function createIncome(fields) {
   return saveIncome(income);
 }
 
+/** Einnahmen-Pendant zu ensureNextRecurringOccurrence() (Ausgaben) - gleiches
+ *  Vorausplanungs-Prinzip, nur nach `source` statt `merchant`/`categoryId`
+ *  gruppiert, da Einnahmen keine Kategorie haben. */
+export function ensureNextRecurringIncomeOccurrence(income) {
+  if (!income.recurring) return null;
+  const interval = income.recurringInterval || 'monthly';
+  const key = (income.source || '').trim().toLowerCase();
+  const nextDue = addIntervalToDateKey(income.date, interval);
+  const alreadyExists = getIncome().some((i) => i.date === nextDue && (i.source || '').trim().toLowerCase() === key);
+  if (alreadyExists) return null;
+  return createIncome({ source: income.source, amount: income.amount, date: nextDue, recurring: true, recurringInterval: interval, note: income.note });
+}
+
 export function deleteIncome(id) {
   write(KEYS.income, getIncome().filter((i) => i.id !== id));
 }
@@ -216,6 +229,18 @@ export function monthNet(yearMonth) {
 export function monthlySpendByCategory(yearMonth) {
   const sums = {};
   for (const e of getExpensesForMonth(yearMonth)) {
+    sums[e.categoryId] = (sums[e.categoryId] || 0) + e.amount;
+  }
+  return sums;
+}
+
+/** Summe je Kategorie fuer einen beliebigen Datumsbereich (inklusive beider
+ *  Enden) - Grundlage fuer die "letzte Woche"-Statistik, die anders als der
+ *  Monatsvergleich nicht an Kalendermonatsgrenzen gebunden ist. */
+export function spendByCategoryInRange(startDate, endDate) {
+  const sums = {};
+  for (const e of getExpenses()) {
+    if (e.date < startDate || e.date > endDate) continue;
     sums[e.categoryId] = (sums[e.categoryId] || 0) + e.amount;
   }
   return sums;
@@ -251,11 +276,27 @@ function spentInPeriod(category, periodKey) {
 }
 
 /** Wandert den Uebertrag jeder budgetierten Kategorie bis zur aktuellen
- *  Periode nach - idempotent (ueber lastRolloverPeriod), unconditionally auf
- *  jedem App-Start aufgerufen, gleiches Muster wie accrueEnvelopes() (E20).
- *  Beim allerersten Mal (kein lastRolloverPeriod) wird nur der Ausgangspunkt
- *  gesetzt, kein rueckwirkender Uebertrag erfunden. Ein Schutzzaehler
- *  verhindert eine Endlosschleife bei defekten/sehr alten Datumswerten. */
+ *  Periode nach - unconditionally auf jedem App-Start aufgerufen, gleiches
+ *  Muster wie accrueEnvelopes() (E20).
+ *
+ *  WICHTIG (Bugfix): rechnet den kompletten Zeitraum ab budgetStartPeriod bis
+ *  zur aktuellen Periode bei JEDEM Aufruf komplett aus den LIVE-Ausgaben neu
+ *  durch, statt sich inkrementell auf einem Wasserzeichen (frueher
+ *  lastRolloverPeriod) auszuruhen. Die fruehere Version hat bereits "abgehakte"
+ *  Vormonate nie wieder angefasst - eine nachtraeglich erfasste oder
+ *  geaenderte Ausgabe in einem laengst ueberrollten Monat floss dadurch nie in
+ *  den Uebertrag ein (dauerhaft falscher Saldo, nichts hat das je repariert).
+ *  Voller Replay bei jedem Aufruf ist fuer die hier realistische Anzahl an
+ *  Perioden (Monate/Wochen) und Ausgaben trivial billig.
+ *
+ *  budgetStartPeriod markiert den Ausgangspunkt, ab dem ueberhaupt Uebertrag
+ *  getrackt wird - wird einmalig beim Aktivieren eines Budget-Limits gesetzt
+ *  und danach NIE wieder veraendert (kein rueckwirkender Uebertrag fuer davor
+ *  erfunden). Migration von Kategorien aus der alten Wasserzeichen-Logik:
+ *  deren vorhandenes lastRolloverPeriod/carryover-Paar wird 1:1 als
+ *  Ausgangspunkt uebernommen, statt eine moeglicherweise sehr lange Historie
+ *  rueckwirkend neu zu erfinden. Ein Schutzzaehler verhindert eine
+ *  Endlosschleife bei defekten/sehr alten Datumswerten. */
 export function applyBudgetRollovers() {
   const categories = getCategories();
   let changed = false;
@@ -263,13 +304,15 @@ export function applyBudgetRollovers() {
   const updated = categories.map((c) => {
     if (!c.budgetAmount || c.budgetAmount <= 0) return c;
     const currentPeriod = periodKeyFor(c, today);
-    if (!c.lastRolloverPeriod) {
-      changed = true;
-      return { ...c, lastRolloverPeriod: currentPeriod };
+    let startPeriod = c.budgetStartPeriod;
+    let startCarryover = c.budgetStartCarryover || 0;
+    if (!startPeriod) {
+      startPeriod = c.lastRolloverPeriod || currentPeriod;
+      startCarryover = c.carryover || 0;
     }
-    if (c.lastRolloverPeriod === currentPeriod) return c;
-    let periodCursor = c.lastRolloverPeriod;
-    let carryover = c.carryover || 0;
+
+    let periodCursor = startPeriod;
+    let carryover = startCarryover;
     let guard = 0;
     while (periodCursor !== currentPeriod && guard < 600) {
       const spent = spentInPeriod(c, periodCursor);
@@ -278,8 +321,10 @@ export function applyBudgetRollovers() {
       periodCursor = nextPeriodKey(c, periodCursor);
       guard++;
     }
-    changed = true;
-    return { ...c, carryover, lastRolloverPeriod: currentPeriod };
+
+    if (carryover !== c.carryover || currentPeriod !== c.lastRolloverPeriod
+      || startPeriod !== c.budgetStartPeriod || startCarryover !== c.budgetStartCarryover) changed = true;
+    return { ...c, budgetStartPeriod: startPeriod, budgetStartCarryover: startCarryover, carryover, lastRolloverPeriod: currentPeriod };
   });
   if (changed) write(KEYS.categories, updated);
 }
@@ -524,6 +569,95 @@ export function subscriptionSummary() {
   }).sort((a, b) => b.monthlyEquivalent - a.monthlyEquivalent);
   const totalMonthly = items.reduce((sum, i) => sum + i.monthlyEquivalent, 0);
   return { items, totalMonthly };
+}
+
+/** Legt fuer EINE konkrete wiederkehrende Ausgabe die naechste Faelligkeit
+ *  an, falls sie noch nicht existiert - unabhaengig davon, ob dieses Datum
+ *  bereits erreicht ist oder noch in der Zukunft liegt. Wird direkt beim
+ *  Speichern jeder wiederkehrenden Ausgabe aufgerufen (expenses.js), damit
+ *  der naechste Zyklus IMMER schon vorab (vorausschauend, mit einem in dem
+ *  Moment noch zukuenftigen Datum) existiert, statt erst nachtraeglich beim
+ *  naechsten App-Start rueckwirkend nachgetragen zu werden, sobald er schon
+ *  faellig/ueberfaellig ist - genau das wurde als falsch empfunden ("dieser
+ *  Eintrag der in der Vergangenheit liegt sollte nicht existieren"): eine
+ *  wiederkehrende Ausgabe soll an ihrem Datum erscheinen, weil sie LANGE
+ *  VORHER schon dafuer eingeplant wurde, nicht weil sie nachtraeglich
+ *  rueckwirkend erfunden wird. Gibt die neu angelegte Ausgabe zurueck, oder
+ *  null wenn die naechste Faelligkeit schon existierte. */
+export function ensureNextRecurringOccurrence(expense) {
+  if (!expense.recurring) return null;
+  const interval = expense.recurringInterval || 'monthly';
+  const key = (expense.merchant || '').trim().toLowerCase() || `kategorie:${expense.categoryId}`;
+  const nextDue = addIntervalToDateKey(expense.date, interval);
+  const alreadyExists = getExpenses().some((e) => {
+    if (e.date !== nextDue) return false;
+    const eKey = (e.merchant || '').trim().toLowerCase() || `kategorie:${e.categoryId}`;
+    return eKey === key;
+  });
+  if (alreadyExists) return null;
+  return createExpense({
+    merchant: expense.merchant, amount: expense.amount, categoryId: expense.categoryId,
+    date: nextDue, recurring: true, recurringInterval: interval, note: expense.note,
+  });
+}
+
+/** Sicherheitsnetz beim App-Start: verlaesst sich in der ueblichen Nutzung
+ *  (App regelmaessig geoeffnet) NICHT darauf, faellige Folgeeintraege selbst
+ *  nachzutragen - das erledigt ensureNextRecurringOccurrence() bereits
+ *  vorausschauend beim Speichern jeder Ausgabe. Faengt nur den Fall ab, dass
+ *  die App laengere Zeit gar nicht geoeffnet wurde (oder Daten aus der Zeit
+ *  vor diesem Feature importiert wurden) und deshalb mehrere Monate
+ *  nachzuholen sind (Schutzzaehler gegen Endlosschleife bei kaputten
+ *  Datumswerten). */
+export function applyRecurringExpenses() {
+  const recurring = getExpenses().filter((e) => e.recurring);
+  const groups = new Map();
+  for (const e of recurring) {
+    const key = e.merchant.trim().toLowerCase() || `kategorie:${e.categoryId}`;
+    const current = groups.get(key);
+    if (!current || current.date < e.date) groups.set(key, e);
+  }
+  const today = todayKey();
+  let created = false;
+  for (let latest of groups.values()) {
+    let guard = 0;
+    // Nur nachholen, solange der bisher letzte bekannte Eintrag schon
+    // faellig/ueberfaellig ist (<=today) - sobald er selbst in der Zukunft
+    // liegt, ist bereits (mindestens) ein Zyklus vorausgeplant und die
+    // Schleife stoppt, statt unbegrenzt weit im Voraus zu produzieren.
+    while (latest.date <= today && guard < 60) {
+      const next = ensureNextRecurringOccurrence(latest);
+      if (!next) break;
+      latest = next;
+      created = true;
+      guard++;
+    }
+  }
+  return created;
+}
+
+/** Einnahmen-Pendant zu applyRecurringExpenses() - gleiches Sicherheitsnetz-Prinzip. */
+export function applyRecurringIncome() {
+  const recurring = getIncome().filter((i) => i.recurring);
+  const groups = new Map();
+  for (const i of recurring) {
+    const key = i.source.trim().toLowerCase();
+    const current = groups.get(key);
+    if (!current || current.date < i.date) groups.set(key, i);
+  }
+  const today = todayKey();
+  let created = false;
+  for (let latest of groups.values()) {
+    let guard = 0;
+    while (latest.date <= today && guard < 60) {
+      const next = ensureNextRecurringIncomeOccurrence(latest);
+      if (!next) break;
+      latest = next;
+      created = true;
+      guard++;
+    }
+  }
+  return created;
 }
 
 /* =========================================================

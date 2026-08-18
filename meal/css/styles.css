@@ -218,10 +218,11 @@ textarea.input { resize: vertical; min-height: 60px; }
   position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 5; max-height: 220px; overflow-y: auto;
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-s); box-shadow: var(--shadow);
 }
-.food-suggest__item { padding: 9px 12px; font-size: .85rem; border-bottom: 1px solid var(--border); cursor: pointer; }
+.food-suggest__item { padding: 9px 12px; font-size: .85rem; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
 .food-suggest__item:last-child { border-bottom: none; }
 .food-suggest__item:active { background: var(--bg-input); }
 .food-suggest__item--custom { color: var(--accent); font-weight: 600; }
+.food-suggest__nutrition { font-size: .72rem; }
 
 /* ---------- Einkaufsliste ---------- */
 .shop-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }

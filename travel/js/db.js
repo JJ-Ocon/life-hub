@@ -289,6 +289,31 @@ export async function refreshSharedCalendarMirror() {
   }
 }
 
+/** Inline-Bearbeitung eines gespiegelten Termins direkt aus dem Hub-Kalender
+ *  heraus (E-Hub-Edit-Cross-App): nur "travel-itin-*" hat einen eigenen,
+ *  frei benannten Titel. "travel-start-*"/"travel-end-*" zeigen dagegen einen
+ *  aus dem Reisenamen ABGELEITETEN Satz ("Reise: X beginnt") - den roh als
+ *  neuen Titel zurueckzuschreiben wuerde faelschlich den Reisenamen selbst
+ *  ueberschreiben, deshalb bleiben diese beiden bewusst nur per "Weiterleiten"
+ *  (zur eigentlichen Reise-Bearbeitung) erreichbar. */
+export function getCalendarEditableEntity(eventId) {
+  const m = eventId.match(/^travel-itin-(.+)$/);
+  if (!m) return null;
+  const entry = read(KEYS.itinerary, []).find((i) => i.id === m[1]);
+  if (!entry) return null;
+  return { title: entry.title, date: entry.date, time: entry.time || '' };
+}
+
+export function applyCalendarEdit(eventId, patch) {
+  const m = eventId.match(/^travel-itin-(.+)$/);
+  if (!m) return false;
+  const list = read(KEYS.itinerary, []);
+  const entry = list.find((i) => i.id === m[1]);
+  if (!entry) return false;
+  saveItineraryEntry({ ...entry, title: patch.title, date: patch.date, time: patch.time || null });
+  return true;
+}
+
 /* ---------- Einstellungen ---------- */
 const DEFAULT_SETTINGS = { theme: 'dark', accentHue: 190 };
 

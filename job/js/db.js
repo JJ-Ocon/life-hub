@@ -146,6 +146,25 @@ export async function refreshSharedCalendarMirror() {
   }
 }
 
+/** Inline-Bearbeitung eines gespiegelten Termins direkt aus dem Hub-Kalender
+ *  heraus (E-Hub-Edit-Cross-App) - siehe goals/js/db.js fuer das gleiche Muster. */
+export function getCalendarEditableEntity(eventId) {
+  const m = eventId.match(/^job-appt-(.+)$/);
+  if (!m) return null;
+  const appt = getAppointments().find((a) => a.id === m[1]);
+  if (!appt) return null;
+  return { title: appt.title, date: appt.date, time: appt.time || '' };
+}
+
+export function applyCalendarEdit(eventId, patch) {
+  const m = eventId.match(/^job-appt-(.+)$/);
+  if (!m) return false;
+  const appt = getAppointments().find((a) => a.id === m[1]);
+  if (!appt) return false;
+  saveAppointment({ ...appt, title: patch.title, date: patch.date, time: patch.time || null });
+  return true;
+}
+
 /* =========================================================
    Einstellungen
    ========================================================= */

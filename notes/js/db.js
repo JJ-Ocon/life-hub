@@ -107,6 +107,7 @@ export function createNote(fields) {
     photo: fields.photo || null,
     remindAt: fields.remindAt || null,
     archived: !!fields.archived,
+    pinned: !!fields.pinned,
     assignedApp: fields.assignedApp || null,
     createdAt: nowIso(),
   });
@@ -115,7 +116,19 @@ export function createNote(fields) {
 /** Notizen ohne Ordner (und nicht archiviert) - fuer die Gruppe unterhalb
  *  der Ordner-Kacheln im Ordner-Bereich. */
 export function getUnassignedNotes() {
-  return getNotesSorted(todayKey(), { archived: false }).filter((n) => !n.folder);
+  return getNotesSorted(todayKey(), { archived: false }).filter((n) => !n.folder && !n.pinned);
+}
+
+/** Angepinnte Notizen (E-Notizen-Pin): sollen immer sofort sichtbar sein,
+ *  unabhaengig von Ordner-Zuordnung - deshalb aus Ordner-/Unzugeordnet-Listen
+ *  ausgenommen (s.o.) und hier gesondert gefuehrt. */
+export function getPinnedNotes() {
+  return getNotesSorted(todayKey(), { archived: false }).filter((n) => n.pinned);
+}
+
+export function togglePin(id) {
+  const note = getNoteById(id);
+  if (note) saveNote({ ...note, pinned: !note.pinned });
 }
 
 export function notesInFolder(folder) {

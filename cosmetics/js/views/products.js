@@ -22,9 +22,31 @@ export function render() {
   }
 }
 
+// Ob der "Aufgebraucht"-Bereich aufgeklappt ist (E-Kosmetik-Aufgebraucht) -
+// startet eingeklappt, da er wie Erledigt-Listen sonst nur waechst und den
+// eigentlich relevanten "In Nutzung"-Bereich nach unten drueckt. Modul-
+// Zustand, bei jedem View-Laden zurueckgesetzt.
+let usedUpExpanded = false;
+
+function productRowHtml(p) {
+  const expiry = computeExpiry(p);
+  const remaining = latestRemainingPercent(p.id);
+  return `
+    <div class="due-row" data-open="${p.id}" style="cursor:pointer">
+      <div class="col grow" style="min-width:0">
+        <p class="due-row__title truncate">${escapeHtml(p.name)}</p>
+        <p class="due-row__meta">${escapeHtml(categoryLabel(p.category))}${p.brand ? ' · ' + escapeHtml(p.brand) : ''}${remaining !== null && !p.usedUpDate ? ` · noch ${remaining}%` : ''}</p>
+      </div>
+      ${expiry ? `<span class="due-row__date">${formatDateKey(expiry)}</span>` : (p.expiryMode === 'pao' ? '<span class="faint">ungeöffnet</span>' : '<span class="faint">–</span>')}
+    </div>
+  `;
+}
+
 function draw() {
   const view = document.getElementById('view');
   const products = getProducts();
+  const inUse = products.filter((p) => !p.usedUpDate);
+  const usedUp = products.filter((p) => p.usedUpDate);
   view.innerHTML = `
     ${products.length === 0 ? `
       <div class="empty">
@@ -32,26 +54,24 @@ function draw() {
         <p class="faint">Lege Pflegeprodukte mit PAO- oder Mindesthaltbarkeitsdatum an, um den Überblick zu behalten.</p>
       </div>
     ` : `
-      <div class="card">
-        ${products.map((p) => {
-          const expiry = computeExpiry(p);
-          const remaining = latestRemainingPercent(p.id);
-          return `
-            <div class="due-row" data-open="${p.id}" style="cursor:pointer">
-              <div class="col grow" style="min-width:0">
-                <p class="due-row__title truncate">${escapeHtml(p.name)}${p.usedUpDate ? ' · aufgebraucht' : ''}</p>
-                <p class="due-row__meta">${escapeHtml(categoryLabel(p.category))}${p.brand ? ' · ' + escapeHtml(p.brand) : ''}${remaining !== null && !p.usedUpDate ? ` · noch ${remaining}%` : ''}</p>
-              </div>
-              ${expiry ? `<span class="due-row__date">${formatDateKey(expiry)}</span>` : (p.expiryMode === 'pao' ? '<span class="faint">ungeöffnet</span>' : '<span class="faint">–</span>')}
-            </div>
-          `;
-        }).join('')}
-      </div>
+      <div class="section-title" style="margin-top:0">In Nutzung (${inUse.length})</div>
+      ${inUse.length === 0 ? `<p class="faint">Keine Produkte in Nutzung.</p>` : `<div class="card">${inUse.map(productRowHtml).join('')}</div>`}
+      ${usedUp.length ? `
+        <button type="button" class="section-title row row--between" id="used-up-toggle" style="cursor:pointer;width:100%;background:none;border:none">
+          <span>Aufgebraucht (${usedUp.length})</span>
+          <span class="faint">${usedUpExpanded ? '▾' : '▸'}</span>
+        </button>
+        ${usedUpExpanded ? `<div class="card">${usedUp.map(productRowHtml).join('')}</div>` : ''}
+      ` : ''}
     `}
     <button class="btn btn-primary" id="product-add" style="margin-top:16px">+ Produkt</button>
   `;
   view.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => openProductModal(getProductById(el.dataset.open), draw));
+  });
+  document.getElementById('used-up-toggle')?.addEventListener('click', () => {
+    usedUpExpanded = !usedUpExpanded;
+    draw();
   });
   document.getElementById('product-add').addEventListener('click', () => openProductModal(null, draw));
 }

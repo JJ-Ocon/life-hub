@@ -1,11 +1,35 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import {
-  monthlyTotalsSeries, linearForecast, monthlySpendByCategory, getCategories, getSettings,
+  monthlyTotalsSeries, linearForecast, monthlySpendByCategory, spendByCategoryInRange, getCategories, getSettings,
   purchaseIntervalStats, taxRelevantExpensesForYear, taxYearsAvailable,
 } from '../db.js';
 import { barChart } from '../charts.js';
 import { toast } from '../ui.js';
-import { monthKey, monthLabel, formatMoney, formatDateKey, download, escapeHtml } from '../utils.js';
+import { monthKey, monthLabel, addMonths, todayKey, addDaysToDateKey, formatMoney, formatDateKey, download, escapeHtml } from '../utils.js';
+
+/** Baut die Kategorie-Balken fuer einen Zeitraum-Vergleichsabschnitt -
+ *  gemeinsam genutzt von "diesen Monat"/"letzte 7 Tage"/"letzter Monat". */
+function categoryBarsHtml(sums, categories, settings, emptyText) {
+  const rows = categories
+    .map((c) => ({ cat: c, amount: sums[c.id] || 0 }))
+    .filter((r) => r.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+  if (!rows.length) return `<p class="faint">${emptyText}</p>`;
+  const maxAmount = Math.max(...rows.map((r) => r.amount), 1);
+  return `
+    <div class="stack">
+      ${rows.map((r) => `
+        <div>
+          <div class="row row--between" style="margin-bottom:4px">
+            <span>${r.cat.icon} ${escapeHtml(r.cat.name)}</span>
+            <span class="faint">${formatMoney(r.amount, settings.currency)}</span>
+          </div>
+          <div class="pbar"><div class="pbar__fill" style="width:${(r.amount / maxAmount) * 100}%;background:${r.cat.color}"></div></div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
 
 export function render() {
   setTitle('Statistik');
@@ -20,12 +44,11 @@ function draw() {
   const forecast = linearForecast(series);
   const categories = getCategories();
   const currentMonth = monthKey();
+  const lastMonth = addMonths(currentMonth, -1);
+  const weekStart = addDaysToDateKey(todayKey(), -6);
   const spendByCat = monthlySpendByCategory(currentMonth);
-  const catRows = categories
-    .map((c) => ({ cat: c, amount: spendByCat[c.id] || 0 }))
-    .filter((r) => r.amount > 0)
-    .sort((a, b) => b.amount - a.amount);
-  const maxCat = Math.max(...catRows.map((r) => r.amount), 1);
+  const spendLastWeek = spendByCategoryInRange(weekStart, todayKey());
+  const spendLastMonth = monthlySpendByCategory(lastMonth);
   const intervals = purchaseIntervalStats();
   const years = taxYearsAvailable();
 
@@ -57,19 +80,17 @@ function draw() {
 
     <div class="section-title">Kategorie-Vergleich (${monthLabel(currentMonth)})</div>
     <div class="card">
-      ${catRows.length === 0 ? `<p class="faint">Noch keine Ausgaben diesen Monat.</p>` : `
-        <div class="stack">
-          ${catRows.map((r) => `
-            <div>
-              <div class="row row--between" style="margin-bottom:4px">
-                <span>${r.cat.icon} ${escapeHtml(r.cat.name)}</span>
-                <span class="faint">${formatMoney(r.amount, settings.currency)}</span>
-              </div>
-              <div class="pbar"><div class="pbar__fill" style="width:${(r.amount / maxCat) * 100}%;background:${r.cat.color}"></div></div>
-            </div>
-          `).join('')}
-        </div>
-      `}
+      ${categoryBarsHtml(spendByCat, categories, settings, 'Noch keine Ausgaben diesen Monat.')}
+    </div>
+
+    <div class="section-title">Kategorie-Vergleich (letzte 7 Tage)</div>
+    <div class="card">
+      ${categoryBarsHtml(spendLastWeek, categories, settings, 'Keine Ausgaben in den letzten 7 Tagen.')}
+    </div>
+
+    <div class="section-title">Kategorie-Vergleich (${monthLabel(lastMonth)})</div>
+    <div class="card">
+      ${categoryBarsHtml(spendLastMonth, categories, settings, 'Keine Ausgaben im letzten Monat.')}
     </div>
 
     <div class="section-title">Kauf-Rhythmus je Händler</div>

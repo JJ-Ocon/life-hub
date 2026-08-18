@@ -1,8 +1,9 @@
 import { setTitle, setActions, setBack } from '../router.js';
 import { getSettings, saveSettings, exportAllData, importAllData, resetAllData } from '../db.js';
-import { getMe, saveMe } from '../../../shared/contacts.js';
+import { getMe, saveMe, getPeople, createPerson } from '../../../shared/contacts.js';
+import { generateVcf, parseVcf } from '../../../shared/vcard.js';
 import { applyTheme } from '../theme.js';
-import { confirmDialog, toast, promptDialog } from '../ui.js';
+import { openModal, confirmDialog, toast, promptDialog } from '../ui.js';
 import { download, readFileAsText, todayKey, escapeHtml } from '../utils.js';
 
 const THEMES = [
@@ -50,6 +51,9 @@ export function render() {
       <button class="btn btn-ghost" id="export-json">Backup exportieren (JSON)</button>
       <label class="btn btn-ghost" for="import-json">Backup importieren (JSON)</label>
       <input type="file" id="import-json" accept="application/json" hidden>
+      <button class="btn btn-ghost" id="export-vcf">Kontakte exportieren (.vcf)</button>
+      <label class="btn btn-ghost" for="import-vcf">Kontakte importieren (.vcf)</label>
+      <input type="file" id="import-vcf" accept=".vcf,text/vcard" hidden>
       <button class="btn btn-danger" id="reset-all">Alle Daten löschen</button>
     </div>
 
@@ -102,6 +106,28 @@ export function render() {
     }
   });
 
+  document.getElementById('export-vcf').addEventListener('click', () => {
+    const people = getPeople();
+    if (!people.length) { toast('Noch keine Kontakte zum Exportieren'); return; }
+    download(`social-kontakte-${todayKey()}.vcf`, generateVcf(people), 'text/vcard');
+    toast(`${people.length} Kontakt${people.length === 1 ? '' : 'e'} exportiert`);
+  });
+
+  document.getElementById('import-vcf').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    let cards;
+    try {
+      cards = parseVcf(await readFileAsText(file));
+    } catch {
+      toast('Import fehlgeschlagen: ungültige Datei');
+      return;
+    }
+    if (!cards.length) { toast('Keine Kontakte in dieser Datei gefunden'); return; }
+    openVcfImportModal(cards);
+  });
+
   document.getElementById('reset-all').addEventListener('click', async () => {
     const ok = await confirmDialog('Wirklich alle Daten löschen?', 'Alle Kontakte, das Beziehungs-Log und Verknüpfungen werden unwiderruflich gelöscht.', 'Alles löschen', true);
     if (!ok) return;
@@ -111,5 +137,44 @@ export function render() {
     toast('Alle Daten wurden gelöscht');
     location.hash = '#/';
     setTimeout(() => location.reload(), 400);
+  });
+}
+
+/** Bestaetigungsliste vor dem Anlegen (gleiches Muster wie Meals/Budgets
+ *  Kassenbon-Kandidatenliste, E63/E-Meal-Budget-Mapping) - ein .vcf-Export
+ *  vom Handy landet sonst ungeprueft als Bulk-Import, was bei bereits
+ *  vorhandenen Kontakten leicht zu Dubletten fuehren wuerde. Namen, die exakt
+ *  mit einem bestehenden Kontakt uebereinstimmen, sind vorab abgewaehlt. */
+function openVcfImportModal(cards) {
+  const existingNames = new Set(getPeople().map((p) => p.name.trim().toLowerCase()));
+  const handle = openModal(`
+    <h3 class="modal-title">${cards.length} Kontakt${cards.length === 1 ? '' : 'e'} gefunden</h3>
+    <div class="stack" style="max-height:50vh;overflow-y:auto">
+      ${cards.map((c, i) => {
+        const isDupe = existingNames.has(c.name.trim().toLowerCase());
+        return `
+          <label class="row" style="gap:8px;align-items:center">
+            <input type="checkbox" id="vc-check-${i}" ${isDupe ? '' : 'checked'}>
+            <span class="col grow">
+              <span>${escapeHtml(c.name)}</span>
+              ${isDupe ? '<span class="faint"> · vermutlich schon vorhanden</span>' : ''}
+            </span>
+          </label>
+        `;
+      }).join('')}
+    </div>
+    <button class="btn btn-primary" id="vc-import-selected" style="margin-top:14px">Ausgewählte importieren</button>
+  `, { center: true });
+
+  handle.sheet.querySelector('#vc-import-selected').addEventListener('click', () => {
+    let added = 0;
+    cards.forEach((c, i) => {
+      if (!handle.sheet.querySelector(`#vc-check-${i}`).checked) return;
+      createPerson({ name: c.name, phone: c.phone || '', email: c.email || '', birthday: c.birthday || null, role: c.role || '' });
+      added++;
+    });
+    toast(`${added} Kontakt${added === 1 ? '' : 'e'} importiert`);
+    handle.close();
+    render();
   });
 }

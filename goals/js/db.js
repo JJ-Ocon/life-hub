@@ -199,6 +199,8 @@ export function createTodo(fields) {
     startTime: fields.dueDate ? (fields.startTime || null) : null,
     endTime: fields.dueDate ? (fields.endTime || null) : null,
     done: false,
+    order: fields.order ?? null, // manuelle Reihenfolge (E-Todo-Reorder) - null = wie bisher nach Faelligkeit/Erstellzeit
+    subtasks: fields.subtasks || [],
     goalId: fields.goalId || null,
     repeat: fields.repeat || null,
     createdAt: nowIso(),
@@ -214,7 +216,15 @@ export function toggleTodo(id) {
   const t = getTodos().find((x) => x.id === id);
   if (!t) return;
   const wasDone = t.done;
-  saveTodo({ ...t, done: !wasDone });
+  // Hat das Todo Untertasks (E-Todo-Subtasks), setzt ein Tap auf die
+  // Haupt-Checkbox ALLE Untertasks mit auf denselben Zustand - done bleibt
+  // dadurch weiterhin der abgeleitete Wert (alle Untertasks abgehakt),
+  // erlaubt aber trotzdem den schnellen Ein-Klick-Weg, alles auf einmal
+  // (ab)zuhaken, statt jede Untertask einzeln antippen zu muessen.
+  const subtasks = (t.subtasks || []).length
+    ? t.subtasks.map((s) => ({ ...s, done: !wasDone }))
+    : t.subtasks;
+  saveTodo({ ...t, done: !wasDone, subtasks });
   if (!wasDone && t.repeat && t.dueDate) {
     const nextDate = nextRepeatDate(t.dueDate, t.repeat);
     if (nextDate) createTodo({ title: t.title, dueDate: nextDate, goalId: t.goalId, repeat: t.repeat });
@@ -224,6 +234,40 @@ export function toggleTodo(id) {
 export function deleteTodo(id) {
   write(KEYS.todos, getTodos().filter((t) => t.id !== id));
   refreshSharedCalendarMirror();
+}
+
+/* =========================================================
+   Untertasks (E-Todo-Subtasks) - ein Todo mit Untertasks gilt automatisch
+   als erledigt, sobald alle seine Untertasks abgehakt sind; die Haupt-Todo
+   selbst bleibt weiterhin die "Ueberschrift" (Titel, Faelligkeit, Ziel,
+   Wiederholung), Untertasks tragen nur einen Titel + erledigt-Status.
+   ========================================================= */
+// Subtask: { id, title, done }
+
+function syncTodoDoneFromSubtasks(t) {
+  if (!t.subtasks?.length) return t;
+  return { ...t, done: t.subtasks.every((s) => s.done) };
+}
+
+export function addSubtask(todoId, title) {
+  const t = getTodoById(todoId);
+  if (!t) return;
+  const subtasks = [...(t.subtasks || []), { id: uid(), title, done: false }];
+  saveTodo(syncTodoDoneFromSubtasks({ ...t, subtasks }));
+}
+
+export function removeSubtask(todoId, subtaskId) {
+  const t = getTodoById(todoId);
+  if (!t) return;
+  const subtasks = (t.subtasks || []).filter((s) => s.id !== subtaskId);
+  saveTodo(syncTodoDoneFromSubtasks({ ...t, subtasks }));
+}
+
+export function toggleSubtask(todoId, subtaskId) {
+  const t = getTodoById(todoId);
+  if (!t) return;
+  const subtasks = (t.subtasks || []).map((s) => (s.id === subtaskId ? { ...s, done: !s.done } : s));
+  saveTodo(syncTodoDoneFromSubtasks({ ...t, subtasks }));
 }
 
 /**
@@ -262,6 +306,34 @@ export async function refreshSharedCalendarMirror() {
   } catch {
     // Shared Storage ist ein optionales Extra, kein Kernfeature.
   }
+}
+
+/** Inline-Bearbeitung eines gespiegelten Termins direkt aus dem Hub-Kalender
+ *  heraus (E-Hub-Edit-Cross-App): nur "goals-todo-*" ist ein direkt
+ *  editierbares Einzel-Entity (Titel/Datum/Zeit sind rohe Todo-Felder) -
+ *  Kurs-Deadlines und Lernplan-Termine sind aus anderen Feldern abgeleitet
+ *  und bleiben bewusst nur ueber "Weiterleiten" erreichbar. */
+export function getCalendarEditableEntity(eventId) {
+  const m = eventId.match(/^goals-todo-(.+)$/);
+  if (!m) return null;
+  const todo = getTodoById(m[1]);
+  if (!todo) return null;
+  return { title: todo.title, date: todo.dueDate, time: todo.startTime || '', endTime: todo.endTime || '' };
+}
+
+export function applyCalendarEdit(eventId, patch) {
+  const m = eventId.match(/^goals-todo-(.+)$/);
+  if (!m) return false;
+  const todo = getTodoById(m[1]);
+  if (!todo) return false;
+  saveTodo({
+    ...todo,
+    title: patch.title,
+    dueDate: patch.date,
+    startTime: patch.time || null,
+    endTime: patch.date && patch.time ? (patch.endTime || null) : null,
+  });
+  return true;
 }
 
 /* =========================================================

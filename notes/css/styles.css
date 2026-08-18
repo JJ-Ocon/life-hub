@@ -225,6 +225,19 @@ textarea.input { resize: vertical; min-height: 60px; }
 .note-title-input:focus { outline: none; }
 .editor-textarea { resize: none; width: 100%; }
 
+/* ---------- Seitliche Taskleiste: Angepinnt / Ordner / Frei (E-Notizen-Pin) ---------- */
+.notes-shell { display: flex; gap: 10px; align-items: flex-start; }
+.side-rail { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; width: 58px; position: sticky; top: 0; }
+.side-rail__btn {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 2px;
+  border-radius: var(--radius-m); background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: .6rem; font-weight: 700; line-height: 1.1;
+}
+.side-rail__btn span:first-child { font-size: 1.1rem; }
+.side-rail__btn.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.side-rail__btn--archive { margin-top: 10px; }
+.notes-shell__content { flex: 1; min-width: 0; }
+
 /* ---------- Ordner-Bereich (E57) ---------- */
 .folder-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
 .folder-tile {

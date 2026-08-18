@@ -26,15 +26,30 @@ function write(key, value) {
 export const CATEGORIES = [
   { key: 'gesicht', label: 'Gesicht' },
   { key: 'haare', label: 'Haare' },
-  { key: 'bart', label: 'Bart' },
-  { key: 'rasur', label: 'Rasur' },
+  // 'bart' und 'rasur' waren zwei getrennte Kategorien, die sich in der
+  // Praxis kaum unterscheiden liessen (Bugreport: "gegeneinander redundant")
+  // - zu einer zusammengelegt, bestehende Produkte werden beim Laden
+  // automatisch migriert (siehe migrateProductCategory unten).
+  { key: 'bart-rasur', label: 'Bart & Rasur' },
+  { key: 'zaehne', label: 'Zähne' },
   { key: 'dusche', label: 'Duschen/Baden' },
+  { key: 'koerper', label: 'Körper' },
+  { key: 'achseln', label: 'Achseln' },
+  { key: 'haende', label: 'Hände' },
+  { key: 'fuesse', label: 'Füße' },
   { key: 'makeup', label: 'Make-up' },
   { key: 'sonstiges', label: 'Sonstiges' },
 ];
 
 export function categoryLabel(key) {
   return CATEGORIES.find((c) => c.key === key)?.label || 'Sonstiges';
+}
+
+const CATEGORY_MIGRATIONS = { bart: 'bart-rasur', rasur: 'bart-rasur' };
+
+function migrateProductCategory(p) {
+  const mapped = CATEGORY_MIGRATIONS[p.category];
+  return mapped ? { ...p, category: mapped } : p;
 }
 
 /** Gaengige PAO-Werte (Period-After-Opening), wie auf Kosmetik-Verpackungen als "6M"/"12M" etc. angegeben. */
@@ -52,7 +67,10 @@ export const PAO_PRESETS = [3, 6, 9, 12, 18, 24, 36];
 //            usedUpDate (YYYY-MM-DD|null), note, photo (dataURL|null), createdAt, updatedAt }
 
 export function getProducts() {
-  return read(KEYS.products, []).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const list = read(KEYS.products, []);
+  const migrated = list.map(migrateProductCategory);
+  if (migrated.some((p, i) => p !== list[i])) write(KEYS.products, migrated);
+  return migrated.sort((a, b) => a.name.localeCompare(b.name, 'de'));
 }
 
 export function getProductById(id) {

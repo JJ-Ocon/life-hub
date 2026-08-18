@@ -1,6 +1,6 @@
 // Persistenz-Schicht: alles in localStorage, bleibt lokal auf dem Geraet.
 
-import { uid, nowIso, todayKey, addDaysToDateKey, daysBetweenDateKeys } from './utils.js';
+import { uid, nowIso, todayKey, addDaysToDateKey, addMonthsToDateKey, daysBetweenDateKeys } from './utils.js';
 import { createCalendarEvent } from '../../shared/calendar-schema.js';
 import { replaceSourceEvents } from '../../shared/event-store.js';
 
@@ -30,6 +30,13 @@ export const CATEGORIES = [
   { key: 'werkzeug', label: 'Werkzeug' },
   { key: 'wertsachen', label: 'Schmuck/Wertsachen' },
   { key: 'sport', label: 'Sport/Freizeit' },
+  { key: 'buecher', label: 'Bücher & Medien' },
+  { key: 'kueche', label: 'Küche & Haushalt' },
+  { key: 'garten', label: 'Garten & Outdoor' },
+  { key: 'musik', label: 'Musikinstrumente' },
+  { key: 'foto', label: 'Foto & Video' },
+  { key: 'spiele', label: 'Spielzeug & Spiele' },
+  { key: 'deko', label: 'Kunst & Deko' },
   { key: 'sonstiges', label: 'Sonstiges' },
 ];
 
@@ -54,7 +61,9 @@ export function getSubcategoriesForCategory(category) {
  *  Datensatz, nur eine kleine eingebaute Faustregel-Tabelle als Vorschlag,
  *  gleiches Muster wie Household's PLANT_INTERVAL_SUGGESTIONS. */
 export const LIFESPAN_SUGGESTIONS = {
-  elektronik: 48, moebel: 120, werkzeug: 96, wertsachen: 0, sport: 60, sonstiges: 60,
+  elektronik: 48, moebel: 120, werkzeug: 96, wertsachen: 0, sport: 60,
+  buecher: 0, kueche: 84, garten: 96, musik: 180, foto: 60, spiele: 48, deko: 0,
+  sonstiges: 60,
 };
 
 export function suggestLifespanMonths(category) {
@@ -104,8 +113,55 @@ export function createItem(fields) {
     lifespanMonths: fields.lifespanMonths ?? null,
     retailer: fields.retailer || '', warrantyExpiryDate: fields.warrantyExpiryDate || null,
     warrantyReminderLeadDays: fields.warrantyReminderLeadDays ?? 30,
+    spareParts: fields.spareParts || [],
     note: fields.note || '', photo: fields.photo || null, attachments: [], createdAt: nowIso(),
   });
+}
+
+/* =========================================================
+   Ersatzteile (E-Inventar-Ersatzteile) - einzelne Bestandteile eines
+   Gegenstands koennen eine EIGENE, kuerzere Nutzungsdauer haben als das
+   Gesamtstueck (z.B. Bügelbrett: Bezug alle 3-5 Jahre, Gestell 10-20 Jahre) -
+   das pauschale item.lifespanMonths bildet nur EINE Zahl fuer den ganzen
+   Gegenstand ab und passt fuer sowas nicht. Rein am Gegenstand gefuehrt,
+   kein eigener Store.
+   ========================================================= */
+// SparePart: { id, name, lifespanMonths, lastReplacedDate (YYYY-MM-DD|null - faellt auf
+//              item.purchaseDate zurueck, wenn nie gepflegt) }
+
+export function addSparePart(itemId, fields) {
+  const item = getItemById(itemId);
+  if (!item) return null;
+  const part = { id: uid(), name: fields.name, lifespanMonths: Number(fields.lifespanMonths) || null, lastReplacedDate: fields.lastReplacedDate || null };
+  saveItem({ ...item, spareParts: [...(item.spareParts || []), part] });
+  return part;
+}
+
+export function updateSparePart(itemId, partId, patch) {
+  const item = getItemById(itemId);
+  if (!item) return;
+  const spareParts = (item.spareParts || []).map((p) => (p.id === partId ? { ...p, ...patch } : p));
+  saveItem({ ...item, spareParts });
+}
+
+export function removeSparePart(itemId, partId) {
+  const item = getItemById(itemId);
+  if (!item) return;
+  saveItem({ ...item, spareParts: (item.spareParts || []).filter((p) => p.id !== partId) });
+}
+
+export function markSparePartReplaced(itemId, partId) {
+  updateSparePart(itemId, partId, { lastReplacedDate: todayKey() });
+}
+
+/** Naechstes Faelligkeitsdatum eines Ersatzteils, oder null wenn keine
+ *  Nutzungsdauer gepflegt ist. Faellt auf das Kaufdatum des Gegenstands
+ *  zurueck, solange das Teil noch nie ersetzt wurde. */
+export function sparePartNextDue(item, part) {
+  if (!part.lifespanMonths) return null;
+  const base = part.lastReplacedDate || item.purchaseDate;
+  if (!base) return null;
+  return addMonthsToDateKey(base, part.lifespanMonths);
 }
 
 /** Linear abgeschriebener Schaetzwert (Kaufpreis * (1 - vergangene Monate /
@@ -206,16 +262,31 @@ export function totalValue() {
   return read(KEYS.items, []).reduce((sum, i) => sum + (i.currentValue ?? estimatedCurrentValue(i) ?? i.purchasePrice ?? 0), 0);
 }
 
-/** Gegenstaende, deren Garantie-Erinnerungsfenster erreicht ist. */
-export function getDueItems() {
+/** Faellige Erinnerungen ueber alle Gegenstaende - Garantie-Ablauf UND
+ *  faellige Ersatzteile (E-Inventar-Ersatzteile) in einer gemeinsamen,
+ *  nach Datum sortierten Liste, damit ein Gegenstand mit z.B. sowohl
+ *  ablaufender Garantie als auch einem faelligen Ersatzteil beides separat
+ *  zeigt statt nur eins zu gewinnen.
+ *  @returns {Array<{itemId, itemName, category, kind: 'warranty'|'sparepart', label, dueDate}>}
+ */
+export function getDueReminders() {
   const today = todayKey();
-  return read(KEYS.items, [])
-    .filter((i) => i.warrantyExpiryDate)
-    .filter((i) => {
-      const reminder = warrantyReminderDate(i);
-      return reminder && reminder <= today;
-    })
-    .sort((a, b) => a.warrantyExpiryDate.localeCompare(b.warrantyExpiryDate));
+  const out = [];
+  for (const item of read(KEYS.items, [])) {
+    if (item.warrantyExpiryDate) {
+      const reminder = warrantyReminderDate(item);
+      if (reminder && reminder <= today) {
+        out.push({ itemId: item.id, itemName: item.name, category: item.category, kind: 'warranty', label: 'Garantie läuft ab', dueDate: item.warrantyExpiryDate });
+      }
+    }
+    for (const part of item.spareParts || []) {
+      const due = sparePartNextDue(item, part);
+      if (due && due <= today) {
+        out.push({ itemId: item.id, itemName: item.name, category: item.category, kind: 'sparepart', label: `Ersatzteil fällig: ${part.name}`, dueDate: due, partId: part.id });
+      }
+    }
+  }
+  return out.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 }
 
 export async function refreshSharedCalendarMirror() {

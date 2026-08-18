@@ -36,13 +36,60 @@ function getWorker(onProgress) {
 }
 
 /**
+ * Verkleinert (falls noetig) und wandelt ein Foto in Graustufen mit
+ * gespreiztem Kontrast um, bevor es an Tesseract geht (Bugfix: rohe
+ * Handyfotos - oft blasses Thermopapier, Schatten, unnoetig hohe Aufloesung -
+ * lieferten der OCR-Engine ohne diese Vorverarbeitung fast durchgehend
+ * unbrauchbaren Text). Nur fuer File/Blob moeglich; bei einem string (z.B.
+ * data: URL) oder falls createImageBitmap in der Umgebung fehlt, faellt
+ * recognizeText() unten auf das Originalbild zurueck statt zu scheitern.
+ * @param {File|Blob} file
+ */
+async function preprocessReceiptImage(file, maxDim = 1800) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+
+  const gray = new Uint8ClampedArray(w * h);
+  let min = 255;
+  let max = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const g = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    gray[i / 4] = g;
+    if (g < min) min = g;
+    if (g > max) max = g;
+  }
+  const range = Math.max(1, max - min);
+  for (let i = 0; i < data.length; i += 4) {
+    const stretched = ((gray[i / 4] - min) / range) * 255;
+    data[i] = data[i + 1] = data[i + 2] = stretched;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+}
+
+/**
  * Fuehrt OCR auf einem Bild aus und gibt den erkannten Rohtext zurueck.
  * @param {File|Blob|string} image
  * @param {(info:{status:string, progress:number}) => void} [onProgress]
  */
 export async function recognizeText(image, onProgress) {
   const worker = await getWorker(onProgress);
-  const { data } = await worker.recognize(image);
+  // PSM 6 ("ein einzelner gleichfoermiger Textblock") passt zu Kassenbons
+  // deutlich besser als der Tesseract-Standard (volle, freie Seiten-Layout-
+  // Erkennung), der bei einem Foto mit viel Hintergrund um den eigentlichen
+  // Bon herum leicht danebengreift.
+  await worker.setParameters({ tessedit_pageseg_mode: '6' });
+  const processed = await preprocessReceiptImage(image).catch(() => image);
+  const { data } = await worker.recognize(processed);
   return data.text;
 }
 
@@ -79,6 +126,16 @@ function extractAmount(text) {
   for (const line of lines) {
     if (AMOUNT_LINE.test(line)) {
       const m = line.match(AMOUNT_NUM);
+      if (m) return parseGermanNumber(m[1]);
+    }
+  }
+  // 1b. Viele Thermobons trennen Label und Betrag auf zwei Zeilen
+  // ("SUMME" \n "24,99 EUR") statt sie auf einer Zeile zu drucken - deshalb
+  // zusaetzlich in den naechsten 1-2 Zeilen NACH einem reinen Label suchen.
+  for (let i = 0; i < lines.length; i++) {
+    if (!AMOUNT_LINE.test(lines[i])) continue;
+    for (let j = i + 1; j <= i + 2 && j < lines.length; j++) {
+      const m = lines[j].match(AMOUNT_NUM);
       if (m) return parseGermanNumber(m[1]);
     }
   }
